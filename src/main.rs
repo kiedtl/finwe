@@ -129,11 +129,9 @@ fn parse(input: &str) -> Result<(usize, Vec<Token>), ()> {
             },
 
             _ => {
-                let mut n = eat(&chs, i, |c| NONSYMB.contains(&c[0]));
+                let n = eat(&chs, i, |c| NONSYMB.contains(&c[0]));
 
                 i = n.1;
-                n.0 = n.0.to_lowercase();
-
                 match n.0.replace("_", "").parse::<f64>() {
                     Ok(o) =>  toks.push(Token::Number(o)),
                     Err(_) => toks.push(Token::Symbol(n.0)),
@@ -219,7 +217,7 @@ fn main() {
     builtin!("cr",     stdlib::io_CR);
     builtin!("store",  stdlib::STORE);
     builtin!("fetch",  stdlib::FETCH);
-    builtin!("dbg",      stdlib::DBG);
+    builtin!(".S",       stdlib::DBG);
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
     run(&parse(stdlib_builtin).unwrap().1, &mut env);

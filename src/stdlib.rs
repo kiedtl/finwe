@@ -1,22 +1,21 @@
 use crate::*;
 
-/// f --
+/// name func --
 #[allow(non_snake_case)]
 pub fn PROC(env: &mut ZfEnv) {
-    let name;
-    if let Token::String(n) = env.pile.pop().unwrap() {
-        name = n.to_lowercase();
-    } else {
-        eprintln!("expected string");
-        return;
+    let (name, quote);
+
+    match env.pile.pop().unwrap() {
+        Token::List(q) => quote = q,
+        _ => { eprintln!("expected quote"); return },
     }
 
     match env.pile.pop().unwrap() {
-        Token::List(q) => {
-            env.dict.insert(name, ZfProc::User(q.clone()));
-        },
-        _ => eprintln!("expected quote"),
+        Token::String(n) => name = n,
+        _ => { eprintln!("expected string"); return },
     }
+
+    env.dict.insert(name, ZfProc::User(quote));
 }
 
 /// a b -- b a
