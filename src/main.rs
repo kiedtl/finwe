@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 mod stdlib;
 
-const NONSYMB: [char; 17] = [ '{', '}', '(', ')',
-    '[', ']', '"', '#', '|', '\\', ' ', '\t', '\n', '\r', '@', '$', '!' ];
+const NONSYMB: [char; 16] = [ '{', '}', '(', ')', '[', ']',
+    '"', '#', '|', '\\', ' ', '\t', '\n', '\r', '@', '!' ];
 
 #[derive(Clone, Debug)]
 pub enum ZfToken {
@@ -208,12 +208,19 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x)))))
     }
 
+    builtin!("if",        stdlib::IF);
     builtin!("proc",    stdlib::PROC);
-    builtin!("swap",    stdlib::SWAP);
-    builtin!("over",    stdlib::OVER);
-    builtin!("dup",      stdlib::DUP);
+    builtin!("depth",  stdlib::DEPTH);
+    builtin!("pick",    stdlib::PICK);
+    builtin!("roll",    stdlib::ROLL);
     builtin!("drop",    stdlib::DROP);
+    builtin!("not",      stdlib::NOT);
+    builtin!("cmp",      stdlib::CMP);
+    builtin!("+",       stdlib::PLUS);
+    builtin!("-",        stdlib::SUB);
+    builtin!("*",        stdlib::MUL);
     builtin!("/mod",    stdlib::DMOD);
+    builtin!("and",      stdlib::AND);
     builtin!("while",  stdlib::WHILE);
     builtin!(".",     stdlib::io_TOS);
     builtin!("cr",     stdlib::io_CR);
