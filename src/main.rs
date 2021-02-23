@@ -12,17 +12,17 @@ const NONSYMB: [char; 17] = [ '{', '}', '(', ')',
     '[', ']', '"', '#', '|', '\\', ' ', '\t', '\n', '\r', '@', '$', '!' ];
 
 #[derive(Clone, Debug)]
-pub enum Token {
-    List(Vec<Token>),
+pub enum ZfToken {
+    List(Vec<ZfToken>),
     Number(f64),
     String(String),
     Symbol(String),
 }
 
-impl Display for Token {
+impl Display for ZfToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            Token::List(s) => {
+            ZfToken::List(s) => {
                 if s.len() == 0 {
                     return write!(f, "<list>");
                 }
@@ -35,24 +35,24 @@ impl Display for Token {
                 }
                 write!(f, ">")
             },
-            Token::Number(n) => write!(f, "{}", n),
-            Token::String(s) => write!(f, "{:?}", s),
-            Token::Symbol(s) => write!(f, "<symb {}>", s),
+            ZfToken::Number(n) => write!(f, "{}", n),
+            ZfToken::String(s) => write!(f, "{:?}", s),
+            ZfToken::Symbol(s) => write!(f, "<symb {}>", s),
         }
     }
 }
 
-impl Into<bool> for Token {
+impl Into<bool> for ZfToken {
     fn into(self) -> bool {
         match self {
-            Token::String(_) | Token::Symbol(_) => true,
-            Token::List(l) => if l.len() == 0 { false } else { true },
-            Token::Number(n) => if n == 0_f64 { false } else { true },
+            ZfToken::String(_) | ZfToken::Symbol(_) => true,
+            ZfToken::List(l) => if l.len() == 0 { false } else { true },
+            ZfToken::Number(n) => if n == 0_f64 { false } else { true },
         }
     }
 }
 
-fn parse(input: &str) -> Result<(usize, Vec<Token>), ()> {
+fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
     fn eat<F>(ch: &[char], mut c: usize, until: F)
         -> (String, usize, bool)
     where
@@ -101,30 +101,30 @@ fn parse(input: &str) -> Result<(usize, Vec<Token>), ()> {
                 let s = eat(&chs, i + 1, |c| c[0] == '"');
                 if s.2 { return Err(()); }
                 i = s.1 + 1;
-                toks.push(Token::String(s.0));
+                toks.push(ZfToken::String(s.0));
             },
 
             '[' => {
                 let res = parse(&input[i + 1..])?;
-                toks.push(Token::List(res.1));
+                toks.push(ZfToken::List(res.1));
                 i += res.0 + 2; // move past matching ']'
             },
             ']' => return Ok((i, toks)),
 
             '#' if chs.len() > i => {
-                toks.push(Token::Number(chs[i + 1] as u32 as f64));
+                toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
                 i += 1;
             },
             '@' if chs.len() > i => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                toks.push(Token::String(n.0));
-                toks.push(Token::Symbol("fetch".to_owned()));
+                toks.push(ZfToken::String(n.0));
+                toks.push(ZfToken::Symbol("fetch".to_owned()));
                 i = n.1;
             },
             '!' if chs.len() > i => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                toks.push(Token::String(n.0));
-                toks.push(Token::Symbol("store".to_owned()));
+                toks.push(ZfToken::String(n.0));
+                toks.push(ZfToken::Symbol("store".to_owned()));
                 i = n.1;
             },
 
@@ -133,8 +133,8 @@ fn parse(input: &str) -> Result<(usize, Vec<Token>), ()> {
 
                 i = n.1;
                 match n.0.replace("_", "").parse::<f64>() {
-                    Ok(o) =>  toks.push(Token::Number(o)),
-                    Err(_) => toks.push(Token::Symbol(n.0)),
+                    Ok(o) =>  toks.push(ZfToken::Number(o)),
+                    Err(_) => toks.push(ZfToken::Symbol(n.0)),
                 };
             },
         }
@@ -143,27 +143,31 @@ fn parse(input: &str) -> Result<(usize, Vec<Token>), ()> {
     return Ok((i, toks));
 }
 
+type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<(), &str>;
+
 #[derive(Clone)]
 pub enum ZfProc {
-    Builtin(Rc<Box<dyn Fn(&mut ZfEnv)>>),
-    User(Vec<Token>),
+    Builtin(Rc<Box<ZfProcFunc>>),
+    User(Vec<ZfToken>),
 }
 
 impl ZfProc {
-    pub fn exec(&self, env: &mut ZfEnv) {
+    pub fn exec<'a>(&self, env: &'a mut ZfEnv) -> Result<(), &'a str> {
         match self {
-            ZfProc::Builtin(b) => (b)(env),
+            ZfProc::Builtin(b) => (b)(env)?,
             ZfProc::User(u) => run(&u, env),
-        }
+        };
+
+        Ok(())
     }
 }
 
 
 #[derive(Clone)]
 pub struct ZfEnv {
-    pile: Vec<Token>,
+    pile: Vec<ZfToken>,
     dict: HashMap<String, ZfProc>,
-    vars: HashMap<String, Token>,
+    vars: HashMap<String, ZfToken>,
 }
 
 impl ZfEnv {
@@ -176,16 +180,19 @@ impl ZfEnv {
     }
 }
 
-fn run(code: &[Token], env: &mut ZfEnv) {
+fn run(code: &[ZfToken], env: &mut ZfEnv) {
     for token in code {
         match token {
-            Token::Symbol(s) => {
+            ZfToken::Symbol(s) => {
                 if !env.dict.contains_key(s) {
                     eprintln!("I don't know what {} is.", s);
                     return
                 }
 
-                env.dict[s].clone().exec(env);
+                match env.dict[s].clone().exec(env) {
+                    Ok(()) => (),
+                    Err(s) => { eprintln!("{}", s); return },
+                }
             },
             _ => env.pile.push(token.clone()),
         }
@@ -201,11 +208,6 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x)))))
     }
 
-    macro_rules! include_zf {
-        ($path:expr) =>
-            (std::str::from_utf8(include_bytes!($path)).unwrap())
-    }
-
     builtin!("proc",    stdlib::PROC);
     builtin!("swap",    stdlib::SWAP);
     builtin!("over",    stdlib::OVER);
@@ -218,6 +220,11 @@ fn main() {
     builtin!("store",  stdlib::STORE);
     builtin!("fetch",  stdlib::FETCH);
     builtin!(".S",       stdlib::DBG);
+
+    macro_rules! include_zf {
+        ($path:expr) =>
+            (std::str::from_utf8(include_bytes!($path)).unwrap())
+    }
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
     run(&parse(stdlib_builtin).unwrap().1, &mut env);
