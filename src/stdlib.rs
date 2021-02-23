@@ -19,15 +19,23 @@ pub fn PROC(env: &mut ZfEnv) {
     }
 }
 
-/// a b -- b a b
+/// a b -- b a
 #[allow(non_snake_case)]
-pub fn TUCK(env: &mut ZfEnv) {
+pub fn SWAP(env: &mut ZfEnv) {
     let b = env.pile.pop().unwrap();
     let a = env.pile.pop().unwrap();
-
-    env.pile.push(b.clone());
-    env.pile.push(a);
     env.pile.push(b);
+    env.pile.push(a);
+}
+
+/// a b -- a b a
+#[allow(non_snake_case)]
+pub fn OVER(env: &mut ZfEnv) {
+    let b = env.pile.pop().unwrap();
+    let a = env.pile.pop().unwrap();
+    env.pile.push(a.clone());
+    env.pile.push(b);
+    env.pile.push(a);
 }
 
 /// a -- a a
@@ -46,7 +54,7 @@ pub fn DROP(env: &mut ZfEnv) {
 
 /// a b -- c
 #[allow(non_snake_case)]
-pub fn MOD(env: &mut ZfEnv) {
+pub fn DMOD(env: &mut ZfEnv) {
     let (mut b, mut a) = (0f64, 0f64);
     if let Token::Number(_b) = env.pile.pop().unwrap() {
         b = _b;
@@ -54,7 +62,9 @@ pub fn MOD(env: &mut ZfEnv) {
     if let Token::Number(_a) = env.pile.pop().unwrap() {
         a = _a;
     }
+
     env.pile.push(Token::Number(a % b));
+    env.pile.push(Token::Number(a / b));
 }
 
 /// quote --

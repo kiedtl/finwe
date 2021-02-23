@@ -1,0 +1,3 @@
+(a b -- b a b) [ swap over ]      "tuck" proc
+(a b -- c)     [ /mod swap drop ] "/"    proc
+(a b -- d)     [ /mod drop ]      "mod"  proc

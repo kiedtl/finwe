@@ -203,17 +203,26 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x)))))
     }
 
+    macro_rules! include_zf {
+        ($path:expr) =>
+            (std::str::from_utf8(include_bytes!($path)).unwrap())
+    }
+
     builtin!("proc",    stdlib::PROC);
-    builtin!("tuck",    stdlib::TUCK);
+    builtin!("swap",    stdlib::SWAP);
+    builtin!("over",    stdlib::OVER);
     builtin!("dup",      stdlib::DUP);
     builtin!("drop",    stdlib::DROP);
-    builtin!("mod",      stdlib::MOD);
+    builtin!("/mod",    stdlib::DMOD);
     builtin!("while",  stdlib::WHILE);
     builtin!(".",     stdlib::io_TOS);
     builtin!("cr",     stdlib::io_CR);
     builtin!("store",  stdlib::STORE);
     builtin!("fetch",  stdlib::FETCH);
     builtin!("dbg",      stdlib::DBG);
+
+    let stdlib_builtin = include_zf!("std/builtin.zf");
+    run(&parse(stdlib_builtin).unwrap().1, &mut env);
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
