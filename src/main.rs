@@ -87,7 +87,7 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
     while i < chs.len() {
         match chs[i] {
             // --- whitespace ---
-            ' ' | '\n' | '\t' => { i += 1; continue; },
+            ' ' | '\t' | '\r' | '\n' => { i += 1; continue; },
 
             // --- comments ---
             '(' => {
