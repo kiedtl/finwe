@@ -86,8 +86,10 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
 
     while i < chs.len() {
         match chs[i] {
+            // --- whitespace ---
             ' ' | '\n' | '\t' => { i += 1; continue; },
 
+            // --- comments ---
             '(' => {
                 let s = eat(&chs, i + 1, |c| c[0] == ')');
                 if s.2 { return Err(()); }
@@ -97,6 +99,8 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
                 let s = eat(&chs, i + 2, |c| c[0] == '\n');
                 i = s.1 + 1;
             },
+
+            // --- strings ---
             '"' => {
                 let s = eat(&chs, i + 1, |c| c[0] == '"');
                 if s.2 { return Err(()); }
@@ -104,6 +108,7 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
                 toks.push(ZfToken::String(s.0));
             },
 
+            // --- quotes ---
             '[' => {
                 let res = parse(&input[i + 1..])?;
                 toks.push(ZfToken::List(res.1));
@@ -111,9 +116,15 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
             },
             ']' => return Ok((i, toks)),
 
+            // --- prefixes ---
             '#' if chs.len() > i => {
                 toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
                 i += 1;
+            },
+            '\'' => {
+                let s = eat(&chs, i + 1, |c| c[0].is_whitespace());
+                toks.push(ZfToken::String(s.0));
+                i = s.1;
             },
             '@' if chs.len() > i => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));

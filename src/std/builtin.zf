@@ -1,52 +1,52 @@
 1 !TRUE
 0 !FALSE
 
-"cond" (fqq-) [
+'cond (fqq-) [
   !_a !_b !_f
   @_f @_a if
   @_f not @_b if
 ] proc
 
-"over"     (a b c -- b c a)  [ 1 pick                               ] proc
-"2drop"    (  a b -- b    )  [ drop drop                            ] proc
-"dup"      (a b c -- b c a)  [ 0 pick                               ] proc
-"2dup"     (a b c -- b c a)  [ over over                            ] proc
-"swap"     (a b c -- b c a)  [ 1 roll                               ] proc
-"rot"      (a b c -- b c a)  [ 2 roll                               ] proc
-"rot>"     (a b c -- c a b)  [ rot rot                              ] proc
-"tuck"     (  a b -- b a b)  [ swap over                            ] proc
-"nip"      (  a b -- b    )  [ swap drop                            ] proc
+'over     (a b c -- b c a)  [ 1 pick                               ] proc
+'2drop    (  a b -- b    )  [ drop drop                            ] proc
+'dup      (a b c -- b c a)  [ 0 pick                               ] proc
+'2dup     (a b c -- b c a)  [ over over                            ] proc
+'swap     (a b c -- b c a)  [ 1 roll                               ] proc
+'rot      (a b c -- b c a)  [ 2 roll                               ] proc
+'rot>     (a b c -- c a b)  [ rot rot                              ] proc
+'tuck     (  a b -- b a b)  [ swap over                            ] proc
+'nip      (  a b -- b    )  [ swap drop                            ] proc
 
-"do"       (    q --      )  [ @TRUE swap if                        ] proc
-"dip"      (  v q -- v    )  [ swap !_d do @_d                      ] proc
-"sip"      (  v q -- v    )  [ !_s dup @_s swap [do] dip            ] proc
+'do       (    q --      )  [ @TRUE swap if                        ] proc
+'dip      (  v q -- v    )  [ swap !_d do @_d                      ] proc
+'sip      (  v q -- v    )  [ !_s dup @_s swap [do] dip            ] proc
 
-"="        (  a b -- c    )  [ cmp not                              ] proc
-"<"        (  a b -- c    )  [ cmp -1 =                             ] proc
-"<="       (  a b -- c    )  [ < not                                ] proc
-">"        (  a b -- c    )  [ cmp 1 =                              ] proc
-">="       (  a b -- c    )  [ > not                                ] proc
-"><"       (n l h -- c    )  [ 2 pick >  rot> >  b&                 ] proc
-"=><="     (n l h -- c    )  [ 2 pick >= rot> >= b&                 ] proc
-"0="       (    a -- c    )  [ 0 =                                  ] proc
-"0<>"      (    a -- c    )  [ 0 <>                                 ] proc
-"0<"       (    a -- c    )  [ 0 <                                  ] proc
-"0>"       (    a -- c    )  [ 0 >                                  ] proc
-"0>="      (    a -- c    )  [ 0 >=                                 ] proc
+'=        (  a b -- c    )  [ cmp not                              ] proc
+'<        (  a b -- c    )  [ cmp -1 =                             ] proc
+'<=       (  a b -- c    )  [ < not                                ] proc
+'>        (  a b -- c    )  [ cmp 1 =                              ] proc
+'>=       (  a b -- c    )  [ > not                                ] proc
+'><       (n l h -- c    )  [ 2 pick >  rot> >  b&                 ] proc
+'=><=     (n l h -- c    )  [ 2 pick >= rot> >= b&                 ] proc
+'0=       (    a -- c    )  [ 0 =                                  ] proc
+'0<>      (    a -- c    )  [ 0 <>                                 ] proc
+'0<       (    a -- c    )  [ 0 <                                  ] proc
+'0>       (    a -- c    )  [ 0 >                                  ] proc
+'0>=      (    a -- c    )  [ 0 >=                                 ] proc
 
-"1+"       (    a -- c    )  [ 1 +                                  ] proc
-"1-"       (    a -- c    )  [ 1 -                                  ] proc
-"2+"       (    a -- c    )  [ 2 +                                  ] proc
-"2-"       (    a -- c    )  [ 2 -                                  ] proc
-"/"        (  a b -- c    )  [ /mod swap drop                       ] proc
-"mod"      (  a b -- d    )  [ /mod drop                            ] proc
+'1+       (    a -- c    )  [ 1 +                                  ] proc
+'1-       (    a -- c    )  [ 1 -                                  ] proc
+'2+       (    a -- c    )  [ 2 +                                  ] proc
+'2-       (    a -- c    )  [ 2 -                                  ] proc
+'/        (  a b -- c    )  [ /mod swap drop                       ] proc
+'mod      (  a b -- d    )  [ /mod drop                            ] proc
 
-"even?"    (    n -- f    )  [ 2 mod 0=                             ] proc
-"odd?"     (    n -- f    )  [ even? not                            ] proc
+'even?    (    n -- f    )  [ 2 mod 0=                             ] proc
+'odd?     (    n -- f    )  [ even? not                            ] proc
 
-"abs"      (    a -- c    )  [ dup 0< [negate] if                   ] proc
-"square"   (  a b -- d    )  [ dup *                                ] proc
-"negate"   (  a b -- d    )  [ -1  *                                ] proc
-"min"      (  a m -- c    )  [ 2dup < [drop] [nip] cond             ] proc
-"max"      (  a M -- c    )  [ 2dup > [drop] [nip] cond             ] proc
-"clamp"    (a m M -- c    )  [ 2 pick swap max swap min swap drop   ] proc
+'abs      (    a -- c    )  [ dup 0< [negate] if                   ] proc
+'square   (  a b -- d    )  [ dup *                                ] proc
+'negate   (  a b -- d    )  [ -1  *                                ] proc
+'min      (  a m -- c    )  [ 2dup < [drop] [nip] cond             ] proc
+'max      (  a M -- c    )  [ 2dup > [drop] [nip] cond             ] proc
+'clamp    (a m M -- c    )  [ 2 pick swap max swap min swap drop   ] proc
