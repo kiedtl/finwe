@@ -136,10 +136,54 @@ pub fn DMOD(env: &mut ZfEnv) -> Result<(), &str> {
 
 /// a b -- c
 #[allow(non_snake_case)]
-pub fn AND(env: &mut ZfEnv) -> Result<(), &str> {
+pub fn bAND(env: &mut ZfEnv) -> Result<(), &str> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
     env.pile.push(ZfToken::Number((a & b) as f64));
+    Ok(())
+}
+
+/// a b -- c
+#[allow(non_snake_case)]
+pub fn bOR(env: &mut ZfEnv) -> Result<(), &str> {
+    let b = pop_as!(env, Number) as usize;
+    let a = pop_as!(env, Number) as usize;
+    env.pile.push(ZfToken::Number((a | b) as f64));
+    Ok(())
+}
+
+/// a b -- c
+#[allow(non_snake_case)]
+pub fn bXOR(env: &mut ZfEnv) -> Result<(), &str> {
+    let b = pop_as!(env, Number) as usize;
+    let a = pop_as!(env, Number) as usize;
+    env.pile.push(ZfToken::Number((a ^ b) as f64));
+    Ok(())
+}
+
+/// a -- c
+#[allow(non_snake_case)]
+pub fn bNOT(env: &mut ZfEnv) -> Result<(), &str> {
+    let a = pop_as!(env, Number) as usize;
+    env.pile.push(ZfToken::Number((!a) as f64));
+    Ok(())
+}
+
+/// a b -- c
+#[allow(non_snake_case)]
+pub fn SHL(env: &mut ZfEnv) -> Result<(), &str> {
+    let b = pop_as!(env, Number) as usize;
+    let a = pop_as!(env, Number) as usize;
+    env.pile.push(ZfToken::Number((a << b) as f64));
+    Ok(())
+}
+
+/// a b -- c
+#[allow(non_snake_case)]
+pub fn SHR(env: &mut ZfEnv) -> Result<(), &str> {
+    let b = pop_as!(env, Number) as usize;
+    let a = pop_as!(env, Number) as usize;
+    env.pile.push(ZfToken::Number((a >> b) as f64));
     Ok(())
 }
 

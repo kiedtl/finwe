@@ -220,7 +220,12 @@ fn main() {
     builtin!("-",        stdlib::SUB);
     builtin!("*",        stdlib::MUL);
     builtin!("/mod",    stdlib::DMOD);
-    builtin!("and",      stdlib::AND);
+    builtin!("b&",      stdlib::bAND);
+    builtin!("b|",       stdlib::bOR);
+    builtin!("b^",      stdlib::bXOR);
+    builtin!("b!",      stdlib::bNOT);
+    builtin!("<<",       stdlib::SHL);
+    builtin!(">>",       stdlib::SHR);
     builtin!("while",  stdlib::WHILE);
     builtin!(".",     stdlib::io_TOS);
     builtin!("cr",     stdlib::io_CR);

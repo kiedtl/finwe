@@ -26,8 +26,8 @@
 "<="       (  a b -- c    )  [ < not                                ] proc
 ">"        (  a b -- c    )  [ cmp 1 =                              ] proc
 ">="       (  a b -- c    )  [ > not                                ] proc
-"><"       (n l h -- c    )  [ 2 pick >  rot> >  and                ] proc
-"=><="     (n l h -- c    )  [ 2 pick >= rot> >= and                ] proc
+"><"       (n l h -- c    )  [ 2 pick >  rot> >  b&                 ] proc
+"=><="     (n l h -- c    )  [ 2 pick >= rot> >= b&                 ] proc
 "0="       (    a -- c    )  [ 0 =                                  ] proc
 "0<>"      (    a -- c    )  [ 0 <>                                 ] proc
 "0<"       (    a -- c    )  [ 0 <                                  ] proc
