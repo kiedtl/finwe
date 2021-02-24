@@ -53,27 +53,20 @@ impl Into<bool> for ZfToken {
 }
 
 fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
-    fn eat<F>(ch: &[char], mut c: usize, until: F)
-        -> (String, usize, bool)
-    where
-        F: Fn(&[char]) -> bool
+    fn eat<F>(ch: &[char], mut c: usize, until: F) -> (String, usize, bool)
+    where F: Fn(&[char]) -> bool
     {
         let mut buf = String::new();
-        let early_return;
+        let mut early_return = true;
 
-        loop {
-            if c >= ch.len() {
-                early_return = true;
-                break;
-            }
-
-            if until(&ch[c..]) == true {
+        while c < ch.len() {
+            if until(&ch[c..]) {
                 early_return = false;
                 break;
+            } else {
+                buf += &format!("{}", ch[c]);
+                c += 1;
             }
-
-            buf += &format!("{}", ch[c]);
-            c += 1;
         }
 
         (buf, c, early_return)
