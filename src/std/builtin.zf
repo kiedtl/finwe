@@ -7,6 +7,7 @@
   @_f not @_b if
 ] proc
 
+'reset    (x y a --      )  [ depth [drop depth] while             ] proc
 'over     (a b c -- b c a)  [ 1 pick                               ] proc
 '2drop    (  a b -- b    )  [ drop drop                            ] proc
 'dup      (a b c -- b c a)  [ 0 pick                               ] proc
