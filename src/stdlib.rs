@@ -208,26 +208,6 @@ pub fn WHILE(env: &mut ZfEnv) -> Result<(), &str> {
     Ok(())
 }
 
-/// var -- val
-#[allow(non_snake_case)]
-pub fn FETCH(env: &mut ZfEnv) -> Result<(), &str> {
-    let var = pop_as!(env, String);
-    if env.vars.contains_key(&var) {
-        env.pile.push(env.vars[&var].clone());
-    } else {
-        return Err("unknown variable");
-    }
-    Ok(())
-}
-
-/// val var --
-#[allow(non_snake_case)]
-pub fn STORE(env: &mut ZfEnv) -> Result<(), &str> {
-    let var = pop_as!(env, String);
-    env.vars.insert(var, pop!(env));
-    Ok(())
-}
-
 /// a --
 #[allow(non_snake_case)]
 pub fn io_TOS(env: &mut ZfEnv) -> Result<(), &str> {

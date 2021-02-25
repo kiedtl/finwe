@@ -17,6 +17,8 @@ pub enum ZfToken {
     Number(f64),
     String(String),
     Symbol(String),
+    Fetch(String),
+    Store(String),
 }
 
 impl Display for ZfToken {
@@ -109,8 +111,8 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
             },
             ']' => return Ok((i, toks)),
 
-            // --- prefixes ---
-            '#' if chs.len() > i => {
+            // syntactic sugar
+            '#' if chs.len() > i && !chs[i + 1].is_whitespace()
                 toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
                 i += 1;
             },
@@ -119,17 +121,15 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
                 toks.push(ZfToken::String(s.0));
                 i = s.1;
             },
-            '@' if chs.len() > i => {
+            '!' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                toks.push(ZfToken::String(n.0));
-                toks.push(ZfToken::Symbol("fetch".to_owned()));
                 i = n.1;
+                toks.push(ZfToken::Store(n.0));
             },
-            '!' if chs.len() > i => {
+            '@' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                toks.push(ZfToken::String(n.0));
-                toks.push(ZfToken::Symbol("store".to_owned()));
                 i = n.1;
+                toks.push(ZfToken::Fetch(n.0));
             },
 
             _ => {
