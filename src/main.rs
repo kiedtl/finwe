@@ -224,8 +224,7 @@ fn main() {
     builtin!("<<",       stdlib::SHL);
     builtin!(">>",       stdlib::SHR);
     builtin!("while",  stdlib::WHILE);
-    builtin!(".",     stdlib::io_TOS);
-    builtin!("cr",     stdlib::io_CR);
+    builtin!("emit",    stdlib::EMIT);
     builtin!(".S",       stdlib::DBG);
 
     macro_rules! include_zf {

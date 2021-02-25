@@ -1,5 +1,5 @@
-0 0= !TRUE
-1 0= !FALSE
+1 !TRUE
+0 !FALSE
 
 'cond (fqq-) [
   !_a !_b !_f
@@ -54,3 +54,5 @@
 'min    (  am -- c  )  [ 2dup < [drop] [nip] cond           ] proc
 'max    (  aM -- c  )  [ 2dup > [drop] [nip] cond           ] proc
 'clamp  ( amM -- c  )  [ 2 pick swap max swap min swap drop ] proc
+
+'cr     (     --    )  [ 10 emit                            ] proc

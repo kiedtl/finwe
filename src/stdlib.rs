@@ -211,15 +211,22 @@ pub fn WHILE(env: &mut ZfEnv) -> Result<(), String> {
 
 /// a --
 #[allow(non_snake_case)]
-pub fn io_TOS(env: &mut ZfEnv) -> Result<(), String> {
-    println!("{}", pop!(env));
-    Ok(())
-}
+pub fn EMIT(env: &mut ZfEnv) -> Result<(), String> {
+    let val = pop_as!(env, Number);
+    let err = format!("emit: {} is not a valid unicode codepoint", val);
 
-/// --
-#[allow(non_snake_case)]
-pub fn io_CR(_env: &mut ZfEnv) -> Result<(), String> {
-    println!("");
+    if val < 0.0 { return Err(err); }
+
+    let mut encoded = [0; 4];
+    match std::char::from_u32(val as u32) {
+        Some(e) => { e.encode_utf8(&mut encoded); },
+        None => return Err(err),
+    };
+
+    use std::io::Write;
+    std::io::stdout().write(&encoded).unwrap();
+    std::io::stdout().flush().unwrap();
+
     Ok(())
 }
 
