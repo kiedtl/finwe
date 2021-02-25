@@ -149,7 +149,7 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
     return Ok((i, toks));
 }
 
-type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<(), &str>;
+type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<(), String>;
 
 #[derive(Clone)]
 pub enum ZfProc {
@@ -157,19 +157,7 @@ pub enum ZfProc {
     User(Vec<ZfToken>),
 }
 
-impl ZfProc {
-    pub fn exec<'a>(&self, env: &'a mut ZfEnv) -> Result<(), &'a str> {
-        match self {
-            ZfProc::Builtin(b) => (b)(env)?,
-            ZfProc::User(u) => run(&u, env),
-        };
-
-        Ok(())
-    }
-}
-
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ZfEnv {
     pile: Vec<ZfToken>,
     dict: HashMap<String, ZfProc>,
@@ -177,12 +165,15 @@ pub struct ZfEnv {
 }
 
 impl ZfEnv {
-    pub fn new() -> ZfEnv {
-        ZfEnv {
-            pile: Vec::new(),
-            dict: HashMap::new(),
-            vars: HashMap::new(),
-        }
+    pub fn new() -> ZfEnv { Default::default() }
+
+    pub fn call(&mut self, proc: &ZfProc) -> Result<(), String> {
+        match proc {
+            ZfProc::Builtin(b) => (b)(self)?,
+            ZfProc::User(u) => run(&u, self),
+        };
+
+        Ok(())
     }
 }
 
@@ -192,10 +183,10 @@ fn run(code: &[ZfToken], env: &mut ZfEnv) {
             ZfToken::Symbol(s) => {
                 if !env.dict.contains_key(s) {
                     eprintln!("I don't know what {} is.", s);
-                    return
+                    return;
                 }
 
-                match env.dict[s].clone().exec(env) {
+                match env.call(&env.dict[s].clone()) {
                     Ok(()) => (),
                     Err(s) => { eprintln!("{}", s); return },
                 }
