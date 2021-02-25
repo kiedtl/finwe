@@ -40,6 +40,8 @@ impl Display for ZfToken {
             ZfToken::Number(n) => write!(f, "{}", n),
             ZfToken::String(s) => write!(f, "{:?}", s),
             ZfToken::Symbol(s) => write!(f, "<symb {}>", s),
+            ZfToken::Fetch(s)  => write!(f, "<fetch {}>", s),
+            ZfToken::Store(s)  => write!(f, "<store {}>", s),
         }
     }
 }
@@ -47,16 +49,16 @@ impl Display for ZfToken {
 impl Into<bool> for ZfToken {
     fn into(self) -> bool {
         match self {
-            ZfToken::String(_) | ZfToken::Symbol(_) => true,
             ZfToken::List(l) => if l.len() == 0 { false } else { true },
             ZfToken::Number(n) => if n == 0_f64 { false } else { true },
+            _ => true,
         }
     }
 }
 
 fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
-    fn eat<F>(ch: &[char], mut c: usize, until: F) -> (String, usize, bool)
-    where F: Fn(&[char]) -> bool
+    fn eat<F>(ch: &[char], mut c: usize, until: F)
+        -> (String, usize, bool) where F: Fn(&[char]) -> bool
     {
         let mut buf = String::new();
         let mut early_return = true;
@@ -112,7 +114,7 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
             ']' => return Ok((i, toks)),
 
             // syntactic sugar
-            '#' if chs.len() > i && !chs[i + 1].is_whitespace()
+            '#' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
                 i += 1;
             },
@@ -233,8 +235,6 @@ fn main() {
     builtin!("while",  stdlib::WHILE);
     builtin!(".",     stdlib::io_TOS);
     builtin!("cr",     stdlib::io_CR);
-    builtin!("store",  stdlib::STORE);
-    builtin!("fetch",  stdlib::FETCH);
     builtin!(".S",       stdlib::DBG);
 
     macro_rules! include_zf {
