@@ -22,7 +22,7 @@ macro_rules! pop_as {
 #[allow(non_snake_case)]
 pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
     let func = pop_as!(env, List);
-    if Into::<bool>::into(pop!(env)) {
+    if Into::<bool>::into(&pop!(env)) {
         env.call(&ZfProc::User(func))
     } else {
         Ok(())
@@ -49,6 +49,12 @@ pub fn DEPTH(env: &mut ZfEnv) -> Result<(), String> {
 #[allow(non_snake_case)]
 pub fn PICK(env: &mut ZfEnv) -> Result<(), String> {
     let i = pop_as!(env, Number) as usize;
+
+    if (i + 1) > env.pile.len() {
+        return Err(format!("stack underflow ({} > {})",
+            (i + 1), env.pile.len()));
+    }
+
     let v = env.pile[env.pile.len()-1-i].clone();
     env.pile.push(v);
     Ok(())
@@ -83,7 +89,7 @@ pub fn DROP(env: &mut ZfEnv) -> Result<(), String> {
 /// a -- c
 #[allow(non_snake_case)]
 pub fn NOT(env: &mut ZfEnv) -> Result<(), String> {
-    let c = !Into::<bool>::into(pop!(env));
+    let c = !Into::<bool>::into(&pop!(env));
     env.pile.push(ZfToken::Number(if c {1f64} else {0f64}));
     Ok(())
 }
@@ -190,19 +196,14 @@ pub fn SHR(env: &mut ZfEnv) -> Result<(), String> {
 
 /// quote --
 #[allow(non_snake_case)]
-pub fn WHILE(env: &mut ZfEnv) -> Result<(), String> {
+pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
     let quote = pop_as!(env, List);
 
     loop {
-        let val = match env.pile.pop() {
-            Some(v) => v,
-            None => break,
-        };
+        run(&quote, env);
 
-        if !Into::<bool>::into(val) {
+        if Into::<bool>::into(&pop!(env)) {
             break;
-        } else {
-            run(&quote, env);
         }
     }
 

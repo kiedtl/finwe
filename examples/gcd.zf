@@ -1,5 +1,8 @@
-\ vim:nosmarttab:ts=2:expandtab
+'gcd (ab-c) [
+	[
+		tuck mod dup 0<>
+	] until
+	drop
+] proc
 
-'gcd (a b -- c)  [ dup [tuck mod dup] while drop ] proc
-
-54 45 gcd .
+54 45 gcd .n

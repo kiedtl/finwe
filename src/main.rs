@@ -1,8 +1,8 @@
 // This file should be less than 500 loc in length (not
 // including the standard library).
 
+use std::process::exit;
 use std::collections::HashMap;
-use std::fmt::{self, Display};
 use std::io::{self, Read};
 use std::rc::Rc;
 
@@ -19,38 +19,14 @@ pub enum ZfToken {
     Symbol(String),
     Fetch(String),
     Store(String),
+    Return,
 }
 
-impl Display for ZfToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            ZfToken::List(s) => {
-                if s.len() == 0 {
-                    return write!(f, "<list>");
-                }
-
-                write!(f, "<list {}", s[0])?;
-                if s.len() > 1 {
-                    for token in &s[1..] {
-                        write!(f, ", {}", token)?;
-                    }
-                }
-                write!(f, ">")
-            },
-            ZfToken::Number(n) => write!(f, "{}", n),
-            ZfToken::String(s) => write!(f, "{:?}", s),
-            ZfToken::Symbol(s) => write!(f, "<symb {}>", s),
-            ZfToken::Fetch(s)  => write!(f, "<fetch {}>", s),
-            ZfToken::Store(s)  => write!(f, "<store {}>", s),
-        }
-    }
-}
-
-impl Into<bool> for ZfToken {
+impl Into<bool> for &ZfToken {
     fn into(self) -> bool {
         match self {
-            ZfToken::List(l) => if l.len() == 0 { false } else { true },
-            ZfToken::Number(n) => if n == 0_f64 { false } else { true },
+            ZfToken::List(l) => if  l.len() == 0 { false } else { true },
+            ZfToken::Number(n) => if *n == 0_f64 { false } else { true },
             _ => true,
         }
     }
@@ -114,9 +90,9 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
             ']' => return Ok((i, toks)),
 
             // syntactic sugar
-            '#' if chs.len() > i && !chs[i + 1].is_whitespace() => {
+            '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
-                i += 1;
+                i += 2;
             },
             '\'' => {
                 let s = eat(&chs, i + 1, |c| c[0].is_whitespace());
@@ -140,7 +116,13 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
                 i = n.1;
                 match n.0.replace("_", "").parse::<f64>() {
                     Ok(o) =>  toks.push(ZfToken::Number(o)),
-                    Err(_) => toks.push(ZfToken::Symbol(n.0)),
+                    Err(_) => {
+                        if n.0 == "ret" {
+                            toks.push(ZfToken::Return);
+                        } else {
+                            toks.push(ZfToken::Symbol(n.0));
+                        }
+                    },
                 };
             },
         }
@@ -180,17 +162,32 @@ impl ZfEnv {
 fn run(code: &[ZfToken], env: &mut ZfEnv) {
     for token in code {
         match token {
+            ZfToken::Fetch(var) => {
+                if env.vars.contains_key(var) {
+                    env.pile.push(env.vars[var].clone());
+                } else {
+                    eprintln!("unknown variable");
+                    exit(1);
+                }
+            },
+            ZfToken::Store(var) => {
+                env.vars.insert(var.clone(), match env.pile.pop() {
+                    Some(e) => e,
+                    None => { eprintln!("stack underflow"); exit(1) },
+                });
+            },
             ZfToken::Symbol(s) => {
                 if !env.dict.contains_key(s) {
                     eprintln!("I don't know what {} is.", s);
-                    return;
+                    exit(1);
                 }
 
                 match env.call(&env.dict[s].clone()) {
                     Ok(()) => (),
-                    Err(s) => { eprintln!("{}", s); return },
+                    Err(s) => { eprintln!("{}", s); exit(1); },
                 }
             },
+            ZfToken::Return => return,
             _ => env.pile.push(token.clone()),
         }
     }
@@ -223,7 +220,7 @@ fn main() {
     builtin!("b!",      stdlib::bNOT);
     builtin!("<<",       stdlib::SHL);
     builtin!(">>",       stdlib::SHR);
-    builtin!("while",  stdlib::WHILE);
+    builtin!("until",  stdlib::UNTIL);
     builtin!("emit",    stdlib::EMIT);
     builtin!(".S",       stdlib::DBG);
 
