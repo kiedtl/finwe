@@ -2,9 +2,9 @@
 0 !FALSE
 
 'cond (fqq-) [
-  !_a !_b !_f
-  @_f @_a if
-  @_f not @_b if
+	!_a !_b !_f
+	@_f not @_a if
+	@_f @_b if
 ] proc
 
 'reset  ( xya --    )  [ depth [drop depth] while           ] proc
