@@ -1,8 +1,7 @@
 'gcd (ab-c) [
-	[
-		tuck mod dup 0<>
-	] until
+	[ tuck mod dup 0= ] until
 	drop
 ] proc
 
-54 45 gcd .n
+   54    45 gcd .n cr
+23328 15876 gcd .n cr

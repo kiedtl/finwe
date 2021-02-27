@@ -21,9 +21,12 @@ macro_rules! pop_as {
 /// cond? quote --
 #[allow(non_snake_case)]
 pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
-    let func = pop_as!(env, List);
+    let func = pop!(env);
     if Into::<bool>::into(&pop!(env)) {
-        env.call(&ZfProc::User(func))
+        match func {
+            ZfToken::SymbRef(s) => env.call(&env.dict[&s].clone()),
+            _ => Err(format!("expected symbol or quote")),
+        }
     } else {
         Ok(())
     }
@@ -32,9 +35,9 @@ pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
 /// name func --
 #[allow(non_snake_case)]
 pub fn PROC(env: &mut ZfEnv) -> Result<(), String> {
-    let quote = pop_as!(env, List);
+    let quote = pop_as!(env, SymbRef);
     let name  = pop_as!(env, String);
-    env.dict.insert(name, ZfProc::User(quote));
+    env.dict.insert(name, env.dict[&quote].clone());
     Ok(())
 }
 
@@ -197,11 +200,11 @@ pub fn SHR(env: &mut ZfEnv) -> Result<(), String> {
 /// quote --
 #[allow(non_snake_case)]
 pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
-    let quote = pop_as!(env, List);
+    let r#ref = pop_as!(env, SymbRef);
+    let quote = env.dict[&r#ref].clone();
 
     loop {
-        run(&quote, env);
-
+        env.call(&quote)?;
         if Into::<bool>::into(&pop!(env)) {
             break;
         }
@@ -235,5 +238,15 @@ pub fn EMIT(env: &mut ZfEnv) -> Result<(), String> {
 #[allow(non_snake_case)]
 pub fn DBG(env: &mut ZfEnv) -> Result<(), String> {
     eprintln!("{:?}", env.pile);
+    Ok(())
+}
+
+/// --
+#[allow(non_snake_case)]
+pub fn DICTDBG(env: &mut ZfEnv) -> Result<(), String> {
+    match &env.dict[&pop_as!(env, String)] {
+        ZfProc::User(u) => eprintln!("{:?}", u),
+        ZfProc::Builtin(b) => eprintln!("<builtin {:p}>", b),
+    }
     Ok(())
 }

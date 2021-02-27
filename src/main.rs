@@ -7,16 +7,17 @@ use std::io::{self, Read};
 use std::rc::Rc;
 
 mod stdlib;
+mod random;
 
 const NONSYMB: [char; 16] = [ '{', '}', '(', ')', '[', ']',
     '"', '#', '|', '\\', ' ', '\t', '\n', '\r', '@', '!' ];
 
 #[derive(Clone, Debug)]
 pub enum ZfToken {
-    List(Vec<ZfToken>),
     Number(f64),
     String(String),
     Symbol(String),
+    SymbRef(String),
     Fetch(String),
     Store(String),
     Return,
@@ -25,14 +26,13 @@ pub enum ZfToken {
 impl Into<bool> for &ZfToken {
     fn into(self) -> bool {
         match self {
-            ZfToken::List(l) => if  l.len() == 0 { false } else { true },
             ZfToken::Number(n) => if *n == 0_f64 { false } else { true },
             _ => true,
         }
     }
 }
 
-fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
+fn parse(env: &mut ZfEnv, input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
     fn eat<F>(ch: &[char], mut c: usize, until: F)
         -> (String, usize, bool) where F: Fn(&[char]) -> bool
     {
@@ -83,11 +83,13 @@ fn parse(input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
 
             // --- quotes ---
             '[' => {
-                let res = parse(&input[i + 1..])?;
-                toks.push(ZfToken::List(res.1));
-                i += res.0 + 2; // move past matching ']'
+                let res = parse(env, &input[i + 1..])?;
+                let name = random::phrase();
+                env.dict.insert(name.clone(), ZfProc::User(res.1));
+                toks.push(ZfToken::SymbRef(name));
+                i += res.0 + 1;
             },
-            ']' => return Ok((i, toks)),
+            ']' => { i += 1; return Ok((i, toks)) },
 
             // syntactic sugar
             '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
@@ -166,7 +168,7 @@ fn run(code: &[ZfToken], env: &mut ZfEnv) {
                 if env.vars.contains_key(var) {
                     env.pile.push(env.vars[var].clone());
                 } else {
-                    eprintln!("unknown variable");
+                    eprintln!("unknown variable {}", var);
                     exit(1);
                 }
             },
@@ -223,6 +225,7 @@ fn main() {
     builtin!("until",  stdlib::UNTIL);
     builtin!("emit",    stdlib::EMIT);
     builtin!(".S",       stdlib::DBG);
+    builtin!(".D",   stdlib::DICTDBG);
 
     macro_rules! include_zf {
         ($path:expr) =>
@@ -230,12 +233,12 @@ fn main() {
     }
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
-    run(&parse(stdlib_builtin).unwrap().1, &mut env);
+    run(&parse(&mut env, stdlib_builtin).unwrap().1, &mut env);
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    let parsed = parse(&buffer);
+    let parsed = parse(&mut env, &buffer);
 
     if parsed.is_ok() {
         run(&parsed.unwrap().1, &mut env);
