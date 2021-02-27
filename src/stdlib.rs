@@ -32,15 +32,6 @@ pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
     }
 }
 
-/// name func --
-#[allow(non_snake_case)]
-pub fn PROC(env: &mut ZfEnv) -> Result<(), String> {
-    let quote = pop_as!(env, SymbRef);
-    let name  = pop_as!(env, String);
-    env.dict.insert(name, env.dict[&quote].clone());
-    Ok(())
-}
-
 /// -- d
 #[allow(non_snake_case)]
 pub fn DEPTH(env: &mut ZfEnv) -> Result<(), String> {

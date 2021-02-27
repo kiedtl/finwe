@@ -32,7 +32,9 @@ impl Into<bool> for &ZfToken {
     }
 }
 
-fn parse(env: &mut ZfEnv, input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
+fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
+    -> Result<(usize, Vec<ZfToken>), ()>
+{
     fn eat<F>(ch: &[char], mut c: usize, until: F)
         -> (String, usize, bool) where F: Fn(&[char]) -> bool
     {
@@ -83,13 +85,25 @@ fn parse(env: &mut ZfEnv, input: &str) -> Result<(usize, Vec<ZfToken>), ()> {
 
             // --- quotes ---
             '[' => {
-                let res = parse(env, &input[i + 1..])?;
+                let res = parse(env, &input[i + 1..], false)?;
                 let name = random::phrase();
                 env.dict.insert(name.clone(), ZfProc::User(res.1));
                 toks.push(ZfToken::SymbRef(name));
                 i += res.0 + 1;
             },
             ']' => { i += 1; return Ok((i, toks)) },
+
+            ':' if !in_def => {
+                i = eat(&chs, i + 1, |c| c[0].is_whitespace()).1;
+                let name = eat(&chs,  i + 1, |c| NONSYMB.contains(&c[0]));
+                i = name.1;
+                let body = parse(env, &input[i + 1..], true)?;
+                env.dict.insert(name.0, ZfProc::User(body.1));
+                i += body.0 + 1;
+            },
+            ';' if in_def  => { i += 1; return Ok((i, toks)) },
+            ':' if in_def  => return Err(()),
+            ';' if !in_def => return Err(()),
 
             // syntactic sugar
             '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
@@ -205,7 +219,6 @@ fn main() {
     }
 
     builtin!("if",        stdlib::IF);
-    builtin!("proc",    stdlib::PROC);
     builtin!("depth",  stdlib::DEPTH);
     builtin!("pick",    stdlib::PICK);
     builtin!("roll",    stdlib::ROLL);
@@ -233,12 +246,13 @@ fn main() {
     }
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
-    run(&parse(&mut env, stdlib_builtin).unwrap().1, &mut env);
+    let stdlib_parsed  = parse(&mut env, stdlib_builtin, false);
+    run(&stdlib_parsed.unwrap().1, &mut env);
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    let parsed = parse(&mut env, &buffer);
+    let parsed = parse(&mut env, &buffer, false);
 
     if parsed.is_ok() {
         run(&parsed.unwrap().1, &mut env);

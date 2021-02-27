@@ -1,70 +1,69 @@
 1 !TRUE
 0 !FALSE
 
-'cond (fqq-) [
+: cond (fqq-)
 	!_a !_b !_f
 	@_f not @_a if
 	@_f @_b if
-] proc
+;
 
-'reset    ( xya --    )  [ [drop depth 0=] until              ] proc
-'over     ( abc -- bca)  [ 1 pick                             ] proc
-'2drop    (  ab -- b  )  [ drop drop                          ] proc
-'dup      ( abc -- bca)  [ 0 pick                             ] proc
-'?dup     ( abc -- bca)  [ dup [dup] if                       ] proc
-'2dup     ( abc -- bca)  [ over over                          ] proc
-'swap     ( abc -- bca)  [ 1 roll                             ] proc
-'rot      ( abc -- bca)  [ 2 roll                             ] proc
-'rot>     ( abc -- cab)  [ rot rot                            ] proc
-'tuck     (  ab -- bab)  [ swap over                          ] proc
-'nip      (  ab -- b  )  [ swap drop                          ] proc
+: reset    ( xya --     )  [drop depth 0=] until ;
+: over     ( abc -- bca )  1 pick ;
+: 2drop    (  ab -- b   )  drop drop ;
+: dup      ( abc -- bca )  0 pick ;
+: ?dup     ( abc -- bca )  dup [dup] if ;
+: 2dup     ( abc -- bca )  over over ;
+: swap     ( abc -- bca )  1 roll ;
+: rot      ( abc -- bca )  2 roll ;
+: rot>     ( abc -- cab )  rot rot ;
+: tuck     (  ab -- bab )  swap over ;
+: nip      (  ab -- b   )  swap drop ;
 
-'do       (   q --    )  [ @TRUE swap if                      ] proc
-'dip      (  vq -- v  )  [ swap !_d do @_d                    ] proc
-'sip      (  vq -- v  )  [ !_s dup @_s swap [do] dip          ] proc
-'bi       ( xqq --    )  [ [sip] dip do                       ] proc
-'bi*      (xyqq --    )  [ [dip] dip do                       ] proc
-'bi@      ( xyq --    )  [ dup bi*                            ] proc
+: do       (   q --     )  @TRUE swap if ;
+: dip      (  vq -- v   )  swap !_d do @_d ;
+: sip      (  vq -- v   )  !_s dup @_s swap [do] dip ;
+: bi       ( xqq --     )  [sip] dip do ;
+: bi*      (xyqq --     )  [dip] dip do ;
+: bi@      ( xyq --     )  dup bi* ;
 
-'=        (  ab -- c  )  [ cmp not                            ] proc
-'<>       (  ab -- c  )  [ = not                              ] proc
-'<        (  ab -- c  )  [ cmp -1 =                           ] proc
-'<=       (  ab -- c  )  [ < not                              ] proc
-'>        (  ab -- c  )  [ cmp 1 =                            ] proc
-'>=       (  ab -- c  )  [ > not                              ] proc
-'><       ( nlh -- c  )  [ 2 pick >  rot> >  b&               ] proc
-'=><=     ( nlh -- c  )  [ 2 pick >= rot> >= b&               ] proc
-'0=       (   a -- c  )  [ 0 =                                ] proc
-'0<>      (   a -- c  )  [ 0 <>                               ] proc
-'0<       (   a -- c  )  [ 0 <                                ] proc
-'0>       (   a -- c  )  [ 0 >                                ] proc
-'0>=      (   a -- c  )  [ 0 >=                               ] proc
+: =        (  ab -- c   )  cmp not ;
+: <>       (  ab -- c   )  = not ;
+: <        (  ab -- c   )  cmp -1 = ;
+: <=       (  ab -- c   )  < not ;
+: >        (  ab -- c   )  cmp 1 = ;
+: >=       (  ab -- c   )  > not ;
+: ><       ( nlh -- c   )  2 pick >  rot> >  b& ;
+: =><=     ( nlh -- c   )  2 pick >= rot> >= b& ;
+: 0=       (   a -- c   )  0 = ;
+: 0<>      (   a -- c   )  0 <> ;
+: 0<       (   a -- c   )  0 < ;
+: 0>       (   a -- c   )  0 > ;
+: 0>=      (   a -- c   )  0 >= ;
 
-'1+       (   a -- c  )  [ 1 +                                ] proc
-'1-       (   a -- c  )  [ 1 -                                ] proc
-'2+       (   a -- c  )  [ 2 +                                ] proc
-'2-       (   a -- c  )  [ 2 -                                ] proc
-'/        (  ab -- c  )  [ /mod swap drop                     ] proc
-'mod      (  ab -- d  )  [ /mod drop                          ] proc
+: 1+       (   a -- c   )  1 + ;
+: 1-       (   a -- c   )  1 - ;
+: 2+       (   a -- c   )  2 + ;
+: 2-       (   a -- c   )  2 - ;
 
-'even?    (   n -- f  )  [ 2 mod 0=                           ] proc
-'odd?     (   n -- f  )  [ even? not                          ] proc
+: /        (  ab -- c   )  /mod swap drop ;
+: mod      (  ab -- d   )  /mod drop ;
+: even?    (   n -- f   )  2 mod 0= ;
+: odd?     (   n -- f   )  even? not ;
+: integral (   f -- n   )  0 b^ ;
+: abs      (   a -- c   )  dup 0< [negate] if ;
+: square   (  ab -- d   )  dup * ;
+: negate   (  ab -- d   )  -1  * ;
+: min      (  am -- c   )  2dup < [nip] [drop] cond ;
+: max      (  aM -- c   )  2dup > [nip] [drop] cond ;
+: clamp    ( amM -- c   )  2 pick swap max swap min swap drop ;
 
-'integral (   f -- n  )  [ 0 b^                               ] proc
-'abs      (   a -- c  )  [ dup 0< [negate] if                 ] proc
-'square   (  ab -- d  )  [ dup *                              ] proc
-'negate   (  ab -- d  )  [ -1  *                              ] proc
-'min      (  am -- c  )  [ 2dup < [nip] [drop] cond           ] proc
-'max      (  aM -- c  )  [ 2dup > [nip] [drop] cond           ] proc
-'clamp    ( amM -- c  )  [ 2 pick swap max swap min swap drop ] proc
-
-'cr       (     --    )  [ 10 emit                            ] proc
+: cr       (     --     )  10 emit ;
 
 10 !BASE
-'decimal [ 10 !BASE ] proc
-'hex     [ 16 !BASE ] proc
+: decimal 10 !BASE ;
+: hex     16 !BASE ;
 
-'.n (n-)  [
+: .n ( n -- )
 	dup 0< [ $- emit -1 * ] if
 	?dup 0= [
 		$0 emit
@@ -80,4 +79,4 @@
 		swap ?dup not ] until
 		[ emit dup 999 = ] until
 	] cond
-] proc
+;
