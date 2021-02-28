@@ -36,8 +36,8 @@
 : 0<       (   a -- c   )  0 < ;
 : 0>       (   a -- c   )  0 > ;
 : 0>=      (   a -- c   )  0 >= ;
-: ><       ( nlh -- c   )  2 pick >  rot> >  b& ;
-: =><=     ( nlh -- c   )  2 pick >= rot> >= b& ;
+: ><       ( nlh -- c   )  2 pick >  rot> >  band ;
+: =><=     ( nlh -- c   )  2 pick >= rot> >= band ;
 
 : reset    ( xya --     )  [drop depth 0=] until ;
 
@@ -50,7 +50,7 @@
 : mod      (  ab -- d   )  /mod drop ;
 : even?    (   n -- f   )  2 mod 0= ;
 : odd?     (   n -- f   )  even? not ;
-: integral (   f -- n   )  0 b^ ;
+: integral (   f -- n   )  0 bxor ;
 : negate   (  ab -- d   )  -1  * ;
 : abs      (   a -- c   )  dup 0< [negate] if ;
 : square   (  ab -- d   )  dup * ;

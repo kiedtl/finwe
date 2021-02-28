@@ -256,12 +256,12 @@ fn main() {
     builtin!("-",        stdlib::SUB);
     builtin!("*",        stdlib::MUL);
     builtin!("/mod",    stdlib::DMOD);
-    builtin!("b&",      stdlib::bAND);
-    builtin!("b|",       stdlib::bOR);
-    builtin!("b^",      stdlib::bXOR);
-    builtin!("b!",      stdlib::bNOT);
-    builtin!("<<",       stdlib::SHL);
-    builtin!(">>",       stdlib::SHR);
+    builtin!("band",    stdlib::bAND);
+    builtin!("bor",      stdlib::bOR);
+    builtin!("bxor",    stdlib::bXOR);
+    builtin!("bnot",    stdlib::bNOT);
+    builtin!("bshl",     stdlib::SHL);
+    builtin!("bshr",     stdlib::SHR);
     builtin!("until",  stdlib::UNTIL);
     builtin!("emit",    stdlib::EMIT);
     builtin!(".S",       stdlib::DBG);
