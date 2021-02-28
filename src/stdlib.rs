@@ -10,12 +10,14 @@ macro_rules! pop {
 }
 
 macro_rules! pop_as {
-    ($e:ident, $($t:ident),+) => {
-        match pop!($e) {
-            $(ZfToken::$t(v) => v,)+
-            _ => return Err(format!("bad type")),
+    ($e:ident, $t:ident) => {{
+        let popped = pop!($e);
+        match popped {
+            ZfToken::$t(v) => v,
+            _ => return Err(format!("expected {}, got {}",
+                    stringify!($t), popped.type_name())),
         }
-    }
+    }}
 }
 
 /// cond? quote --
@@ -24,7 +26,7 @@ pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
     let func = pop!(env);
     if Into::<bool>::into(&pop!(env)) {
         match func {
-            ZfToken::SymbRef(s) => env.call(&env.dict[s].clone().1),
+            ZfToken::Symbol(s) => env.call(&env.dict[s].clone().1),
             _ => Err(format!("expected symbol or quote")),
         }
     } else {
@@ -191,7 +193,7 @@ pub fn SHR(env: &mut ZfEnv) -> Result<(), String> {
 /// quote --
 #[allow(non_snake_case)]
 pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
-    let quote = env.dict[pop_as!(env, SymbRef)].clone().1;
+    let quote = env.dict[pop_as!(env, Symbol)].clone().1;
 
     loop {
         env.call(&quote)?;

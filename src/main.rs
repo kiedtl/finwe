@@ -16,11 +16,23 @@ const NONSYMB: [char; 16] = [ '{', '}', '(', ')', '[', ']',
 pub enum ZfToken {
     Number(f64),
     String(String),
-    Symbol(String),
+    Symbol(usize),
     SymbRef(usize),
     Fetch(String),
     Store(String),
     Return,
+}
+
+impl ZfToken {
+    pub fn type_name(&self) -> String {
+        let n = match self {
+            ZfToken::Number(_) => "Number",
+            ZfToken::String(_) => "String",
+            ZfToken::Symbol(_) => "Symbol",
+            _ => todo!(),
+        };
+        n.to_owned()
+    }
 }
 
 impl Into<bool> for &ZfToken {
@@ -33,7 +45,7 @@ impl Into<bool> for &ZfToken {
 }
 
 fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
-    -> Result<(usize, Vec<ZfToken>), ()>
+    -> Result<(usize, Vec<ZfToken>), String>
 {
     fn eat<F>(ch: &[char], mut c: usize, until: F)
         -> (String, usize, bool) where F: Fn(&[char]) -> bool
@@ -67,7 +79,7 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
             // --- comments ---
             '(' => {
                 let s = eat(&chs, i + 1, |c| c[0] == ')');
-                if s.2 { return Err(()); }
+                if s.2 { return Err(format!("unmatched (")); }
                 i = s.1 + 2;
             },
             '\\' => {
@@ -78,7 +90,7 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
             // --- strings ---
             '"' => {
                 let s = eat(&chs, i + 1, |c| c[0] == '"');
-                if s.2 { return Err(()); }
+                if s.2 { return Err(format!("unmatched \"")); }
                 i = s.1 + 1;
                 toks.push(ZfToken::String(s.0));
             },
@@ -101,8 +113,8 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                 i += body.0 + 1;
             },
             ';' if in_def  => { i += 1; return Ok((i, toks)) },
-            ':' if in_def  => return Err(()),
-            ';' if !in_def => return Err(()),
+            ':' if in_def  => return Err(format!("found nested word definitions")),
+            ';' if !in_def => return Err(format!("stray ;")),
 
             // syntactic sugar
             '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
@@ -135,7 +147,10 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                         if n.0 == "ret" {
                             toks.push(ZfToken::Return);
                         } else {
-                            toks.push(ZfToken::Symbol(n.0));
+                            match env.findword(&n.0) {
+                                Some(i) => toks.push(ZfToken::Symbol(i)),
+                                None => return Err(format!("unknown word {}", n.0)),
+                            }
                         }
                     },
                 };
@@ -209,18 +224,13 @@ fn run(code: &[ZfToken], env: &mut ZfEnv) {
                 });
             },
             ZfToken::Symbol(s) => {
-                match env.findword(s) {
-                    Some(p) => match env.call(&env.dict[p].clone().1) {
-                        Ok(()) => (),
-                        Err(s) => { eprintln!("{}", s); exit(1); },
-                    },
-                    None => {
-                        eprintln!("I don't know what {} is.", s);
-                        exit(1);
-                    },
+                match env.call(&env.dict[*s].clone().1) {
+                    Ok(()) => (),
+                    Err(e) => { eprintln!("{}", e); exit(1); },
                 }
             },
             ZfToken::Return => return,
+            ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
             _ => env.pile.push(token.clone()),
         }
     }
@@ -269,11 +279,8 @@ fn main() {
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    let parsed = parse(&mut env, &buffer, false);
-
-    if parsed.is_ok() {
-        run(&parsed.unwrap().1, &mut env);
-    } else {
-        eprintln!("syntax error");
+    match parse(&mut env, &buffer, false) {
+        Ok(zf) => run(&zf.1, &mut env),
+        Err(e) => eprintln!("error: {}", e),
     }
 }

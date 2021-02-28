@@ -7,7 +7,6 @@
 	@_f @_b if
 ;
 
-: reset    ( xya --     )  [drop depth 0=] until ;
 : over     ( abc -- bca )  1 pick ;
 : 2drop    (  ab -- b   )  drop drop ;
 : dup      ( abc -- bca )  0 pick ;
@@ -32,13 +31,15 @@
 : <=       (  ab -- c   )  < not ;
 : >        (  ab -- c   )  cmp 1 = ;
 : >=       (  ab -- c   )  > not ;
-: ><       ( nlh -- c   )  2 pick >  rot> >  b& ;
-: =><=     ( nlh -- c   )  2 pick >= rot> >= b& ;
 : 0=       (   a -- c   )  0 = ;
 : 0<>      (   a -- c   )  0 <> ;
 : 0<       (   a -- c   )  0 < ;
 : 0>       (   a -- c   )  0 > ;
 : 0>=      (   a -- c   )  0 >= ;
+: ><       ( nlh -- c   )  2 pick >  rot> >  b& ;
+: =><=     ( nlh -- c   )  2 pick >= rot> >= b& ;
+
+: reset    ( xya --     )  [drop depth 0=] until ;
 
 : 1+       (   a -- c   )  1 + ;
 : 1-       (   a -- c   )  1 - ;
@@ -50,9 +51,9 @@
 : even?    (   n -- f   )  2 mod 0= ;
 : odd?     (   n -- f   )  even? not ;
 : integral (   f -- n   )  0 b^ ;
+: negate   (  ab -- d   )  -1  * ;
 : abs      (   a -- c   )  dup 0< [negate] if ;
 : square   (  ab -- d   )  dup * ;
-: negate   (  ab -- d   )  -1  * ;
 : min      (  am -- c   )  2dup < [nip] [drop] cond ;
 : max      (  aM -- c   )  2dup > [nip] [drop] cond ;
 : clamp    ( amM -- c   )  2 pick swap max swap min swap drop ;
