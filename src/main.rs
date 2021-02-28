@@ -17,7 +17,7 @@ pub enum ZfToken {
     Number(f64),
     String(String),
     Symbol(String),
-    SymbRef(String),
+    SymbRef(usize),
     Fetch(String),
     Store(String),
     Return,
@@ -85,11 +85,10 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
 
             // --- quotes ---
             '[' => {
-                let res = parse(env, &input[i + 1..], false)?;
-                let name = random::phrase();
-                env.dict.insert(name.clone(), ZfProc::User(res.1));
-                toks.push(ZfToken::SymbRef(name));
-                i += res.0 + 1;
+                let body = parse(env, &input[i + 1..], false)?;
+                let _ref = env.addword(random::phrase(), body.1);
+                toks.push(ZfToken::SymbRef(_ref));
+                i += body.0 + 1;
             },
             ']' => { i += 1; return Ok((i, toks)) },
 
@@ -98,7 +97,7 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                 let name = eat(&chs,  i + 1, |c| NONSYMB.contains(&c[0]));
                 i = name.1;
                 let body = parse(env, &input[i + 1..], true)?;
-                env.dict.insert(name.0, ZfProc::User(body.1));
+                env.addword(name.0, body.1);
                 i += body.0 + 1;
             },
             ';' if in_def  => { i += 1; return Ok((i, toks)) },
@@ -158,12 +157,29 @@ pub enum ZfProc {
 #[derive(Clone, Default)]
 pub struct ZfEnv {
     pile: Vec<ZfToken>,
-    dict: HashMap<String, ZfProc>,
     vars: HashMap<String, ZfToken>,
+    dict: Vec<(String, ZfProc)>,
 }
 
 impl ZfEnv {
     pub fn new() -> ZfEnv { Default::default() }
+
+    pub fn findword(&self, name: &str) -> Option<usize> {
+        for i in 0..self.dict.len() {
+            if self.dict[i].0 == name {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn addword(&mut self, name: String, body: Vec<ZfToken>) -> usize {
+        match self.findword(&name) {
+            Some(i) => self.dict[i].1 = ZfProc::User(body),
+            None => self.dict.push((name.clone(), ZfProc::User(body))),
+        }
+        self.findword(&name).unwrap()
+    }
 
     pub fn call(&mut self, proc: &ZfProc) -> Result<(), String> {
         match proc {
@@ -193,14 +209,15 @@ fn run(code: &[ZfToken], env: &mut ZfEnv) {
                 });
             },
             ZfToken::Symbol(s) => {
-                if !env.dict.contains_key(s) {
-                    eprintln!("I don't know what {} is.", s);
-                    exit(1);
-                }
-
-                match env.call(&env.dict[s].clone()) {
-                    Ok(()) => (),
-                    Err(s) => { eprintln!("{}", s); exit(1); },
+                match env.findword(s) {
+                    Some(p) => match env.call(&env.dict[p].clone().1) {
+                        Ok(()) => (),
+                        Err(s) => { eprintln!("{}", s); exit(1); },
+                    },
+                    None => {
+                        eprintln!("I don't know what {} is.", s);
+                        exit(1);
+                    },
                 }
             },
             ZfToken::Return => return,
@@ -214,8 +231,8 @@ fn main() {
 
     macro_rules! builtin {
         ($s:expr, $x:path) =>
-            (env.dict.insert($s.to_string(),
-                ZfProc::Builtin(Rc::new(Box::new($x)))))
+            (env.dict.push(($s.to_string(),
+                ZfProc::Builtin(Rc::new(Box::new($x))))))
     }
 
     builtin!("if",        stdlib::IF);

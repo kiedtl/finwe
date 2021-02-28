@@ -24,7 +24,7 @@ pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
     let func = pop!(env);
     if Into::<bool>::into(&pop!(env)) {
         match func {
-            ZfToken::SymbRef(s) => env.call(&env.dict[&s].clone()),
+            ZfToken::SymbRef(s) => env.call(&env.dict[s].clone().1),
             _ => Err(format!("expected symbol or quote")),
         }
     } else {
@@ -191,8 +191,7 @@ pub fn SHR(env: &mut ZfEnv) -> Result<(), String> {
 /// quote --
 #[allow(non_snake_case)]
 pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
-    let r#ref = pop_as!(env, SymbRef);
-    let quote = env.dict[&r#ref].clone();
+    let quote = env.dict[pop_as!(env, SymbRef)].clone().1;
 
     loop {
         env.call(&quote)?;
@@ -235,9 +234,13 @@ pub fn DBG(env: &mut ZfEnv) -> Result<(), String> {
 /// --
 #[allow(non_snake_case)]
 pub fn DICTDBG(env: &mut ZfEnv) -> Result<(), String> {
-    match &env.dict[&pop_as!(env, String)] {
-        ZfProc::User(u) => eprintln!("{:?}", u),
-        ZfProc::Builtin(b) => eprintln!("<builtin {:p}>", b),
+    let word = pop_as!(env, String);
+    match env.findword(&word) {
+        Some(p) => match &env.dict[p].1 {
+            ZfProc::User(u) => eprintln!("{:?}", u),
+            ZfProc::Builtin(b) => eprintln!("<builtin {:p}>", b),
+        },
+        None => return Err(format!("unknown word {}", word)),
     }
     Ok(())
 }
