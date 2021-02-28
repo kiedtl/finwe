@@ -81,3 +81,10 @@
 		[ emit dup 999 = ] until
 	] cond
 ;
+
+3735928559 !_RAND
+: rand (range-)
+	@_RAND 11109 * 13849 +
+	524287 band 1 bshr
+	dup !_RAND
+;
