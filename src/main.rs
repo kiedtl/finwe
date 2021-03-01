@@ -195,20 +195,27 @@ impl ZfEnv {
         }
         self.findword(&name).unwrap()
     }
-
-    pub fn call(&mut self, proc: &ZfProc) -> Result<(), String> {
-        match proc {
-            ZfProc::Builtin(b) => (b)(self)?,
-            ZfProc::User(u) => run(&u, self),
-        };
-
-        Ok(())
-    }
 }
 
-fn run(code: &[ZfToken], env: &mut ZfEnv) {
-    for token in code {
-        match token {
+fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
+    let main = env.addword("main".to_owned(), code);
+
+    let mut rs: Vec<(usize, usize)> = Vec::new();
+    rs.push((main, 0));
+
+    loop {
+        if rs.len() == 0 { break }
+
+        let crs = rs.len() - 1;
+        let (c_ib, ip) = (rs[crs].0, rs[crs].1);
+        let ib;
+        if let ZfProc::User(u) = &env.dict[c_ib].1 {
+            ib = u;
+        } else { unreachable!() }
+
+        if ip >= ib.len() { rs.pop(); continue }
+
+        match &ib[ip] {
             ZfToken::Fetch(var) => {
                 if env.vars.contains_key(var) {
                     env.pile.push(env.vars[var].clone());
@@ -224,15 +231,24 @@ fn run(code: &[ZfToken], env: &mut ZfEnv) {
                 });
             },
             ZfToken::Symbol(s) => {
-                match env.call(&env.dict[*s].clone().1) {
-                    Ok(()) => (),
-                    Err(e) => { eprintln!("{}", e); exit(1); },
+                match &env.dict[*s].clone().1 {
+                    ZfProc::Builtin(b) => match (b)(env) {
+                        Ok(()) => (),
+                        Err(e) => { eprintln!("error: {}", e); exit(1) },
+                    },
+                    ZfProc::User(_) => {
+                        rs[crs].1 += 1;
+                        rs.push((*s, 0));
+                        continue;
+                    },
                 }
             },
-            ZfToken::Return => return,
+            ZfToken::Return => { rs.pop(); continue; },
             ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
-            _ => env.pile.push(token.clone()),
+            _ => env.pile.push(ib[ip].clone()),
         }
+
+        rs[crs].1 += 1;
     }
 }
 
@@ -274,13 +290,13 @@ fn main() {
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
     let stdlib_parsed  = parse(&mut env, stdlib_builtin, false);
-    run(&stdlib_parsed.unwrap().1, &mut env);
+    run(stdlib_parsed.unwrap().1, &mut env);
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
     match parse(&mut env, &buffer, false) {
-        Ok(zf) => run(&zf.1, &mut env),
+        Ok(zf) => run(zf.1, &mut env),
         Err(e) => eprintln!("error: {}", e),
     }
 }

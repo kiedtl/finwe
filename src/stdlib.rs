@@ -26,7 +26,7 @@ pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
     let func = pop!(env);
     if Into::<bool>::into(&pop!(env)) {
         match func {
-            ZfToken::Symbol(s) => env.call(&env.dict[s].clone().1),
+            //ZfToken::Symbol(s) => env.call(&env.dict[s].clone().1),
             _ => Err(format!("expected symbol or quote")),
         }
     } else {
@@ -196,7 +196,7 @@ pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
     let quote = env.dict[pop_as!(env, Symbol)].clone().1;
 
     loop {
-        env.call(&quote)?;
+        //env.call(&quote)?;
         if Into::<bool>::into(&pop!(env)) {
             break;
         }
