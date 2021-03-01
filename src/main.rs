@@ -9,18 +9,18 @@ use std::rc::Rc;
 mod stdlib;
 mod random;
 
-const NONSYMB: [char; 16] = [ '{', '}', '(', ')', '[', ']',
-    '"', '#', '|', '\\', ' ', '\t', '\n', '\r', '@', '!' ];
+const NONSYMB: [char; 18] = [ '{', '}', '(', ')', '[', ']',
+    '"', ' ', '\t', '\n', '\r', '\\', ';', '&', '#', '$', '@', '!' ];
 
 #[derive(Clone, Debug)]
 pub enum ZfToken {
+    Nop,
     Number(f64),
     String(String),
     Symbol(usize),
     SymbRef(usize),
-    Fetch(String),
-    Store(String),
-    Return,
+    Address(usize),
+    ZReturn,
 }
 
 impl ZfToken {
@@ -66,6 +66,7 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
         (buf, c, early_return)
     }
 
+    let mut labels = HashMap::new();
     let mut toks = Vec::new();
     let chs = input.chars()
         .collect::<Vec<char>>();
@@ -106,7 +107,7 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
 
             ':' if !in_def => {
                 i = eat(&chs, i + 1, |c| c[0].is_whitespace()).1;
-                let name = eat(&chs,  i + 1, |c| NONSYMB.contains(&c[0]));
+                let name = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
                 i = name.1;
                 let body = parse(env, &input[i + 1..], true)?;
                 env.addword(name.0, body.1);
@@ -115,6 +116,24 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
             ';' if in_def  => { i += 1; return Ok((i, toks)) },
             ':' if in_def  => return Err(format!("found nested word definitions")),
             ';' if !in_def => return Err(format!("stray ;")),
+
+            '|' if chs.len() > i && !chs[i + 1].is_whitespace() => {
+                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
+                i = n.1;
+                toks.push(ZfToken::Nop);
+                labels.insert(format!("|{}", n.0), toks.len() - 1);
+            },
+            '&' if chs.len() > i && !chs[i + 1].is_whitespace() => {
+                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
+                i = n.1;
+                if labels.contains_key(&n.0) {
+                    toks.push(ZfToken::Address(labels[&n.0]));
+                } else if env.findword(&n.0).is_some() {
+                    toks.push(ZfToken::SymbRef(env.findword(&n.0).unwrap()));
+                } else {
+                    return Err(format!("Unknown label {}", n.0));
+                }
+            },
 
             // syntactic sugar
             '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
@@ -126,15 +145,18 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                 toks.push(ZfToken::String(s.0));
                 i = s.1;
             },
+
             '!' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
                 i = n.1;
-                toks.push(ZfToken::Store(n.0));
+                toks.push(ZfToken::String(n.0));
+                toks.push(ZfToken::Symbol(env.findword("store").unwrap()));
             },
             '@' if chs.len() > i && !chs[i + 1].is_whitespace() => {
                 let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
                 i = n.1;
-                toks.push(ZfToken::Fetch(n.0));
+                toks.push(ZfToken::String(n.0));
+                toks.push(ZfToken::Symbol(env.findword("fetch").unwrap()));
             },
 
             _ => {
@@ -144,8 +166,8 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                 match n.0.replace("_", "").parse::<f64>() {
                     Ok(o) =>  toks.push(ZfToken::Number(o)),
                     Err(_) => {
-                        if n.0 == "ret" {
-                            toks.push(ZfToken::Return);
+                        if n.0 == "?ret" {
+                            toks.push(ZfToken::ZReturn);
                         } else {
                             match env.findword(&n.0) {
                                 Some(i) => toks.push(ZfToken::Symbol(i)),
@@ -174,6 +196,7 @@ pub struct ZfEnv {
     pile: Vec<ZfToken>,
     vars: HashMap<String, ZfToken>,
     dict: Vec<(String, ZfProc)>,
+    rs:   Vec<(usize, usize)>,
 }
 
 impl ZfEnv {
@@ -200,36 +223,23 @@ impl ZfEnv {
 fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
     let main = env.addword("main".to_owned(), code);
 
-    let mut rs: Vec<(usize, usize)> = Vec::new();
-    rs.push((main, 0));
+    env.rs.push((main, 0));
 
     loop {
-        if rs.len() == 0 { break }
+        if env.rs.len() == 0 { break }
 
-        let crs = rs.len() - 1;
-        let (c_ib, ip) = (rs[crs].0, rs[crs].1);
+        let crs = env.rs.len() - 1;
+        let (c_ib, ip) = (env.rs[crs].0, env.rs[crs].1);
         let ib;
         if let ZfProc::User(u) = &env.dict[c_ib].1 {
             ib = u;
         } else { unreachable!() }
 
-        if ip >= ib.len() { rs.pop(); continue }
+        if ip >= ib.len() { env.rs.pop(); continue }
 
         match &ib[ip] {
-            ZfToken::Fetch(var) => {
-                if env.vars.contains_key(var) {
-                    env.pile.push(env.vars[var].clone());
-                } else {
-                    eprintln!("unknown variable {}", var);
-                    exit(1);
-                }
-            },
-            ZfToken::Store(var) => {
-                env.vars.insert(var.clone(), match env.pile.pop() {
-                    Some(e) => e,
-                    None => { eprintln!("stack underflow"); exit(1) },
-                });
-            },
+            ZfToken::Nop => (),
+
             ZfToken::Symbol(s) => {
                 match &env.dict[*s].clone().1 {
                     ZfProc::Builtin(b) => match (b)(env) {
@@ -237,18 +247,17 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
                         Err(e) => { eprintln!("error: {}", e); exit(1) },
                     },
                     ZfProc::User(_) => {
-                        rs[crs].1 += 1;
-                        rs.push((*s, 0));
+                        env.rs[crs].1 += 1;
+                        env.rs.push((*s, 0));
                         continue;
                     },
                 }
             },
-            ZfToken::Return => { rs.pop(); continue; },
             ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
             _ => env.pile.push(ib[ip].clone()),
         }
 
-        rs[crs].1 += 1;
+        env.rs[crs].1 += 1;
     }
 }
 
@@ -261,7 +270,11 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x))))))
     }
 
+    builtin!("fetch",  stdlib::FETCH);
+    builtin!("store",  stdlib::STORE);
     builtin!("if",        stdlib::IF);
+    builtin!("?ret",    stdlib::CRET);
+    builtin!("?jump",  stdlib::CJUMP);
     builtin!("depth",  stdlib::DEPTH);
     builtin!("pick",    stdlib::PICK);
     builtin!("roll",    stdlib::ROLL);
@@ -278,7 +291,6 @@ fn main() {
     builtin!("bnot",    stdlib::bNOT);
     builtin!("bshl",     stdlib::SHL);
     builtin!("bshr",     stdlib::SHR);
-    builtin!("until",  stdlib::UNTIL);
     builtin!("emit",    stdlib::EMIT);
     builtin!(".S",       stdlib::DBG);
     builtin!(".D",   stdlib::DICTDBG);

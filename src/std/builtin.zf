@@ -25,6 +25,15 @@
 : bi*      (xyqq --     )  [dip] dip do ;
 : bi@      ( xyq --     )  dup bi* ;
 
+: until (q-)
+	[ |begin
+		dup dip
+		swap not ?ret
+		drop &|begin ?jump
+	] do
+	drop
+;
+
 : =        (  ab -- c   )  cmp not ;
 : <>       (  ab -- c   )  = not ;
 : <        (  ab -- c   )  cmp -1 = ;

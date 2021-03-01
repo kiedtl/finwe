@@ -20,18 +20,56 @@ macro_rules! pop_as {
     }}
 }
 
+#[allow(non_snake_case)]
+pub fn FETCH(env: &mut ZfEnv) -> Result<(), String> {
+    let var = pop_as!(env, String);
+    if env.vars.contains_key(&var) {
+        env.pile.push(env.vars[&var].clone());
+        Ok(())
+    } else {
+        Err(format!("unknown variable {}", var))
+    }
+}
+
+#[allow(non_snake_case)]
+pub fn STORE(env: &mut ZfEnv) -> Result<(), String> {
+    env.vars.insert(pop_as!(env, String), pop!(env));
+    Ok(())
+}
+
+/// cond --
+#[allow(non_snake_case)]
+pub fn CRET(env: &mut ZfEnv) -> Result<(), String> {
+    if Into::<bool>::into(&pop!(env)) {
+        env.rs.pop();
+    }
+    Ok(())
+}
+
+/// address --
+#[allow(non_snake_case)]
+pub fn CJUMP(env: &mut ZfEnv) -> Result<(), String> {
+    let addr = pop_as!(env, Address);
+    let cond = pop!(env);
+
+    if Into::<bool>::into(&cond) {
+        let tosidx = env.rs.len() - 1;
+        env.rs[tosidx].1 = addr;
+    }
+
+    Ok(())
+}
+
 /// cond? quote --
 #[allow(non_snake_case)]
 pub fn IF(env: &mut ZfEnv) -> Result<(), String> {
-    let func = pop!(env);
+    let func = pop_as!(env, Symbol);
+
     if Into::<bool>::into(&pop!(env)) {
-        match func {
-            //ZfToken::Symbol(s) => env.call(&env.dict[s].clone().1),
-            _ => Err(format!("expected symbol or quote")),
-        }
-    } else {
-        Ok(())
+        env.rs.push((func, 0));
     }
+    
+    Ok(())
 }
 
 /// -- d
@@ -187,21 +225,6 @@ pub fn SHR(env: &mut ZfEnv) -> Result<(), String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
     env.pile.push(ZfToken::Number((a >> b) as f64));
-    Ok(())
-}
-
-/// quote --
-#[allow(non_snake_case)]
-pub fn UNTIL(env: &mut ZfEnv) -> Result<(), String> {
-    let quote = env.dict[pop_as!(env, Symbol)].clone().1;
-
-    loop {
-        //env.call(&quote)?;
-        if Into::<bool>::into(&pop!(env)) {
-            break;
-        }
-    }
-
     Ok(())
 }
 
