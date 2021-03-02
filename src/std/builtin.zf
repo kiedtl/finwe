@@ -18,6 +18,7 @@
 : tuck     (  ab -- bab )  swap over ;
 : nip      (  ab -- b   )  swap drop ;
 
+: jump     (   q --     )  @TRUE swap ?jump ;
 : do       (   q --     )  @TRUE swap if ;
 : dip      (  vq -- v   )  swap !_d do @_d ;
 : sip      (  vq -- v   )  !_s dup @_s swap [do] dip ;
