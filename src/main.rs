@@ -1,5 +1,5 @@
-// This file should be less than 500 loc in length (not
-// including the standard library).
+// The goal is for this project to be less than 800 loc in length (not including
+// std/builtin.zf and tests).
 
 use std::collections::HashMap;
 use std::io::{self, Read};
