@@ -42,6 +42,10 @@ pub fn STORE(env: &mut ZfEnv) -> Result<(), String> {
 pub fn CRET(env: &mut ZfEnv) -> Result<(), String> {
     if Into::<bool>::into(&pop!(env)) {
         env.rs.pop();
+        if env.rs.len() > 0 {
+            let l = env.rs.len() - 1;
+            env.rs[l].1 += 1;
+        }
     }
     Ok(())
 }
