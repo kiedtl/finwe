@@ -165,13 +165,9 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
                 match n.0.replace("_", "").parse::<f64>() {
                     Ok(o) =>  toks.push(ZfToken::Number(o)),
                     Err(_) => {
-                        if n.0 == "?ret" {
-                            toks.push(ZfToken::ZReturn);
-                        } else {
-                            match env.findword(&n.0) {
-                                Some(i) => toks.push(ZfToken::Symbol(i)),
-                                None => return Err(format!("unknown word {}", n.0)),
-                            }
+                        match env.findword(&n.0) {
+                            Some(i) => toks.push(ZfToken::Symbol(i)),
+                            None => return Err(format!("unknown word {}", n.0)),
                         }
                     },
                 };
