@@ -281,6 +281,7 @@ fn main() {
     builtin!("bshl",     stdlib::SHL);
     builtin!("bshr",     stdlib::SHR);
     builtin!("emit",    stdlib::EMIT);
+    builtin!("wait",    stdlib::WAIT);
     builtin!(".S",       stdlib::DBG);
     builtin!(".D",   stdlib::DICTDBG);
 

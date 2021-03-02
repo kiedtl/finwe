@@ -249,6 +249,13 @@ pub fn EMIT(env: &mut ZfEnv) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(non_snake_case)]
+pub fn WAIT(env: &mut ZfEnv) -> Result<(), String> {
+    let n = pop_as!(env, Number) as u64;
+    std::thread::sleep(std::time::Duration::from_millis(n));
+    Ok(())
+}
+
 /// --
 #[allow(non_snake_case)]
 pub fn DBG(env: &mut ZfEnv) -> Result<(), String> {
