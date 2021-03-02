@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 use std::rc::Rc;
 
+mod errors;
 mod stdlib;
 mod random;
 
@@ -215,7 +216,7 @@ impl ZfEnv {
     }
 }
 
-fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
+fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
     let main = env.addword("main".to_owned(), code);
 
     env.rs.push((main, 0));
@@ -239,7 +240,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
                 match &env.dict[*s].clone().1 {
                     ZfProc::Builtin(b) => match (b)(env) {
                         Ok(()) => (),
-                        Err(e) => { eprintln!("error: {}", e); exit(1) },
+                        Err(e) => return Err(e),
                     },
                     ZfProc::User(_) => {
                         env.rs[crs].1 += 1;
@@ -258,6 +259,8 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
             env.rs[crs].1 += 1;
         }
     }
+
+    Ok(())
 }
 
 fn main() {
@@ -301,13 +304,22 @@ fn main() {
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
     let stdlib_parsed  = parse(&mut env, stdlib_builtin, false);
-    run(stdlib_parsed.unwrap().1, &mut env);
+    run(stdlib_parsed.unwrap().1, &mut env).unwrap();
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
     match parse(&mut env, &buffer, false) {
-        Ok(zf) => run(zf.1, &mut env),
+        Ok(zf) => {
+            match run(zf.1, &mut env) {
+                Ok(()) => (),
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    errors::stacktrace(&mut env);
+                    exit(1);
+                },
+            }
+        }
         Err(e) => eprintln!("error: {}", e),
     }
 }
