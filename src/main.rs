@@ -1,7 +1,6 @@
 // This file should be less than 500 loc in length (not
 // including the standard library).
 
-use std::process::exit;
 use std::collections::HashMap;
 use std::io::{self, Read};
 use std::rc::Rc;
@@ -304,7 +303,7 @@ fn main() {
                 Err(e) => {
                     eprintln!("error: {}", e);
                     errors::stacktrace(&mut env);
-                    exit(1);
+                    std::process::exit(1);
                 },
             }
         }
