@@ -59,7 +59,7 @@
 : mod      (  ab -- d   )  /mod drop ;
 : even?    (   n -- f   )  2 mod 0= ;
 : odd?     (   n -- f   )  even? not ;
-: integral (   f -- n   )  0 bxor ;
+: int      (   f -- n   )  0 bxor ;
 : negate   (  ab -- d   )  -1  * ;
 : abs      (   a -- c   )  dup 0< [negate] if ;
 : square   (  ab -- d   )  dup * ;
@@ -81,7 +81,7 @@
 		999 swap  (stop indicator)
 		[
 			@BASE /mod             (r q)
-			integral swap integral (q r)
+			int swap int (q r)
 			dup 9 >
 				[ 10 - $a + ]
 				[ $0 + ]
