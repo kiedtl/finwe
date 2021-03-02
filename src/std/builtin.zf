@@ -57,6 +57,18 @@
 
 : /        (  ab -- c   )  /mod swap drop ;
 : mod      (  ab -- d   )  /mod drop ;
+
+: sqrt (a-c)
+	1
+	[ |begin
+		2dup / over - 2 /
+		dup 0= ?ret
+		+
+		@TRUE &|begin ?jump
+	] do
+	drop nip
+;
+
 : even?    (   n -- f   )  2 mod 0= ;
 : odd?     (   n -- f   )  even? not ;
 : int      (   f -- n   )  0 bxor ;
