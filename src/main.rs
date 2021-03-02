@@ -23,18 +23,6 @@ pub enum ZfToken {
     Address(usize),
 }
 
-impl ZfToken {
-    pub fn type_name(&self) -> String {
-        let n = match self {
-            ZfToken::Number(_) => "number",
-            ZfToken::String(_) => "string",
-            ZfToken::Symbol(_) => "symbol",
-            _ => unreachable!(),
-        };
-        n.to_owned()
-    }
-}
-
 impl Into<bool> for &ZfToken {
     fn into(self) -> bool {
         match self {

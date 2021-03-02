@@ -14,8 +14,8 @@ macro_rules! pop_as {
         let popped = pop!($e);
         match popped {
             ZfToken::$t(v) => v,
-            _ => return Err(format!("expected {}, got {}",
-                    stringify!($t), popped.type_name())),
+            _ => return Err(format!("expected {}, got {:?}",
+                    stringify!($t), popped)),
         }
     }}
 }
