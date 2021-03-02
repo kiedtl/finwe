@@ -20,16 +20,15 @@ pub enum ZfToken {
     Symbol(usize),
     SymbRef(usize),
     Address(usize),
-    ZReturn,
 }
 
 impl ZfToken {
     pub fn type_name(&self) -> String {
         let n = match self {
-            ZfToken::Number(_) => "Number",
-            ZfToken::String(_) => "String",
-            ZfToken::Symbol(_) => "Symbol",
-            _ => todo!(),
+            ZfToken::Number(_) => "number",
+            ZfToken::String(_) => "string",
+            ZfToken::Symbol(_) => "symbol",
+            _ => unreachable!(),
         };
         n.to_owned()
     }
