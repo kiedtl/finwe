@@ -252,7 +252,11 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) {
             _ => env.pile.push(ib[ip].clone()),
         }
 
-        env.rs[crs].1 += 1;
+        // Just double check that a call to a builtin function didn't modify
+        // the return stack...
+        if (env.rs.len()-1) == crs { 
+            env.rs[crs].1 += 1;
+        }
     }
 }
 
