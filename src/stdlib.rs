@@ -268,13 +268,13 @@ pub fn WAIT(env: &mut ZfEnv) -> Result<bool, String> {
 #[allow(non_snake_case)]
 pub fn DBG(env: &mut ZfEnv) -> Result<bool, String> {
     if env.pile.len() > 0 {
-        eprint!("{}", env.pile[env.pile.len()-1].fmt(env));
+        print!("{}", env.pile[env.pile.len()-1].fmt(env));
         if env.pile.len() > 1 {
             for thing in env.pile.iter().rev().skip(1) {
-                eprint!(", {}", thing.fmt(env));
+                print!(", {}", thing.fmt(env));
             }
         }
-        eprintln!();
+        println!();
     }
     Ok(false)
 }
