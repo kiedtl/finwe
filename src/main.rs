@@ -179,7 +179,10 @@ fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
     return Ok((i, toks));
 }
 
-type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<(), String>;
+// The returned bool tells calling code whether the instruction pointer or return
+// stack was modified. If it was not, the calling code will know it's safe to increment
+// the IP
+type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<bool, String>;
 
 #[derive(Clone)]
 pub enum ZfProc {
@@ -224,14 +227,24 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
     loop {
         if env.rs.len() == 0 { break }
 
-        let crs = env.rs.len() - 1;
+        let mut crs = env.rs.len() - 1;
         let (c_ib, ip) = (env.rs[crs].0, env.rs[crs].1);
         let ib;
         if let ZfProc::User(u) = &env.dict[c_ib].1 {
             ib = u;
         } else { unreachable!() }
 
-        if ip >= ib.len() { env.rs.pop(); continue }
+        if ip >= ib.len() {
+            env.rs.pop();
+            if env.rs.len() > 0 {
+                crs = env.rs.len() - 1;
+                env.rs[crs].1 += 1;
+            }
+            continue;
+        }
+
+        // Debugging stuff. :^)
+        //eprintln!("  => {:16} at {} {}", env.dict[c_ib].0, ip, ib[ip].fmt(env));
 
         match &ib[ip] {
             ZfToken::Nop => (),
@@ -239,13 +252,12 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             ZfToken::Symbol(s) => {
                 match &env.dict[*s].clone().1 {
                     ZfProc::Builtin(b) => match (b)(env) {
-                        Ok(()) => (),
+                        Ok(co) => if co { continue },
                         Err(e) => return Err(e),
                     },
                     ZfProc::User(_) => {
-                        env.rs[crs].1 += 1;
                         env.rs.push((*s, 0));
-                        continue;
+                        continue; // don't increment IP below
                     },
                 }
             },
@@ -253,11 +265,8 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             _ => env.pile.push(ib[ip].clone()),
         }
 
-        // Just double check that a call to a builtin function didn't modify
-        // the return stack...
-        if (env.rs.len()-1) == crs { 
-            env.rs[crs].1 += 1;
-        }
+        crs = env.rs.len() - 1;
+        env.rs[crs].1 += 1;
     }
 
     Ok(())
