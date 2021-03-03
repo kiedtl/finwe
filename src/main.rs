@@ -22,6 +22,19 @@ pub enum ZfToken {
     Address(usize),
 }
 
+impl ZfToken {
+    fn fmt(&self, e: &ZfEnv) -> String {
+        match self {
+            ZfToken::Nop        => format!("<nop>"),
+            ZfToken::Number(i)  => format!("{}", i),
+            ZfToken::String(s)  => format!("{:?}", s),
+            ZfToken::Symbol(s)  => format!("<symb {}>", e.dict[*s].0),
+            ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
+            ZfToken::Address(i) => format!("<addr {}>", i),
+        }
+    }
+}
+
 impl Into<bool> for &ZfToken {
     fn into(self) -> bool {
         match self {
