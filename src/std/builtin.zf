@@ -38,14 +38,15 @@
 : =        (  ab -- c   )  cmp not ;
 : <>       (  ab -- c   )  = not ;
 : <        (  ab -- c   )  cmp -1 = ;
-: <=       (  ab -- c   )  < not ;
 : >        (  ab -- c   )  cmp 1 = ;
-: >=       (  ab -- c   )  > not ;
+: <=       (  ab -- c   )  > not ;
+: >=       (  ab -- c   )  < not ;
 : 0=       (   a -- c   )  0 = ;
 : 0<>      (   a -- c   )  0 <> ;
 : 0<       (   a -- c   )  0 < ;
 : 0>       (   a -- c   )  0 > ;
 : 0>=      (   a -- c   )  0 >= ;
+: 0<=      (   a -- c   )  0 <= ;
 : ><       ( nlh -- c   )  2 pick >  rot> >  band ;
 : =><=     ( nlh -- c   )  2 pick >= rot> >= band ;
 
