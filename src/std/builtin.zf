@@ -29,7 +29,7 @@
 : until (q-)
 	[ |begin
 		dup dip
-		swap not ?ret
+		swap not not ?ret
 		@TRUE &|begin ?jump
 	] do
 	drop
@@ -106,8 +106,8 @@
 				[ 10 - $a + ]
 				[ $0 + ]
 			cond
-		swap ?dup ] until
-		[ emit dup 999 <> ] until
+		swap ?dup not ] until
+		[ emit dup 999 = ] until
 	] cond
 ;
 
