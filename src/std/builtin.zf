@@ -98,7 +98,7 @@
 	?dup 0= [
 		$0 emit
 	] [
-		999 swap  (stop indicator)
+		999 swap (stop indicator)
 		[
 			@BASE /mod             (r q)
 			int swap int (q r)
@@ -108,6 +108,7 @@
 			cond
 		swap ?dup not ] until
 		[ emit dup 999 = ] until
+		drop    (drop stop indicator)
 	] cond
 ;
 
