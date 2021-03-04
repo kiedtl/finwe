@@ -25,16 +25,6 @@
 : bi*      (xyqq --     )  [dip] dip do ;
 : bi@      ( xyq --     )  dup bi* ;
 
-\ Loop until TOS == @TRUE (loop while false)
-: until (q-)
-	[ |begin
-		dup dip
-		swap not not ?ret
-		@TRUE &|begin ?jump
-	] do
-	drop
-;
-
 : =        (  ab -- c   )  cmp not ;
 : <>       (  ab -- c   )  = not ;
 : <        (  ab -- c   )  cmp -1 = ;
@@ -50,6 +40,26 @@
 : ><       ( nlh -- c   )  2 pick >  rot> >  band ;
 : =><=     ( nlh -- c   )  2 pick >= rot> >= band ;
 
+: times (nq-)
+	!_q !I
+	[|begin
+		@I 0<= ?ret
+		@_q do
+		@I 1 - !I
+		@TRUE &|begin ?jump
+	] do
+;
+
+\ Loop until TOS == @TRUE (loop while false)
+: until (q-)
+	[ |begin
+		dup dip
+		swap not not ?ret
+		@TRUE &|begin ?jump
+	] do
+	drop
+;
+
 : reset    ( xya --     )  [drop depth 0=] until ;
 
 : 1+       (   a -- c   )  1 + ;
@@ -59,6 +69,7 @@
 
 : /        (  ab -- c   )  /mod swap drop ;
 : mod      (  ab -- d   )  /mod drop ;
+: pow      (  bp -- n   )  1 swap [ over * ] times nip ;
 
 : sqrt (a-c)
 	1
