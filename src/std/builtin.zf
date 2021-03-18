@@ -1,11 +1,11 @@
 1 !TRUE
 0 !FALSE
 
-: cond (fqq-)
+word cond : <aqq->
 	!_a !_b !_f
 	@_f not @_a if
 	@_f @_b if
-;
+;;
 
 : over     ( abc -- bca )  1 pick ;
 : 2drop    (  ab -- b   )  drop drop ;
@@ -76,10 +76,9 @@
 	[ |begin
 		2dup / over - 2 /
 
-		\ TODO: intead of comparing with 0, compare for
-		\ equality with the previous iteration's value.
-		\ This is to prevent infinite loops on inputs
-		\ such as 232.
+		\ TODO: intead of comparing with 0, compare for equality with
+		\ the previous iteration's value. This is to prevent infinite
+		\ loops on inputs such as 232.
 		dup 0= ?ret
 
 		+

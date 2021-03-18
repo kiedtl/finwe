@@ -20,23 +20,6 @@ macro_rules! pop_as {
     }}
 }
 
-#[allow(non_snake_case)]
-pub fn FETCH(env: &mut ZfEnv) -> Result<bool, String> {
-    let var = pop_as!(env, String);
-    if env.vars.contains_key(&var) {
-        env.pile.push(env.vars[&var].clone());
-        Ok(false)
-    } else {
-        Err(format!("unknown variable {}", var))
-    }
-}
-
-#[allow(non_snake_case)]
-pub fn STORE(env: &mut ZfEnv) -> Result<bool, String> {
-    env.vars.insert(pop_as!(env, String), pop!(env));
-    Ok(false)
-}
-
 /// cond --
 #[allow(non_snake_case)]
 pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
@@ -46,21 +29,6 @@ pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
             let l = env.rs.len() - 1;
             env.rs[l].1 += 1;
         }
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-/// address --
-#[allow(non_snake_case)]
-pub fn CJUMP(env: &mut ZfEnv) -> Result<bool, String> {
-    let addr = pop_as!(env, Address);
-    let cond = pop!(env);
-
-    if Into::<bool>::into(&cond) {
-        let tosidx = env.rs.len() - 1;
-        env.rs[tosidx].1 = addr;
         Ok(true)
     } else {
         Ok(false)

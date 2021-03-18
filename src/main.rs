@@ -1,16 +1,22 @@
 // The goal is for this project to be less than 800 loc in length (not including
 // std/builtin.zf and tests).
 
+#[macro_use]
+extern crate pest_derive;
+
 use std::collections::HashMap;
 use std::io::{self, Read};
 use std::rc::Rc;
 
+mod parser;
 mod errors;
 mod stdlib;
 mod random;
 
-const NONSYMB: [char; 18] = [ '{', '}', '(', ')', '[', ']',
-    '"', ' ', '\t', '\n', '\r', '\\', ';', '&', '#', '$', '@', '!' ];
+#[derive(Copy, Clone, Debug)]
+pub enum GuardItem {
+    Any, Number, Str, Quote
+}
 
 #[derive(Clone, Debug)]
 pub enum ZfToken {
@@ -19,7 +25,16 @@ pub enum ZfToken {
     String(String),
     Symbol(usize),
     SymbRef(usize),
-    Address(usize),
+    Fetch(String),
+    Store(String),
+
+    Guard {
+        before: Vec<GuardItem>,
+        after:  Vec<GuardItem>
+    },
+
+    // Only used during parsing.
+    Ident(String),
 }
 
 impl ZfToken {
@@ -30,7 +45,12 @@ impl ZfToken {
             ZfToken::String(s)  => format!("{:?}", s),
             ZfToken::Symbol(s)  => format!("<symb {}>", e.dict[*s].0),
             ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
-            ZfToken::Address(i) => format!("<addr {}>", i),
+            ZfToken::Fetch(s)   => format!("<fetch {}>", s),
+            ZfToken::Store(s)   => format!("<store {}>", s),
+            ZfToken::Ident(s)   => format!("<ident {}>", s),
+
+            ZfToken::Guard { before: _, after: _ }
+                => format!("<guard {:?}>", self),
         }
     }
 }
@@ -44,144 +64,9 @@ impl Into<bool> for &ZfToken {
     }
 }
 
-fn parse(env: &mut ZfEnv, input: &str, in_def: bool)
-    -> Result<(usize, Vec<ZfToken>), String>
-{
-    fn eat<F>(ch: &[char], mut c: usize, until: F)
-        -> (String, usize, bool) where F: Fn(&[char]) -> bool
-    {
-        let mut buf = String::new();
-        let mut early_return = true;
-
-        while c < ch.len() {
-            if until(&ch[c..]) {
-                early_return = false;
-                break;
-            } else {
-                buf += &format!("{}", ch[c]);
-                c += 1;
-            }
-        }
-
-        (buf, c, early_return)
-    }
-
-    let mut labels = HashMap::new();
-    let mut toks = Vec::new();
-    let chs = input.chars()
-        .collect::<Vec<char>>();
-    let mut i = 0;
-
-    while i < chs.len() {
-        match chs[i] {
-            // --- whitespace ---
-            ' ' | '\t' | '\r' | '\n' => { i += 1; continue; },
-
-            // --- comments ---
-            '(' => {
-                let s = eat(&chs, i + 1, |c| c[0] == ')');
-                if s.2 { return Err(format!("unmatched (")); }
-                i = s.1 + 2;
-            },
-            '\\' => {
-                let s = eat(&chs, i + 2, |c| c[0] == '\n');
-                i = s.1 + 1;
-            },
-
-            // --- strings ---
-            '"' => {
-                let s = eat(&chs, i + 1, |c| c[0] == '"');
-                if s.2 { return Err(format!("unmatched \"")); }
-                i = s.1 + 1;
-                toks.push(ZfToken::String(s.0));
-            },
-
-            // --- quotes ---
-            '[' => {
-                let body = parse(env, &input[i + 1..], false)?;
-                let _ref = env.addword(random::phrase(), body.1);
-                toks.push(ZfToken::SymbRef(_ref));
-                i += body.0 + 1;
-            },
-            ']' => { i += 1; return Ok((i, toks)) },
-
-            ':' if !in_def => {
-                i = eat(&chs, i + 1, |c| c[0].is_whitespace()).1;
-                let name = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                i = name.1;
-                let body = parse(env, &input[i + 1..], true)?;
-                env.addword(name.0, body.1);
-                i += body.0 + 1;
-            },
-            ';' if in_def  => { i += 1; return Ok((i, toks)) },
-            ':' if in_def  => return Err(format!("found nested word definitions")),
-            ';' if !in_def => return Err(format!("stray ;")),
-
-            '|' if chs.len() > i && !chs[i + 1].is_whitespace() => {
-                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                i = n.1;
-                toks.push(ZfToken::Nop);
-                labels.insert(format!("|{}", n.0), toks.len() - 1);
-            },
-            '&' if chs.len() > i && !chs[i + 1].is_whitespace() => {
-                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                i = n.1;
-                if labels.contains_key(&n.0) {
-                    toks.push(ZfToken::Address(labels[&n.0]));
-                } else if env.findword(&n.0).is_some() {
-                    toks.push(ZfToken::SymbRef(env.findword(&n.0).unwrap()));
-                } else {
-                    return Err(format!("Unknown label {}", n.0));
-                }
-            },
-
-            // syntactic sugar
-            '$' if chs.len() > i && !chs[i + 1].is_whitespace() => {
-                toks.push(ZfToken::Number(chs[i + 1] as u32 as f64));
-                i += 2;
-            },
-            '\'' => {
-                let s = eat(&chs, i + 1, |c| c[0].is_whitespace());
-                toks.push(ZfToken::String(s.0));
-                i = s.1;
-            },
-
-            '!' if chs.len() > i && !chs[i + 1].is_whitespace() => {
-                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                i = n.1;
-                toks.push(ZfToken::String(n.0));
-                toks.push(ZfToken::Symbol(env.findword("store").unwrap()));
-            },
-            '@' if chs.len() > i && !chs[i + 1].is_whitespace() => {
-                let n = eat(&chs, i + 1, |c| NONSYMB.contains(&c[0]));
-                i = n.1;
-                toks.push(ZfToken::String(n.0));
-                toks.push(ZfToken::Symbol(env.findword("fetch").unwrap()));
-            },
-
-            _ => {
-                let n = eat(&chs, i, |c| NONSYMB.contains(&c[0]));
-
-                i = n.1;
-                match n.0.replace("_", "").parse::<f64>() {
-                    Ok(o) =>  toks.push(ZfToken::Number(o)),
-                    Err(_) => {
-                        match env.findword(&n.0) {
-                            Some(i) => toks.push(ZfToken::Symbol(i)),
-                            None => return Err(format!("unknown word {}", n.0)),
-                        }
-                    },
-                };
-            },
-        }
-    }
-
-    return Ok((i, toks));
-}
-
-// The returned bool tells calling code whether the instruction pointer or return
-// stack was modified. If it was not, the calling code will know it's safe to increment
-// the IP
+// The returned bool tells calling code whether the instruction pointer or
+// return stack was modified. If it was not, the calling code will know
+// it's safe to increment the IP
 type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<bool, String>;
 
 #[derive(Clone)]
@@ -262,6 +147,18 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                 }
             },
             ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
+            ZfToken::Fetch(var) => if env.vars.contains_key(var) {
+                env.pile.push(env.vars[var].clone());
+            } else {
+                return Err(format!("unknown variable {}", var))
+            },
+            ZfToken::Store(var) => {
+                env.vars.insert(var.clone(), match env.pile.pop() {
+                    Some(v) => v,
+                    None => return Err(format!("welp")),
+                });
+            },
+            ZfToken::Guard { before: _b, after: _a } => todo!(),
             _ => env.pile.push(ib[ip].clone()),
         }
 
@@ -281,11 +178,8 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x))))))
     }
 
-    builtin!("fetch",  stdlib::FETCH);
-    builtin!("store",  stdlib::STORE);
     builtin!("if",        stdlib::IF);
     builtin!("?ret",    stdlib::CRET);
-    builtin!("?jump",  stdlib::CJUMP);
     builtin!("depth",  stdlib::DEPTH);
     builtin!("pick",    stdlib::PICK);
     builtin!("roll",    stdlib::ROLL);
@@ -313,23 +207,19 @@ fn main() {
     }
 
     let stdlib_builtin = include_zf!("std/builtin.zf");
-    let stdlib_parsed  = parse(&mut env, stdlib_builtin, false);
-    run(stdlib_parsed.unwrap().1, &mut env).unwrap();
+    let stdlib_parsed  = parser::parse(&mut env, &stdlib_builtin);
+    run(stdlib_parsed.unwrap(), &mut env).unwrap();
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    match parse(&mut env, &buffer, false) {
-        Ok(zf) => {
-            match run(zf.1, &mut env) {
-                Ok(()) => (),
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    errors::stacktrace(&mut env);
-                    std::process::exit(1);
-                },
-            }
-        }
-        Err(e) => eprintln!("error: {}", e),
+    let parsed = parser::parse(&mut env, &buffer);
+    match run(parsed.unwrap(), &mut env) {
+        Ok(()) => (),
+        Err(e) => {
+            eprintln!("error: {}", e);
+            errors::stacktrace(&mut env);
+            std::process::exit(1);
+        },
     }
 }
