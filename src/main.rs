@@ -218,9 +218,12 @@ fn main() {
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    let parsed = parser::parse(&mut env, &buffer);
+    let parsed = match parser::parse(&mut env, &buffer) {
+        Ok(tokens) => tokens,
+        Err(error) => { eprintln!("{}", error); return; },
+    };
 
-    match run(parsed.unwrap(), &mut env) {
+    match run(parsed, &mut env) {
         Ok(()) => (),
         Err(e) => {
             eprintln!("error: {}", e);

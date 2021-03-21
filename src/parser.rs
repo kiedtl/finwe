@@ -5,13 +5,12 @@ use pest::iterators::{Pair, Pairs};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
-struct ZfParser;
+pub struct ZfParser;
 
 pub fn parse(env: &mut ZfEnv, source: &str)
     -> Result<Vec<ZfToken>, Error<Rule>>
 {
     let pairs = ZfParser::parse(Rule::program, source)?;
-    //panic!("pairs={:#?}", pairs);
     parse_pairs(env, pairs)
 }
 
