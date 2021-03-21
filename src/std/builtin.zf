@@ -7,73 +7,59 @@ word cond : <aqq->
 	@_f @_b if
 ;;
 
-: over     ( abc -- bca )  1 pick ;
-: 2drop    (  ab -- b   )  drop drop ;
-: dup      ( abc -- bca )  0 pick ;
-: ?dup     ( abc -- bca )  dup [dup] if ;
-: 2dup     ( abc -- bca )  over over ;
-: swap     ( abc -- bca )  1 roll ;
-: rot      ( abc -- bca )  2 roll ;
-: rot>     ( abc -- cab )  rot rot ;
-: tuck     (  ab -- bab )  swap over ;
-: nip      (  ab -- b   )  swap drop ;
+word over  :  ( abc -- bca )  1 pick ;;
+word 2drop :  (  ab -- b   )  drop drop ;;
+word dup   :  ( abc -- bca )  0 pick ;;
+word ?dup  :  ( abc -- bca )  dup [ dup ] if ;;
+word 2dup  :  ( abc -- bca )  over over ;;
+word swap  :  ( abc -- bca )  1 roll ;;
+word rot   :  ( abc -- bca )  2 roll ;;
+word rot>  :  ( abc -- cab )  rot rot ;;
+word tuck  :  (  ab -- bab )  swap over ;;
+word nip   :  (  ab -- b   )  swap drop ;;
 
-: do       (   q --     )  @TRUE swap if ;
-: dip      (  vq -- v   )  swap !_d do @_d ;
-: sip      (  vq -- v   )  !_s dup @_s swap [do] dip ;
-: bi       ( xqq --     )  [sip] dip do ;
-: bi*      (xyqq --     )  [dip] dip do ;
-: bi@      ( xyq --     )  dup bi* ;
+word do    :  (   q --     )  @TRUE swap if ;;
+word dip   :  (  vq -- v   )  swap push do pop ;;
+word sip   :  (  vq -- v   )  push dup pop swap [ do ] dip ;;
+word bi    :  ( xqq --     )  [ sip ] dip do ;;
+word bi*   :  (xyqq --     )  [ dip ] dip do ;;
+word bi@   :  ( xyq --     )  dup bi* ;;
 
-: =        (  ab -- c   )  cmp not ;
-: <>       (  ab -- c   )  = not ;
-: <        (  ab -- c   )  cmp -1 = ;
-: >        (  ab -- c   )  cmp 1 = ;
-: <=       (  ab -- c   )  > not ;
-: >=       (  ab -- c   )  < not ;
-: 0=       (   a -- c   )  0 = ;
-: 0<>      (   a -- c   )  0 <> ;
-: 0<       (   a -- c   )  0 < ;
-: 0>       (   a -- c   )  0 > ;
-: 0>=      (   a -- c   )  0 >= ;
-: 0<=      (   a -- c   )  0 <= ;
-: ><       ( nlh -- c   )  2 pick >  rot> >  band ;
-: =><=     ( nlh -- c   )  2 pick >= rot> >= band ;
+word =     :  (  ab -- c   )  cmp not ;;
+word <>    :  (  ab -- c   )  = not ;;
+word <     :  (  ab -- c   )  cmp -1 = ;;
+word >     :  (  ab -- c   )  cmp 1 = ;;
+word <=    :  (  ab -- c   )  > not ;;
+word >=    :  (  ab -- c   )  < not ;;
+word 0=    :  (   a -- c   )  0 = ;;
+word 0<>   :  (   a -- c   )  0 <> ;;
+word 0<    :  (   a -- c   )  0 < ;;
+word 0>    :  (   a -- c   )  0 > ;;
+word 0>=   :  (   a -- c   )  0 >= ;;
+word 0<=   :  (   a -- c   )  0 <= ;;
+word ><    :  ( nlh -- c   )  2 pick >  rot> >  band ;;
+word =><=  :  ( nlh -- c   )  2 pick >= rot> >= band ;;
 
-: times (nq-)
-	!_q !I
-	[|begin
-		@I 0<= ?ret
-		@_q do
-		@I 1 - !I
-		@TRUE &|begin ?jump
-	] do
-;
-
-\ Loop until TOS == @TRUE (loop while false)
-: until (q-)
-	[ |begin
-		dup dip
-		swap not not ?ret
-		@TRUE &|begin ?jump
-	] do
+word until : <q-*>
+	[ dup dip swap ?ret again ] do
 	drop
-;
+;;
 
-: reset    ( xya --     )  [drop depth 0=] until ;
+word reset :  ( xya --     )  [ drop depth 0= ] until ;;
 
-: 1+       (   a -- c   )  1 + ;
-: 1-       (   a -- c   )  1 - ;
-: 2+       (   a -- c   )  2 + ;
-: 2-       (   a -- c   )  2 - ;
+word 1+    :  (   a -- c   )  1 + ;;
+word 1-    :  (   a -- c   )  1 - ;;
+word 2+    :  (   a -- c   )  2 + ;;
+word 2-    :  (   a -- c   )  2 - ;;
 
-: /        (  ab -- c   )  /mod swap drop ;
-: mod      (  ab -- d   )  /mod drop ;
-: pow      (  bp -- n   )  1 swap [ over * ] times nip ;
+word /     :  (  ab -- c   )  /mod swap drop ;;
+word mod   :  (  ab -- d   )  /mod drop ;;
+\word pow   :  (  bp -- n   )  1 swap [ over * ] times nip ;;
 
-: sqrt (a-c)
+( TODO )
+word sqrt : <n-n>
 	1
-	[ |begin
+	[
 		2dup / over - 2 /
 
 		\ TODO: intead of comparing with 0, compare for equality with
@@ -82,28 +68,28 @@ word cond : <aqq->
 		dup 0= ?ret
 
 		+
-		@TRUE &|begin ?jump
+		again
 	] do
 	drop nip
-;
+;;
 
-: even?    (   n -- f   )  2 mod 0= ;
-: odd?     (   n -- f   )  even? not ;
-: int      (   f -- n   )  0 bxor ;
-: negate   (  ab -- d   )  -1  * ;
-: abs      (   a -- c   )  dup 0< [negate] if ;
-: square   (  ab -- d   )  dup * ;
-: min      (  am -- c   )  2dup < [nip] [drop] cond ;
-: max      (  aM -- c   )  2dup > [nip] [drop] cond ;
-: clamp    ( amM -- c   )  2 pick swap max swap min swap drop ;
+word even?  : (   n -- f   )  2 mod 0= ;;
+word odd?   : (   n -- f   )  even? not ;;
+word int    : (   f -- n   )  0 bxor ;;
+word negate : (  ab -- d   )  -1  * ;;
+word abs    : (   a -- c   )  dup 0< [ negate ] if ;;
+word square : (  ab -- d   )  dup * ;;
+word min    : (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
+word max    : (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
+word clamp  : ( amM -- c   )  2 pick swap max swap min swap drop ;;
 
-: cr       (     --     )  10 emit ;
+word cr     : (     --     )  10 emit ;;
 
 10 !BASE
-: decimal 10 !BASE ;
-: hex     16 !BASE ;
+word decimal : 10 !BASE ;;
+word hex     : 16 !BASE ;;
 
-: .n ( n -- )
+word .n : <n->
 	dup 0< [ $- emit -1 * ] if
 	?dup 0= [
 		$0 emit
@@ -120,11 +106,11 @@ word cond : <aqq->
 		[ emit dup 999 = ] until
 		drop    (drop stop indicator)
 	] cond
-;
+;;
 
 3735928559 !_RAND
-: rand (range-)
+word rand : <n->
 	@_RAND 11109 * 13849 +
 	524287 band 1 bshr
 	dup !_RAND
-;
+;;

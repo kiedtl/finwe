@@ -20,7 +20,6 @@ macro_rules! pop_as {
     }}
 }
 
-/// cond --
 #[allow(non_snake_case)]
 pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
     if Into::<bool>::into(&pop!(env)) {
@@ -35,27 +34,48 @@ pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
     }
 }
 
-/// cond? quote --
 #[allow(non_snake_case)]
 pub fn IF(env: &mut ZfEnv) -> Result<bool, String> {
     let func = pop_as!(env, Symbol);
 
     if Into::<bool>::into(&pop!(env)) {
-        env.rs.push((func, 0));
+        env.pushrs(func, 0);
         Ok(true)
     } else {
         Ok(false)
     }
 }
 
-/// -- d
+#[allow(non_snake_case)]
+pub fn AGAIN(env: &mut ZfEnv) -> Result<bool, String> {
+    let len = env.rs.len() - 1;
+    env.rs[len].1 = 0;
+    Ok(true)
+}
+
+#[allow(non_snake_case)]
+pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {
+    let len = env.rs.len() - 1;
+    env.rs[len].2.push(pop!(env));
+    Ok(false)
+}
+
+#[allow(non_snake_case)]
+pub fn POP(env: &mut ZfEnv) -> Result<bool, String> {
+    let len = env.rs.len() - 1;
+    env.pile.push(match env.rs[len].2.pop() {
+        Some(v) => v,
+        None => return Err(format!("stack underflow on alternate stack")),
+    });
+    Ok(false)
+}
+
 #[allow(non_snake_case)]
 pub fn DEPTH(env: &mut ZfEnv) -> Result<bool, String> {
     env.pile.push(ZfToken::Number(env.pile.len() as f64));
     Ok(false)
 }
 
-/// a b c i=2 -- a b c b
 #[allow(non_snake_case)]
 pub fn PICK(env: &mut ZfEnv) -> Result<bool, String> {
     let i = pop_as!(env, Number) as usize;
@@ -70,7 +90,6 @@ pub fn PICK(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b c i=1 -- a c b
 #[allow(non_snake_case)]
 pub fn ROLL(env: &mut ZfEnv) -> Result<bool, String> {
     let mut i = pop_as!(env, Number) as usize;
@@ -89,14 +108,12 @@ pub fn ROLL(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a --
 #[allow(non_snake_case)]
 pub fn DROP(env: &mut ZfEnv) -> Result<bool, String> {
     let _ = pop!(env);
     Ok(false)
 }
 
-/// a -- c
 #[allow(non_snake_case)]
 pub fn NOT(env: &mut ZfEnv) -> Result<bool, String> {
     let c = !Into::<bool>::into(&pop!(env));
@@ -104,7 +121,6 @@ pub fn NOT(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn CMP(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
@@ -118,7 +134,6 @@ pub fn CMP(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn PLUS(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
@@ -126,7 +141,6 @@ pub fn PLUS(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn SUB(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
@@ -134,7 +148,6 @@ pub fn SUB(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn MUL(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
@@ -142,7 +155,6 @@ pub fn MUL(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn DMOD(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
@@ -151,7 +163,6 @@ pub fn DMOD(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn bAND(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
@@ -160,7 +171,6 @@ pub fn bAND(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn bOR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
@@ -169,7 +179,6 @@ pub fn bOR(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn bXOR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
@@ -178,7 +187,6 @@ pub fn bXOR(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a -- c
 #[allow(non_snake_case)]
 pub fn bNOT(env: &mut ZfEnv) -> Result<bool, String> {
     let a = pop_as!(env, Number) as usize;
@@ -186,7 +194,6 @@ pub fn bNOT(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn SHL(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
@@ -195,7 +202,6 @@ pub fn SHL(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a b -- c
 #[allow(non_snake_case)]
 pub fn SHR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
@@ -204,7 +210,6 @@ pub fn SHR(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// a --
 #[allow(non_snake_case)]
 pub fn EMIT(env: &mut ZfEnv) -> Result<bool, String> {
     let val = pop_as!(env, Number);
@@ -232,7 +237,6 @@ pub fn WAIT(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// --
 #[allow(non_snake_case)]
 pub fn DBG(env: &mut ZfEnv) -> Result<bool, String> {
     if env.pile.len() > 0 {
@@ -247,7 +251,6 @@ pub fn DBG(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
-/// --
 #[allow(non_snake_case)]
 pub fn DICTDBG(env: &mut ZfEnv) -> Result<bool, String> {
     let word = pop_as!(env, String);

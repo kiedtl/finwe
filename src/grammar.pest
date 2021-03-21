@@ -1,0 +1,37 @@
+program = _{ SOI ~ (word_decl|term)* ~ EOI}
+
+word_decl = {
+        "word" ~ ident ~ ":" ~ term* ~ ";;"
+}
+
+term = _{
+	integer | float | string | character
+	| quote | guard | reference
+	| fetch | store | word
+}
+
+quote = { "[" ~ term* ~ "]" }
+
+fetch = { "@" ~ ident }
+store = { "!" ~ ident }
+reference = { "&" ~ ident }
+
+// TODO: merge integer/float
+// TODO: use '' for char, "" for string
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+float = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
+string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
+character = @{ "$" ~ (!WHITESPACE ~ ANY) }
+
+guard = { "<" ~ guard_set ~ "-" ~ guard_set ~ ">" }
+guard_set  = { guard_item* }
+guard_item = { "a" | "s" | "n" | "q" | "*" }
+
+word  = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
+ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
+
+RESERVED = { "word" | ";;" | ":" | "[" | "]" }
+
+// TODO: Add \-style comments
+COMMENT    = _{ ("(" ~ (!")" ~ ANY)* ~ ")") | ("\\" ~ (!"\n" ~ ANY)*) }
+WHITESPACE = _{ " " | "\t" | "\n" }

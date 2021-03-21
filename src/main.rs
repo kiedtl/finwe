@@ -15,7 +15,8 @@ mod random;
 
 #[derive(Copy, Clone, Debug)]
 pub enum GuardItem {
-    Any, Number, Str, Quote
+    Any, Number, Str, Quote,
+    Unchecked
 }
 
 #[derive(Clone, Debug)]
@@ -80,7 +81,7 @@ pub struct ZfEnv {
     pile: Vec<ZfToken>,
     vars: HashMap<String, ZfToken>,
     dict: Vec<(String, ZfProc)>,
-    rs:   Vec<(usize, usize)>,
+    rs:   Vec<(usize, usize, Vec<ZfToken>)>,
 }
 
 impl ZfEnv {
@@ -102,12 +103,16 @@ impl ZfEnv {
         }
         self.findword(&name).unwrap()
     }
+
+    pub fn pushrs(&mut self, funcid: usize, iptr: usize) {
+        self.rs.push((funcid, iptr, Vec::new()));
+    }
 }
 
 fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
     let main = env.addword("main".to_owned(), code);
 
-    env.rs.push((main, 0));
+    env.pushrs(main, 0);
 
     loop {
         if env.rs.len() == 0 { break }
@@ -128,9 +133,6 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             continue;
         }
 
-        // Debugging stuff. :^)
-        //eprintln!("  => {:16} at {} {}", env.dict[c_ib].0, ip, ib[ip].fmt(env));
-
         match &ib[ip] {
             ZfToken::Nop => (),
 
@@ -141,7 +143,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                         Err(e) => return Err(e),
                     },
                     ZfProc::User(_) => {
-                        env.rs.push((*s, 0));
+                        env.pushrs(*s, 0);
                         continue; // don't increment IP below
                     },
                 }
@@ -158,7 +160,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                     None => return Err(format!("welp")),
                 });
             },
-            ZfToken::Guard { before: _b, after: _a } => todo!(),
+            ZfToken::Guard { before: _b, after: _a } => (), // TODO
             _ => env.pile.push(ib[ip].clone()),
         }
 
@@ -179,6 +181,7 @@ fn main() {
     }
 
     builtin!("if",        stdlib::IF);
+    builtin!("again",  stdlib::AGAIN);
     builtin!("?ret",    stdlib::CRET);
     builtin!("depth",  stdlib::DEPTH);
     builtin!("pick",    stdlib::PICK);
@@ -198,8 +201,10 @@ fn main() {
     builtin!("bshr",     stdlib::SHR);
     builtin!("emit",    stdlib::EMIT);
     builtin!("wait",    stdlib::WAIT);
-    builtin!(".S",       stdlib::DBG);
-    builtin!(".D",   stdlib::DICTDBG);
+    builtin!("push",    stdlib::PUSH);
+    builtin!("pop",      stdlib::POP);
+    builtin!("dbg",      stdlib::DBG);
+    builtin!("ddbg", stdlib::DICTDBG);
 
     macro_rules! include_zf {
         ($path:expr) =>
@@ -214,6 +219,7 @@ fn main() {
     io::stdin().read_to_string(&mut buffer).unwrap();
 
     let parsed = parser::parse(&mut env, &buffer);
+
     match run(parsed.unwrap(), &mut env) {
         Ok(()) => (),
         Err(e) => {
