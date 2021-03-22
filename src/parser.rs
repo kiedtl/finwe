@@ -39,6 +39,11 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 name = s;
             } else { unreachable!() }
 
+            // Add the name with an empty body.
+            // This ensures that if the word is recursive (and the word is referenced
+            // by itself) no word-not-found errors will be thrown.
+            env.addword(name.clone(), vec![]);
+
             let body = items
                 .skip(0)
                 .map(|p| parse_term(env, p))
