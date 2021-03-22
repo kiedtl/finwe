@@ -261,6 +261,10 @@ fn main() {
     builtin!("dbg",      stdlib::DBG);
     builtin!("ddbg", stdlib::DICTDBG);
 
+    builtin!("ceil",   stdlib::CEIL);
+    builtin!("floor", stdlib::FLOOR);
+    builtin!("atan",   stdlib::ATAN);
+
     macro_rules! include_zf {
         ($path:expr) =>
             (std::str::from_utf8(include_bytes!($path)).unwrap())

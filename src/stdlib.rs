@@ -240,3 +240,24 @@ pub fn DICTDBG(env: &mut ZfEnv) -> Result<bool, String> {
     }
     Ok(false)
 }
+
+
+// --- floating-point stuff ---
+
+pub fn CEIL(env: &mut ZfEnv) -> Result<bool, String> {
+    let r = pop_as!(env, Number).ceil();
+    env.pile.push(ZfToken::Number(r));
+    Ok(false)
+}
+
+pub fn FLOOR(env: &mut ZfEnv) -> Result<bool, String> {
+    let r = pop_as!(env, Number).floor();
+    env.pile.push(ZfToken::Number(r));
+    Ok(false)
+}
+
+pub fn ATAN(env: &mut ZfEnv) -> Result<bool, String> {
+    let r = pop_as!(env, Number).atan();
+    env.pile.push(ZfToken::Number(r));
+    Ok(false)
+}
