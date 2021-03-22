@@ -54,6 +54,7 @@ word 2-    :  (   a -- c   )  2 - ;;
 
 word /     :  (  ab -- c   )  /mod swap drop ;;
 word mod   :  (  ab -- d   )  /mod drop ;;
+word fact  :  (   n -- n   )  dup 1 <= ?ret dup 1- fact * ;;
 \word pow   :  (  bp -- n   )  1 swap [ over * ] times nip ;;
 
 ( TODO )
