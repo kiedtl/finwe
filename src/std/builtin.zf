@@ -74,6 +74,26 @@ word sqrt : <n-n>
 	drop nip
 ;;
 
+\ this uses the machin formula
+\ pi = (4 * arctangent(1/5) - arctangent(1/239)) * 4
+word pi     : (     -- n   )  4 1 5 / atan * 1 239 / atan - 4 * ;;
+
+\
+\         inf
+\         ___  1
+\ e = 1 + \   ───
+\         /__ +n!
+\         n=0
+\
+18 !E_ITERS
+word e_iter : <nn-nn> ( iters accm -- )
+	[ swap 1- swap over fact 1 swap / + over 1 = ] until
+;;
+word e      : (     -- n   ) @E_ITERS 0 e_iter nip 1 + ;;
+
+\pi !PI
+\e  !E
+
 word even?  : (   n -- f   )  2 mod 0= ;;
 word odd?   : (   n -- f   )  even? not ;;
 word int    : (   f -- n   )  0 bxor ;;
