@@ -148,7 +148,8 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                         "s" => GuardItem::Str,
                         "q" => GuardItem::Quote,
                         "*" => GuardItem::Unchecked,
-                        _   => panic!("welp"),
+                        _   => panic!("'{}' is not a valid guard item",
+                            minion.as_str()),
                     });
                 }
                 guardsets.push(guardset);

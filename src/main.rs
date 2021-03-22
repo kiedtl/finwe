@@ -212,7 +212,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             ZfToken::Store(var) => {
                 env.vars.insert(var.clone(), match env.pile.pop() {
                     Some(v) => v,
-                    None => return Err(format!("welp")),
+                    None => return Err(format!("stack underflow")),
                 });
             },
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
