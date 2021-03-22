@@ -39,23 +39,21 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 name = s;
             } else { unreachable!() }
 
-            let mut body = vec![];
-            for _item in items.skip(0) {
-                if let Some(item) = parse_term(env, _item) {
-                    body.push(item);
-                }
-            }
-
+            let body = items
+                .skip(0)
+                .map(|p| parse_term(env, p))
+                .filter(|i| i.is_some())
+                .map(|i| i.unwrap())
+                .collect::<Vec<_>>();
             env.addword(name, body);
             None
         }
         Rule::quote => {
-            let mut quote = vec![];
-            for _item in pair.into_inner() {
-                if let Some(item) = parse_term(env, _item) {
-                    quote.push(item);
-                }
-            }
+            let quote = pair .into_inner()
+                .map(|p| parse_term(env, p))
+                .filter(|i| i.is_some())
+                .map(|i| i.unwrap())
+                .collect::<Vec<_>>();
             let _ref = env.addword(random::phrase(), quote);
             Some(ZfToken::SymbRef(_ref))
         }
