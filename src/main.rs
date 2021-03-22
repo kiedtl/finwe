@@ -51,7 +51,7 @@ impl ZfToken {
             ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
             ZfToken::Fetch(s)   => format!("<fetch {}>", s),
             ZfToken::Store(s)   => format!("<store {}>", s),
-            ZfToken::Table(t)   => format!("{{:?}}", t),
+            ZfToken::Table(t)   => format!("{:?}", t),
             ZfToken::Ident(i)   => format!("<ident {}>", i),
 
             ZfToken::Guard { before: _, after: _ }
