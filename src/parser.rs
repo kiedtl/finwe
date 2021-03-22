@@ -49,7 +49,7 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             None
         }
         Rule::quote => {
-            let quote = pair .into_inner()
+            let quote = pair.into_inner()
                 .map(|p| parse_term(env, p))
                 .filter(|i| i.is_some())
                 .map(|i| i.unwrap())
