@@ -61,12 +61,18 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             // FIXME: Rust's parse::<f64> doesn't support the following formats:
             //  - 0__.0__e+10__, 0x2351, 0o261, 0b100111, 100_000_000
             // At some point, a custom float-parsing function should be made.
-            let dstr = pair.as_str();
+            //
+            // XXX: we trim whitespace because the grammar requires whitespace
+            // to be at the end of the literal.
+            let dstr = pair.as_str().trim_end();
             let (sign, dstr) = match &dstr[..1] {
                 "_" => (-1.0, &dstr[1..]),
                 _ => (1.0, &dstr[..]),
             };
-            let mut flt: f64 = dstr.parse().unwrap();
+            let mut flt: f64 = match dstr.parse() {
+                Ok(fl) => fl,
+                Err(_) => panic!("`{}' is not a valid float", dstr),
+            };
             if flt != 0.0 {
                 // Avoid negative zeroes; only multiply sign by nonzeroes.
                 flt *= sign;
@@ -104,6 +110,29 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
         Rule::fetch => Some(ZfToken::Fetch(pair.as_str()[1..].to_owned())),
         Rule::store => Some(ZfToken::Store(pair.as_str()[1..].to_owned())),
         Rule::ident => Some(ZfToken::Ident(pair.as_str().to_owned())),
+        Rule::table => {
+            let mut res = HashMap::new();
+            let mut ctr = 0.;
+
+            pair.into_inner().for_each(|item| {
+                match item.as_rule() {
+                    Rule::table_val => {
+                        let val = parse_term(env, item.into_inner().next().unwrap());
+                        res.insert(ZfToken::Number(ctr), val.unwrap()); 
+                        ctr += 1.;
+                    },
+                    Rule::table_keyval => {
+                        let mut items = item.into_inner();
+                        let key = parse_term(env, items.nth(0).unwrap());
+                        let val = parse_term(env, items.nth(1).unwrap());
+                        res.insert(key.unwrap(), val.unwrap());
+                    },
+                    _ => unreachable!(),
+                }
+            });
+
+            Some(ZfToken::Table(res))
+        },
         Rule::guard => {
             let mut inner = pair.into_inner();
             assert!(inner.clone().count() == 2);
@@ -140,15 +169,15 @@ mod tests {
 
     #[test]
     fn test_float_literal() {
-        parses_to! { parser: ZfParser, input: "123", rule: Rule::float,
-            tokens: [ float(0, 3) ] };
-        parses_to! { parser: ZfParser, input: "0.", rule: Rule::float,
-            tokens: [ float(0, 2) ] };
-        parses_to! { parser: ZfParser, input: "1e10", rule: Rule::float,
+        parses_to! { parser: ZfParser, input: "123  ", rule: Rule::program,
+            tokens: [ float(0, 5) ] }; // XXX: end pos includes ws
+        parses_to! { parser: ZfParser, input: "0.\n", rule: Rule::program,
+            tokens: [ float(0, 3) ] }; // XXX: end pos includes ws
+        parses_to! { parser: ZfParser, input: "1e10 ", rule: Rule::program,
+            tokens: [ float(0, 5) ] }; // XXX: end pos includes ws
+        parses_to! { parser: ZfParser, input: "0.e0", rule: Rule::program,
             tokens: [ float(0, 4) ] };
-        parses_to! { parser: ZfParser, input: "0.e0", rule: Rule::float,
-            tokens: [ float(0, 4) ] };
-        parses_to! { parser: ZfParser, input: "0_0.0e+10", rule: Rule::float,
+        parses_to! { parser: ZfParser, input: "0_0.0e+10", rule: Rule::program,
             tokens: [ float(0, 9) ] };
     }
 

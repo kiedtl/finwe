@@ -15,7 +15,7 @@ mod errors;
 mod stdlib;
 mod random;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GuardItem {
     Any, Number, Str, Quote,
     Unchecked
@@ -30,6 +30,7 @@ pub enum ZfToken {
     SymbRef(usize),
     Fetch(String),
     Store(String),
+    Table(HashMap<ZfToken, ZfToken>),
 
     Guard {
         before: Vec<GuardItem>,
@@ -50,10 +51,62 @@ impl ZfToken {
             ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
             ZfToken::Fetch(s)   => format!("<fetch {}>", s),
             ZfToken::Store(s)   => format!("<store {}>", s),
-            ZfToken::Ident(s)   => format!("<ident {}>", s),
+            ZfToken::Table(t)   => format!("{{:?}}", t),
+            ZfToken::Ident(i)   => format!("<ident {}>", i),
 
             ZfToken::Guard { before: _, after: _ }
                 => format!("<guard {:?}>", self),
+        }
+    }
+}
+
+impl Eq for ZfToken {}
+
+impl PartialEq for ZfToken {
+    fn eq(&self, rhs: &Self) -> bool {
+        use ZfToken::*;
+
+        match (self, rhs) {
+            (Number(l),   Number(r)) => l.to_bits() == r.to_bits(),
+            (String(l),   String(r)) => l == r,
+            (Symbol(l),   Symbol(r)) => l == r,
+            (SymbRef(l), SymbRef(r)) => l == r,
+            (Fetch(l),     Fetch(r)) => l == r,
+            (Store(l),     Store(r)) => l == r,
+            (Table(l),     Table(r)) => {
+                if l.len() != r.len() { return false; }
+                for (k, v) in l {
+                    if !r.contains_key(k) || &r[k] != v { return false; }
+                }
+                for (k, v) in r {
+                    if !l.contains_key(k) || &r[k] != v { return false; }
+                }
+
+                true
+            },
+            (Ident(l),     Ident(r)) => l == r,
+            (Guard{before: lb, after: la},
+                Guard{before: rb, after: ra}) => lb == rb && la == ra,
+            _ => false,
+        }
+    }
+}
+
+impl std::hash::Hash for ZfToken {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            ZfToken::Number(i) => i.to_bits().hash(state),
+            ZfToken::String(s) => s.hash(state),
+            ZfToken::SymbRef(s) => s.hash(state),
+            ZfToken::Table(t) => for (k, v) in t {
+                k.hash(state);
+                v.hash(state);
+            },
+
+            // This method will only be called when using tables in Zf code.
+            // Fetch/Store/Guard/Ident/Nop cannot be put into a table, so this
+            // path should never be chosen.
+            _ => unreachable!(),
         }
     }
 }

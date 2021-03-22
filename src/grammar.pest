@@ -4,8 +4,9 @@ word_decl = {
         "word" ~ ident ~ ":" ~ term* ~ ";;"
 }
 
+value = _{ float|string|character|table|quote|reference }
 term = _{
-	  float | string | character
+	  float | string | character | table
 	| quote | guard  | reference
 	| fetch | store  | word
 }
@@ -20,15 +21,19 @@ reference = { "&" ~ ident }
 int   = _{ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
 exp   = _{ ^"e" ~ ("+" | "-")? ~ int }
 float = @{
-	("-"? ~ int ~ "." ~ int? ~ exp? |
-	"-"? ~ int ~ exp? |
-	"-"? ~ int)
-	~ forced_ws
+	( "-"? ~ int ~ "." ~ int? ~ exp? |
+	  "-"? ~ int ~ exp? |
+	  "-"? ~ int
+	) ~ forced_ws
 }
 
 // TODO: use '' for char, "" for string
 string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
 character = @{ "$" ~ (!WHITESPACE ~ ANY) }
+
+table = { "{" ~  (table_val|table_keyval)* ~ "}" }
+table_keyval = { value ~ ":" ~ value }
+table_val = { value }
 
 guard = { "<" ~ guard_set ~ "-" ~ guard_set ~ ">" }
 guard_set  = { guard_item* }
@@ -37,9 +42,8 @@ guard_item = { "a" | "s" | "n" | "q" | "*" }
 word  = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 
-forced_ws= { WHITESPACE+ | EOI }
-RESERVED = { "word" | ";;" | ":" | "[" | "]" }
+forced_ws = _{ WHITESPACE+ | EOI }
+RESERVED  = _{ "word" | ";;" | ":" | "[" | "]" | "{" | "}" }
 
-// TODO: Add \-style comments
 COMMENT    = _{ ("(" ~ (!")" ~ ANY)* ~ ")") | ("\\" ~ (!"\n" ~ ANY)*) }
 WHITESPACE = _{ " " | "\t" | "\n" }
