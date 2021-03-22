@@ -235,31 +235,32 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new($x))))))
     }
 
-    builtin!("if",        stdlib::IF);
-    builtin!("again",  stdlib::AGAIN);
-    builtin!("?ret",    stdlib::CRET);
-    builtin!("depth",  stdlib::DEPTH);
-    builtin!("pick",    stdlib::PICK);
-    builtin!("roll",    stdlib::ROLL);
-    builtin!("drop",    stdlib::DROP);
-    builtin!("not",      stdlib::NOT);
-    builtin!("cmp",      stdlib::CMP);
-    builtin!("+",       stdlib::PLUS);
-    builtin!("-",        stdlib::SUB);
-    builtin!("*",        stdlib::MUL);
-    builtin!("/mod",    stdlib::DMOD);
-    builtin!("band",    stdlib::bAND);
-    builtin!("bor",      stdlib::bOR);
-    builtin!("bxor",    stdlib::bXOR);
-    builtin!("bnot",    stdlib::bNOT);
-    builtin!("bshl",     stdlib::SHL);
-    builtin!("bshr",     stdlib::SHR);
-    builtin!("emit",    stdlib::EMIT);
-    builtin!("wait",    stdlib::WAIT);
-    builtin!("push",    stdlib::PUSH);
-    builtin!("pop",      stdlib::POP);
-    builtin!("dbg",      stdlib::DBG);
-    builtin!("ddbg", stdlib::DICTDBG);
+    builtin!("if",           stdlib::IF);
+    builtin!("again",     stdlib::AGAIN);
+    builtin!("?ret",       stdlib::CRET);
+    builtin!("depth",     stdlib::DEPTH);
+    builtin!("arrange", stdlib::ARRANGE);
+    builtin!("pick",       stdlib::PICK);
+    builtin!("roll",       stdlib::ROLL);
+    builtin!("drop",       stdlib::DROP);
+    builtin!("not",         stdlib::NOT);
+    builtin!("cmp",         stdlib::CMP);
+    builtin!("+",          stdlib::PLUS);
+    builtin!("-",           stdlib::SUB);
+    builtin!("*",           stdlib::MUL);
+    builtin!("/mod",       stdlib::DMOD);
+    builtin!("band",       stdlib::bAND);
+    builtin!("bor",         stdlib::bOR);
+    builtin!("bxor",       stdlib::bXOR);
+    builtin!("bnot",       stdlib::bNOT);
+    builtin!("bshl",        stdlib::SHL);
+    builtin!("bshr",        stdlib::SHR);
+    builtin!("emit",       stdlib::EMIT);
+    builtin!("wait",       stdlib::WAIT);
+    builtin!("push",       stdlib::PUSH);
+    builtin!("pop",         stdlib::POP);
+    builtin!("dbg",         stdlib::DBG);
+    builtin!("ddbg",    stdlib::DICTDBG);
 
     builtin!("ceil",   stdlib::CEIL);
     builtin!("floor", stdlib::FLOOR);

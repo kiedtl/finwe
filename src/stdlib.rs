@@ -72,6 +72,21 @@ pub fn DEPTH(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
+pub fn ARRANGE(env: &mut ZfEnv) -> Result<bool, String> {
+    let mut cells = HashMap::new();
+    let (b, a) = (pop_as!(env, String), pop_as!(env, String));
+
+    for ch in a.chars() { cells.insert(ch, pop!(env)); }
+    for ch in b.chars() {
+        if !cells.contains_key(&ch) {
+            return Err(format!("unknown identifier '{}'", ch));
+        }
+        env.pile.push(cells[&ch].clone());
+    }
+
+    Ok(false)
+}
+
 pub fn PICK(env: &mut ZfEnv) -> Result<bool, String> {
     let i = pop_as!(env, Number) as usize;
 
