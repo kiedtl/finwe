@@ -3,6 +3,8 @@
 
 #[macro_use]
 extern crate pest_derive;
+#[macro_use]
+extern crate pest;
 
 use std::collections::HashMap;
 use std::io::{self, Read};

@@ -59,7 +59,10 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             let _ref = env.addword(random::phrase(), quote);
             Some(ZfToken::SymbRef(_ref))
         }
-        Rule::integer | Rule::float => {
+        Rule::float => {
+            // FIXME: Rust's parse::<f64> doesn't support the following formats:
+            //  - 0__.0__e+10__, 0x2351, 0o261, 0b100111, 100_000_000
+            // At some point, a custom float-parsing function should be made.
             let dstr = pair.as_str();
             let (sign, dstr) = match &dstr[..1] {
                 "_" => (-1.0, &dstr[1..]),
@@ -72,6 +75,7 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             }
             Some(ZfToken::Number(flt))
         }
+        // TODO: escape sequences: \r \n \a \b \f \t \v \0 \x00 \uXXXX &c
         Rule::string => {
             let str = &pair.as_str();
             // Strip leading and ending quotes.
@@ -129,5 +133,38 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             })
         }
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_float_literal() {
+        parses_to! { parser: ZfParser, input: "123", rule: Rule::float,
+            tokens: [ float(0, 3) ] };
+        parses_to! { parser: ZfParser, input: "0.", rule: Rule::float,
+            tokens: [ float(0, 2) ] };
+        parses_to! { parser: ZfParser, input: "1e10", rule: Rule::float,
+            tokens: [ float(0, 4) ] };
+        parses_to! { parser: ZfParser, input: "0.e0", rule: Rule::float,
+            tokens: [ float(0, 4) ] };
+        parses_to! { parser: ZfParser, input: "0_0.0e+10", rule: Rule::float,
+            tokens: [ float(0, 9) ] };
+    }
+
+    #[test]
+    fn test_word() {
+        parses_to! { parser: ZfParser, input: "drop", rule: Rule::program,
+            tokens: [word(0, 4)] };
+        parses_to! { parser: ZfParser, input: "2dup", rule: Rule::program,
+            tokens: [word(0, 4)] };
+        parses_to! { parser: ZfParser, input: "+", rule: Rule::program,
+            tokens: [word(0, 1)] };
+        parses_to! { parser: ZfParser, input: "1+", rule: Rule::program,
+            tokens: [word(0, 2)] };
+        parses_to! { parser: ZfParser, input: "test[", rule: Rule::program,
+            tokens: [word(0, 5)] };
     }
 }
