@@ -229,51 +229,51 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
 fn main() {
     let mut env = ZfEnv::new();
 
-    macro_rules! builtin {
-        ($s:expr, $x:path) =>
+    macro_rules! keyword {
+        ($s:expr, $x:ident) =>
             (env.dict.push(($s.to_string(),
-                ZfProc::Builtin(Rc::new(Box::new($x))))))
+                ZfProc::Builtin(Rc::new(Box::new(stdlib::$x))))))
     }
 
-    builtin!("if",           stdlib::IF);
-    builtin!("again",     stdlib::AGAIN);
-    builtin!("?ret",       stdlib::CRET);
-    builtin!("depth",     stdlib::DEPTH);
-    builtin!("arrange", stdlib::ARRANGE);
-    builtin!("pick",       stdlib::PICK);
-    builtin!("roll",       stdlib::ROLL);
-    builtin!("drop",       stdlib::DROP);
-    builtin!("not",         stdlib::NOT);
-    builtin!("cmp",         stdlib::CMP);
-    builtin!("+",          stdlib::PLUS);
-    builtin!("-",           stdlib::SUB);
-    builtin!("*",           stdlib::MUL);
-    builtin!("/mod",       stdlib::DMOD);
-    builtin!("band",       stdlib::bAND);
-    builtin!("bor",         stdlib::bOR);
-    builtin!("bxor",       stdlib::bXOR);
-    builtin!("bnot",       stdlib::bNOT);
-    builtin!("bshl",        stdlib::SHL);
-    builtin!("bshr",        stdlib::SHR);
-    builtin!("emit",       stdlib::EMIT);
-    builtin!("wait",       stdlib::WAIT);
-    builtin!("push",       stdlib::PUSH);
-    builtin!("pop",         stdlib::POP);
-    builtin!("dbg",         stdlib::DBG);
-    builtin!("ddbg",    stdlib::DICTDBG);
-
-    builtin!("ceil",   stdlib::CEIL);
-    builtin!("floor", stdlib::FLOOR);
-    builtin!("atan",   stdlib::ATAN);
+    keyword!("if",           IF);
+    keyword!("again",     AGAIN);
+    keyword!("?ret",       CRET);
+    keyword!("depth",     DEPTH);
+    keyword!("arrange", ARRANGE);
+    keyword!("pick",       PICK);
+    keyword!("roll",       ROLL);
+    keyword!("drop",       DROP);
+    keyword!("not",         NOT);
+    keyword!("cmp",         CMP);
+    keyword!("+",          PLUS);
+    keyword!("-",           SUB);
+    keyword!("*",           MUL);
+    keyword!("/mod",       DMOD);
+    keyword!("band",       bAND);
+    keyword!("bor",         bOR);
+    keyword!("bxor",       bXOR);
+    keyword!("bnot",       bNOT);
+    keyword!("bshl",        SHL);
+    keyword!("bshr",        SHR);
+    keyword!("emit",       EMIT);
+    keyword!("wait",       WAIT);
+    keyword!("push",       PUSH);
+    keyword!("pop",         POP);
+    keyword!("dbg",         DBG);
+    keyword!("ddbg",    DICTDBG);
+    keyword!("ceil",       CEIL);
+    keyword!("floor",     FLOOR);
+    keyword!("atan",       ATAN);
 
     macro_rules! include_zf {
-        ($path:expr) =>
-            (std::str::from_utf8(include_bytes!($path)).unwrap())
+        ($path:expr) => {
+            run(parser::parse(&mut env,
+                    std::str::from_utf8(include_bytes!($path)).unwrap()).unwrap(),
+                &mut env).unwrap()
+        }
     }
 
-    let stdlib_builtin = include_zf!("std/builtin.zf");
-    let stdlib_parsed  = parser::parse(&mut env, &stdlib_builtin);
-    run(stdlib_parsed.unwrap(), &mut env).unwrap();
+    include_zf!("std/builtin.zf");
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
