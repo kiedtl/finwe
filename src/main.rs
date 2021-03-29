@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 use std::rc::Rc;
 
+mod floats;
 mod parser;
 mod errors;
 mod stdlib;
