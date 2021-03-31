@@ -31,8 +31,8 @@ float = @{
 string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
 character = @{ "$" ~ (!WHITESPACE ~ ANY) }
 
-table = { "{" ~  (table_val|table_keyval)* ~ "}" }
-table_keyval = { value ~ ":" ~ value }
+table = { ("{{" ~ table_keyval* ~ "}}")|("{" ~ table_val* ~ "}")}
+table_keyval = { value ~ value }
 table_val = { value }
 
 guard = { "<" ~ guard_set ~ "-" ~ guard_set ~ ">" }
@@ -45,5 +45,5 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{ "word" | ";;" | ":" | "[" | "]" | "{" | "}" }
 
-COMMENT    = _{ ("(" ~ (!")" ~ ANY)* ~ ")") | ("\\" ~ (!"\n" ~ ANY)*) }
+COMMENT    = _{ ("(" ~ (COMMENT|(!")" ~ ANY))* ~ ")") | ("\\" ~ (!"\n" ~ ANY)*) }
 WHITESPACE = _{ " " | "\t" | "\n" }
