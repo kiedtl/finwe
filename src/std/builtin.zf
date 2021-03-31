@@ -40,22 +40,56 @@ word 0<=   :  (   a -- c   )  0 <= ;;
 word ><    :  ( nlh -- c   )  2 pick >  rot> >  band ;;
 word =><=  :  ( nlh -- c   )  2 pick >= rot> >= band ;;
 
-word until : <q-*>
-	[ dup dip swap ?ret again ] do
-	drop
-;;
-
-word reset :  ( xya --     )  [ drop depth 0= ] until ;;
-
 word 1+    :  (   a -- c   )  1 + ;;
 word 1-    :  (   a -- c   )  1 - ;;
 word 2+    :  (   a -- c   )  2 + ;;
 word 2-    :  (   a -- c   )  2 - ;;
 
-word /     :  (  ab -- c   )  /mod swap drop ;;
-word mod   :  (  ab -- d   )  /mod drop ;;
-word fact  :  (   n -- n   )  dup 1 <= ?ret dup 1- fact * ;;
-\word pow   :  (  bp -- n   )  1 swap [ over * ] times nip ;;
+word until : <q-*>
+	[ dup dip swap ?ret again ] do
+	drop
+;;
+word times : <nq-*>
+	swap
+	[ dup 0= ?ret
+		1- push
+		dup push do
+		pop pop
+		again
+	] do
+	2drop
+;;
+
+word /      :  (  ab -- c   )  /mod swap drop ;;
+word mod    :  (  ab -- d   )  /mod drop ;;
+word fact   :  (   n -- n   )  dup 1 <= ?ret dup 1- fact * ;;
+word even?  :  (   n -- f   )  2 mod 0= ;;
+word odd?   :  (   n -- f   )  even? not ;;
+word int    :  (   f -- n   )  0 bxor ;;
+word negate :  (  ab -- d   )  -1  * ;;
+word abs    :  (   a -- c   )  dup 0< [ negate ] if ;;
+word square :  (  ab -- d   )  dup * ;;
+word min    :  (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
+word max    :  (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
+word clamp  :  ( amM -- c   )  2 pick swap max swap min swap drop ;;
+word gcd    :  (  ab -- n   )  [ tuck mod dup 0= ] until drop ;;
+
+word reset  :  ( xya --     )  [ drop depth 0= ] until ;;
+
+(               ⎛           ⎞
+                ⎜    |a|    ⎟
+   lcm(a, b) =  ⎜ ───────── ⎟ × |b|
+                ⎜ gcd(a, b) ⎟
+                ⎝           ⎠
+)
+word lcm : <nn-> ( ab -- n )
+	2dup           (abab)
+	gcd            (abg)
+	rot abs swap   (bag)
+	/ swap abs *
+;;
+
+word pow   :  (  bp -- n   )  1 swap [ over * ] times nip ;;
 
 ( TODO )
 word sqrt : <n-n>
@@ -93,16 +127,6 @@ word e      : (     -- n   ) @E_ITERS 0 e_iter nip 1 + ;;
 
 \pi !PI
 \e  !E
-
-word even?  : (   n -- f   )  2 mod 0= ;;
-word odd?   : (   n -- f   )  even? not ;;
-word int    : (   f -- n   )  0 bxor ;;
-word negate : (  ab -- d   )  -1  * ;;
-word abs    : (   a -- c   )  dup 0< [ negate ] if ;;
-word square : (  ab -- d   )  dup * ;;
-word min    : (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
-word max    : (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
-word clamp  : ( amM -- c   )  2 pick swap max swap min swap drop ;;
 
 word cr     : (     --     )  10 emit ;;
 
