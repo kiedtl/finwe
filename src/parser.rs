@@ -174,6 +174,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_comments() {
+        parses_to! { parser: ZfParser, input: "(abcd)", rule: Rule::program, tokens: [] };
+        parses_to! { parser: ZfParser, input: "( ab )", rule: Rule::program, tokens: [] };
+        parses_to! { parser: ZfParser, input: "((ab))", rule: Rule::program, tokens: [] };
+        parses_to! { parser: ZfParser, input: "([12])", rule: Rule::program, tokens: [] };
+        parses_to! { parser: ZfParser, input: "(word)", rule: Rule::program, tokens: [] };
+        parses_to! { parser: ZfParser, input: "\\  \n", rule: Rule::program, tokens: [] };
+    }
+
+    #[test]
     fn test_float_literal() {
         parses_to! { parser: ZfParser, input: "123  ", rule: Rule::program,
             tokens: [ float(0, 5) ] }; // XXX: end pos includes ws
@@ -185,6 +195,21 @@ mod tests {
             tokens: [ float(0, 4) ] };
         parses_to! { parser: ZfParser, input: "0_0.0e+10", rule: Rule::program,
             tokens: [ float(0, 9) ] };
+    }
+
+    #[test]
+    fn test_table() {
+        parses_to! { parser: ZfParser, input: "{ 1 2 3 }", rule: Rule::program,
+            tokens: [ table(0, 9, [
+                table_val(2, 4, [float(2, 4)]),
+                table_val(4, 6, [float(4, 6)]),
+                table_val(6, 8, [float(6, 8)])
+            ]) ] };
+        parses_to! { parser: ZfParser, input: "{{ 1 2  3 5 }}", rule: Rule::program,
+            tokens: [ table(0, 14, [
+                table_keyval(3,  8, [float(3,  5), float( 5,  8)]),
+                table_keyval(8, 12, [float(8, 10), float(10, 12)])
+            ]) ] };
     }
 
     #[test]
