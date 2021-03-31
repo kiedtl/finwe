@@ -1,12 +1,6 @@
 1 !TRUE
 0 !FALSE
 
-word cond : <aqq->
-	!_a !_b !_f
-	@_f not @_a if
-	@_f @_b if
-;;
-
 word over  :  ( abc -- bca )  1 pick ;;
 word 2drop :  (  ab -- b   )  drop drop ;;
 word dup   :  ( abc -- bca )  0 pick ;;
@@ -17,6 +11,14 @@ word rot   :  ( abc -- bca )  2 roll ;;
 word rot>  :  ( abc -- cab )  rot rot ;;
 word tuck  :  (  ab -- bab )  swap over ;;
 word nip   :  (  ab -- b   )  swap drop ;;
+
+word cond : <aqq-> ( f qT qF -- * )
+	push over push   (f qT)  ((qF f))
+	if               ()
+	pop pop          (f qF)  (())
+	swap not swap    (x qF)
+	if
+;;
 
 word do    :  (   q --     )  @TRUE swap if ;;
 word dip   :  (  vq -- v   )  swap push do pop ;;
@@ -37,8 +39,8 @@ word 0<    :  (   a -- c   )  0 < ;;
 word 0>    :  (   a -- c   )  0 > ;;
 word 0>=   :  (   a -- c   )  0 >= ;;
 word 0<=   :  (   a -- c   )  0 <= ;;
-word ><    :  ( nlh -- c   )  2 pick >  rot> >  band ;;
-word =><=  :  ( nlh -- c   )  2 pick >= rot> >= band ;;
+word ><    :  ( nlh -- c   )  2 pick >  rot> >  and ;;
+word =><=  :  ( nlh -- c   )  2 pick >= rot> >= and ;;
 
 word 1+    :  (   a -- c   )  1 + ;;
 word 1-    :  (   a -- c   )  1 - ;;
@@ -156,6 +158,6 @@ word .n : <n->
 3735928559 !_RAND
 word rand : <n->
 	@_RAND 11109 * 13849 +
-	524287 band 1 bshr
+	524287 and 1 bshr
 	dup !_RAND
 ;;

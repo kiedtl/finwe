@@ -251,7 +251,7 @@ fn main() {
     keyword!("-",           SUB);
     keyword!("*",           MUL);
     keyword!("/mod",       DMOD);
-    keyword!("band",       bAND);
+    keyword!("and",        bAND);
     keyword!("bor",         bOR);
     keyword!("bxor",       bXOR);
     keyword!("bnot",       bNOT);
