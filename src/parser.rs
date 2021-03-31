@@ -59,6 +59,16 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 .filter(|i| i.is_some())
                 .map(|i| i.unwrap())
                 .collect::<Vec<_>>();
+
+            // If the quote has only one element, and that element is a word,
+            // then just return a reference to that single word instead of creating
+            // a useless wrapper.
+            if quote.len() == 1 {
+                if let ZfToken::Symbol(r) = quote[0] {
+                    return Some(ZfToken::SymbRef(r))
+                }
+            }
+
             let _ref = env.addword(random::phrase(), quote);
             Some(ZfToken::SymbRef(_ref))
         }
@@ -97,13 +107,6 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             let ch = &pair.as_str();
             let ch = &ch[1..].chars().next().unwrap();
             Some(ZfToken::Number(*ch as u32 as f64))
-        }
-        Rule::reference => {
-            let ident = pair.as_str().to_owned();
-            match env.findword(&ident[1..]) {
-                Some(i) => Some(ZfToken::SymbRef(i)),
-                None => panic!("bad reference {}", ident),
-            }
         }
         Rule::word => {
             let ident = pair.as_str().to_owned();
@@ -224,5 +227,18 @@ mod tests {
             tokens: [word(0, 2)] };
         parses_to! { parser: ZfParser, input: "test[", rule: Rule::program,
             tokens: [word(0, 5)] };
+    }
+
+    #[test]
+    fn test_ast_quotes() {
+        use crate::ZfToken::*;
+
+        let mut env = ZfEnv::new();
+        env.dict.push(("drop".to_string(),
+            ZfProc::Builtin(Rc::new(Box::new(crate::stdlib::DROP)))));
+        let drop = env.findword("drop").unwrap();
+
+        assert_eq!(parser::parse(&mut env, "[ drop ]").unwrap(),
+            vec![SymbRef(drop)]);
     }
 }

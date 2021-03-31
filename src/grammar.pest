@@ -4,10 +4,10 @@ word_decl = {
         "word" ~ ident ~ ":" ~ term* ~ ";;"
 }
 
-value = _{ float|string|character|table|quote|reference }
+value = _{ float|string|character|table|quote }
 term = _{
-	  float | string | character | table
-	| quote | guard  | reference
+	  float | string | character
+	| quote | guard  | table
 	| fetch | store  | word
 }
 
@@ -15,7 +15,6 @@ quote = { "[" ~ term* ~ "]" }
 
 fetch = { "@" ~ ident }
 store = { "!" ~ ident }
-reference = { "&" ~ ident }
 
 // TODO: integers in other bases (e.g. 0x10)
 int   = _{ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
