@@ -1,0 +1,9 @@
+macros
+	case/match
+		ackermann
+		prime?
+		romans
+panic
+result: err, ok
+metadata
+debugger
