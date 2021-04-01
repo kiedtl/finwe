@@ -78,6 +78,16 @@ word gcd    :  (  ab -- n   )  [ tuck mod dup 0= ] until drop ;;
 
 word reset  :  ( xya --     )  [ drop depth 0= ] until ;;
 
+word rev : <n-*> (...n -- ... )
+	1 [
+		swap push dup push
+		roll
+		pop pop swap
+		1+ 2dup =
+	] until
+	2drop
+;;
+
 (               ⎛           ⎞
                 ⎜    |a|    ⎟
    lcm(a, b) =  ⎜ ───────── ⎟ × |b|
