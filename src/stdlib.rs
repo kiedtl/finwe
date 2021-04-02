@@ -290,3 +290,21 @@ pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {
     env.pile.push(ZfToken::Number(len as f64));
     Ok(false)
 }
+
+pub fn AT(env: &mut ZfEnv) -> Result<bool, String> {
+    let index = pop_as!(env, Number);
+    let item = match pop!(env) {
+        ZfToken::String(s) => match s.chars().nth(index as usize) {
+            Some(c) => ZfToken::Number(c as u32 as f64),
+            None => return Err(format!("index out of range: {} >= {}",
+                    index as usize, s.len())),
+        },
+        ZfToken::Table(t)  => match t.get(&ZfToken::Number(index)) {
+            Some(t) => t.clone(),
+            None => return Err(format!("index {} nonexistant", index as usize)),
+        },
+        x => return Err(format!("{:?} is not indexable", x)),
+    };
+    env.pile.push(item);
+    Ok(false)
+}
