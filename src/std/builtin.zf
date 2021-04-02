@@ -22,6 +22,7 @@ word cond : <aqq-> ( f qT qF -- * )
 
 word do    :  (   q --     )  @TRUE swap if ;;
 word dip   :  (  vq -- v   )  swap push do pop ;;
+word ?dip  :  (  vq -- v   )  push dup not ?ret pop dip ;;
 word sip   :  (  vq -- v   )  push dup pop swap [ do ] dip ;;
 word bi    :  ( xqq --     )  [ sip ] dip do ;;
 word bi*   :  (xyqq --     )  [ dip ] dip do ;;
