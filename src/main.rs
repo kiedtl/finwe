@@ -266,6 +266,7 @@ fn main() {
     keyword!("ceil",       CEIL);
     keyword!("floor",     FLOOR);
     keyword!("atan",       ATAN);
+    keyword!("#",         TALLY);
 
     macro_rules! include_zf {
         ($path:expr) => {
