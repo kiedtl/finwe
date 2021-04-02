@@ -133,12 +133,19 @@ pub enum ZfProc {
     User(Vec<ZfToken>),
 }
 
+#[derive(Clone)]
+pub struct ZfRsFrame {
+    dictid: usize,
+    ip: usize,
+    altpile: Vec<ZfToken>,
+}
+
 #[derive(Clone, Default)]
 pub struct ZfEnv {
     pile: Vec<ZfToken>,
     vars: HashMap<String, ZfToken>,
     dict: Vec<(String, ZfProc)>,
-    rs:   Vec<(usize, usize, Vec<ZfToken>)>,
+    rs:   Vec<ZfRsFrame>,
 }
 
 impl ZfEnv {
@@ -162,7 +169,11 @@ impl ZfEnv {
     }
 
     pub fn pushrs(&mut self, funcid: usize, iptr: usize) {
-        self.rs.push((funcid, iptr, Vec::new()));
+        self.rs.push(ZfRsFrame {
+            dictid: funcid,
+            ip: iptr,
+            altpile: Vec::new()
+        });
     }
 }
 
@@ -175,7 +186,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
         if env.rs.len() == 0 { break }
 
         let mut crs = env.rs.len() - 1;
-        let (c_ib, ip) = (env.rs[crs].0, env.rs[crs].1);
+        let (c_ib, ip) = (env.rs[crs].dictid, env.rs[crs].ip);
         let ib;
         if let ZfProc::User(u) = &env.dict[c_ib].1 {
             ib = u;
@@ -185,7 +196,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             env.rs.pop();
             if env.rs.len() > 0 {
                 crs = env.rs.len() - 1;
-                env.rs[crs].1 += 1;
+                env.rs[crs].ip += 1;
             }
             continue;
         }
@@ -222,7 +233,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
         }
 
         crs = env.rs.len() - 1;
-        env.rs[crs].1 += 1;
+        env.rs[crs].ip += 1;
     }
 
     Ok(())

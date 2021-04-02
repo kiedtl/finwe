@@ -27,7 +27,7 @@ pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
         env.rs.pop();
         if env.rs.len() > 0 {
             let l = env.rs.len() - 1;
-            env.rs[l].1 += 1;
+            env.rs[l].ip += 1;
         }
         Ok(true)
     } else {
@@ -48,19 +48,19 @@ pub fn IF(env: &mut ZfEnv) -> Result<bool, String> {
 
 pub fn AGAIN(env: &mut ZfEnv) -> Result<bool, String> {
     let len = env.rs.len() - 1;
-    env.rs[len].1 = 0;
+    env.rs[len].ip = 0;
     Ok(true)
 }
 
 pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {
     let len = env.rs.len() - 1;
-    env.rs[len].2.push(pop!(env));
+    env.rs[len].altpile.push(pop!(env));
     Ok(false)
 }
 
 pub fn POP(env: &mut ZfEnv) -> Result<bool, String> {
     let len = env.rs.len() - 1;
-    env.pile.push(match env.rs[len].2.pop() {
+    env.pile.push(match env.rs[len].altpile.pop() {
         Some(v) => v,
         None => return Err(format!("stack underflow on alternate stack")),
     });
