@@ -240,6 +240,8 @@ pub fn DBG(env: &mut ZfEnv) -> Result<bool, String> {
             }
         }
         println!();
+    } else {
+        println!("(empty)");
     }
     Ok(false)
 }
@@ -274,5 +276,17 @@ pub fn FLOOR(env: &mut ZfEnv) -> Result<bool, String> {
 pub fn ATAN(env: &mut ZfEnv) -> Result<bool, String> {
     let r = pop_as!(env, Number).atan();
     env.pile.push(ZfToken::Number(r));
+    Ok(false)
+}
+
+// --- string/table stuff ---
+
+pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {
+    let len = match pop!(env) {
+        ZfToken::String(s) => s.len(),
+        ZfToken::Table(t)  => t.len(),
+        x => return Err(format!("{:?} is not indexable", x)),
+    };
+    env.pile.push(ZfToken::Number(len as f64));
     Ok(false)
 }
