@@ -1,9 +1,10 @@
-macros
-	case/match
-		ackermann
-		prime?
-		romans
+protected quotes
+if/until/times/match
+	ackermann
+	prime?
+	romans
 panic
 result: err, ok
+macros
 metadata
 debugger
