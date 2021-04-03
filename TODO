@@ -3,6 +3,8 @@ if/until/times/match
 	ackermann
 	prime?
 	romans
+show exec ctx on err
+guards
 panic
 result: err, ok
 macros
