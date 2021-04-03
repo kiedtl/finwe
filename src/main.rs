@@ -10,6 +10,9 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 use std::rc::Rc;
 
+#[macro_use]
+mod utils;
+
 mod ratios;
 mod floats;
 mod parser;
@@ -33,6 +36,8 @@ pub enum ZfToken {
     Fetch(String),
     Store(String),
     Table(HashMap<ZfToken, ZfToken>),
+    Jump(isize),
+    NJump(isize),
 
     Guard {
         before: Vec<GuardItem>,
@@ -55,6 +60,8 @@ impl ZfToken {
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
             ZfToken::Ident(i)   => format!("<ident {}>", i),
+            ZfToken::Jump(i)    => format!("<jmp {}>", i),
+            ZfToken::NJump(i)   => format!("<njmp {}>", i),
 
             ZfToken::Guard { before: _, after: _ }
                 => format!("<guard {:?}>", self),
@@ -223,10 +230,13 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                 return Err(format!("unknown variable {}", var))
             },
             ZfToken::Store(var) => {
-                env.vars.insert(var.clone(), match env.pile.pop() {
-                    Some(v) => v,
-                    None => return Err(format!("stack underflow")),
-                });
+                env.vars.insert(var.clone(), pop!(env));
+            },
+            ZfToken::Jump(i) => if Into::<bool>::into(&pop!(env)) {
+                env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+            },
+            ZfToken::NJump(i) => if !Into::<bool>::into(&pop!(env)) {
+                env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
             },
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
             _ => env.pile.push(ib[ip].clone()),
@@ -248,7 +258,7 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new(stdlib::$x))))))
     }
 
-    keyword!("if",           IF);
+    keyword!("?do",          IF);
     keyword!("again",     AGAIN);
     keyword!("?ret",       CRET);
     keyword!("depth",     DEPTH);

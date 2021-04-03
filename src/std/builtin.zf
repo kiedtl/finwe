@@ -4,7 +4,7 @@
 word over  :  ( abc -- bca )  1 pick ;;
 word 2drop :  (  ab -- b   )  drop drop ;;
 word dup   :  ( abc -- bca )  0 pick ;;
-word ?dup  :  ( abc -- bca )  dup [ dup ] if ;;
+word ?dup  :  ( abc -- bca )  dup if : dup ;; ;;
 word 2dup  :  ( abc -- bca )  over over ;;
 word swap  :  ( abc -- bca )  1 roll ;;
 word rot   :  ( abc -- bca )  2 roll ;;
@@ -14,13 +14,13 @@ word nip   :  (  ab -- b   )  swap drop ;;
 
 word cond : <aqq-> ( f qT qF -- * )
 	push over push   (f qT)  ((qF f))
-	if               ()
+	?do              ()
 	pop pop          (f qF)  (())
 	swap not swap    (x qF)
-	if
+	?do
 ;;
 
-word do    :  (   q --     )  @TRUE swap if ;;
+word do    :  (   q --     )  @TRUE swap ?do ;;
 word dip   :  (  vq -- v   )  swap push do pop ;;
 word ?dip  :  (  vq -- v   )  push dup not ?ret pop dip ;;
 word sip   :  (  vq -- v   )  push dup pop swap [ do ] dip ;;
@@ -70,7 +70,7 @@ word even?  :  (   n -- f   )  2 mod 0= ;;
 word odd?   :  (   n -- f   )  even? not ;;
 word int    :  (   f -- n   )  0 bxor ;;
 word negate :  (  ab -- d   )  -1  * ;;
-word abs    :  (   a -- c   )  dup 0< [ negate ] if ;;
+word abs    :  (   a -- c   )  dup 0< [ negate ] ?do ;;
 word square :  (  ab -- d   )  dup * ;;
 word min    :  (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
 word max    :  (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
@@ -148,7 +148,7 @@ word decimal : 10 !BASE ;;
 word hex     : 16 !BASE ;;
 
 word .n : <n->
-	dup 0< [ $- emit -1 * ] if
+	dup 0< [ $- emit -1 * ] ?do
 	?dup 0= [
 		$0 emit
 	] [

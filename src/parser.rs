@@ -19,22 +19,19 @@ fn parse_pairs(env: &mut ZfEnv, pairs: Pairs<Rule>)
 {
     let mut ast = vec![];
     for pair in pairs {
-        match parse_term(env, pair) {
-            Some(i) => ast.push(i),
-            None => (),
-        }
+        ast.extend(parse_term(env, pair));
     }
     Ok(ast)
 }
 
-fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
+fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
     match pair.as_rule() {
-        Rule::EOI => None,
+        Rule::EOI => vec![],
         Rule::word_decl => {
             let mut items = pair.into_inner();
 
             let name;
-            let ident = parse_term(env, items.nth(0).unwrap()).unwrap();
+            let ident = parse_term(env, items.nth(0).unwrap())[0].clone();
             if let ZfToken::Ident(s) = ident {
                 name = s;
             } else { unreachable!() }
@@ -45,32 +42,28 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             env.addword(name.clone(), vec![]);
 
             let body = items
-                .skip(0)
+                .nth(0).unwrap().into_inner()
                 .map(|p| parse_term(env, p))
-                .filter(|i| i.is_some())
-                .map(|i| i.unwrap())
-                .collect::<Vec<_>>();
+                .fold(Vec::new(), |mut a, i| { a.extend(i); a });
             env.addword(name, body);
-            None
+            vec![]
         }
         Rule::quote => {
             let quote = pair.into_inner()
                 .map(|p| parse_term(env, p))
-                .filter(|i| i.is_some())
-                .map(|i| i.unwrap())
-                .collect::<Vec<_>>();
+                .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
             // If the quote has only one element, and that element is a word,
             // then just return a reference to that single word instead of creating
             // a useless wrapper.
             if quote.len() == 1 {
                 if let ZfToken::Symbol(r) = quote[0] {
-                    return Some(ZfToken::SymbRef(r))
+                    return vec![ZfToken::SymbRef(r)];
                 }
             }
 
             let _ref = env.addword(random::phrase(), quote);
-            Some(ZfToken::SymbRef(_ref))
+            vec![ZfToken::SymbRef(_ref)]
         }
         Rule::float => {
             // FIXME: Rust's parse::<f64> doesn't support the following formats:
@@ -92,7 +85,7 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 // Avoid negative zeroes; only multiply sign by nonzeroes.
                 flt *= sign;
             }
-            Some(ZfToken::Number(flt))
+            vec![ZfToken::Number(flt)]
         }
         // TODO: escape sequences: \r \n \a \b \f \t \v \0 \x00 \uXXXX &c
         Rule::string => {
@@ -101,23 +94,23 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
             let str = &str[1..str.len() - 1];
             // Escaped string quotes become single quotes here.
             let str = str.replace("''", "'");
-            Some(ZfToken::String(str[..].to_owned()))
+            vec![ZfToken::String(str[..].to_owned())]
         }
         Rule::character => {
             let ch = &pair.as_str();
             let ch = &ch[1..].chars().next().unwrap();
-            Some(ZfToken::Number(*ch as u32 as f64))
+            vec![ZfToken::Number(*ch as u32 as f64)]
         }
         Rule::word => {
             let ident = pair.as_str().to_owned();
             match env.findword(&ident) {
-                Some(i) => Some(ZfToken::Symbol(i)),
+                Some(i) => vec![ZfToken::Symbol(i)],
                 None => panic!("unknown word {}", ident),
             }
         }
-        Rule::fetch => Some(ZfToken::Fetch(pair.as_str()[1..].to_owned())),
-        Rule::store => Some(ZfToken::Store(pair.as_str()[1..].to_owned())),
-        Rule::ident => Some(ZfToken::Ident(pair.as_str().to_owned())),
+        Rule::fetch => vec![ZfToken::Fetch(pair.as_str()[1..].to_owned())],
+        Rule::store => vec![ZfToken::Store(pair.as_str()[1..].to_owned())],
+        Rule::ident => vec![ZfToken::Ident(pair.as_str().to_owned())],
         Rule::table => {
             let mut res = HashMap::new();
             let mut ctr = 0.;
@@ -126,20 +119,20 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 match item.as_rule() {
                     Rule::table_val => {
                         let val = parse_term(env, item.into_inner().next().unwrap());
-                        res.insert(ZfToken::Number(ctr), val.unwrap()); 
+                        res.insert(ZfToken::Number(ctr), val[0].clone()); 
                         ctr += 1.;
                     },
                     Rule::table_keyval => {
                         let mut items = item.into_inner();
-                        let key = parse_term(env, items.nth(0).unwrap());
-                        let val = parse_term(env, items.nth(1).unwrap());
-                        res.insert(key.unwrap(), val.unwrap());
+                        let key = parse_term(env, items.nth(0).unwrap())[0].clone();
+                        let val = parse_term(env, items.nth(1).unwrap())[1].clone();
+                        res.insert(key, val);
                     },
                     _ => unreachable!(),
                 }
             });
 
-            Some(ZfToken::Table(res))
+            vec![ZfToken::Table(res)]
         },
         Rule::guard => {
             let mut inner = pair.into_inner();
@@ -163,11 +156,21 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Option<ZfToken> {
                 guardsets.push(guardset);
             }
 
-            Some(ZfToken::Guard {
+            vec![ZfToken::Guard {
                 before: guardsets[0].clone(),
                 after:  guardsets[1].clone()
-            })
+            }]
         }
+        Rule::ifblk => {
+            let body = pair.into_inner()
+                .nth(0).unwrap().into_inner()
+                .map(|p| parse_term(env, p))
+                .fold(Vec::new(), |mut a, i| { a.extend(i); a });
+
+            let mut ifstmt = vec![ZfToken::NJump(body.len() as isize)];
+            ifstmt.extend(body);
+            ifstmt
+        },
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),
     }
 }
