@@ -70,7 +70,7 @@ word even?  :  (   n -- f   )  2 mod 0= ;;
 word odd?   :  (   n -- f   )  even? not ;;
 word int    :  (   f -- n   )  0 bxor ;;
 word negate :  (  ab -- d   )  -1  * ;;
-word abs    :  (   a -- c   )  dup 0< [ negate ] ?do ;;
+word abs    :  (   a -- c   )  dup 0< if : negate ;; ;;
 word square :  (  ab -- d   )  dup * ;;
 word min    :  (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
 word max    :  (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
@@ -141,6 +141,7 @@ word e      : (     -- n   ) @E_ITERS 0 e_iter nip 1 + ;;
 \pi !PI
 \e  !E
 
+word spc    : (     --     )  32 emit ;;
 word cr     : (     --     )  10 emit ;;
 
 10 !BASE
@@ -148,22 +149,27 @@ word decimal : 10 !BASE ;;
 word hex     : 16 !BASE ;;
 
 word .n : <n->
-	dup 0< [ $- emit -1 * ] ?do
-	?dup 0= [
+	dup 0< if :
+		$- emit -1 *
+	;;
+
+	?dup 0= if :
 		$0 emit
-	] [
+	;; orelse :
 		999 swap (stop indicator)
 		[
-			@BASE /mod             (r q)
+			@BASE /mod   (r q)
 			int swap int (q r)
-			dup 9 >
-				[ 10 - $a + ]
-				[ $0 + ]
-			cond
+
+			dup 9 > if :
+				10 - $a +
+			;; orelse :
+				$0 +
+			;;
 		swap ?dup not ] until
 		[ emit dup 999 = ] until
 		drop    (drop stop indicator)
-	] cond
+	;;
 ;;
 
 3735928559 !_RAND

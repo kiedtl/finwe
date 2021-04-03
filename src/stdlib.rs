@@ -192,14 +192,12 @@ pub fn EMIT(env: &mut ZfEnv) -> Result<bool, String> {
 
     if val < 0.0 { return Err(err); }
 
-    let mut encoded = [0; 4];
     match std::char::from_u32(val as u32) {
-        Some(e) => { e.encode_utf8(&mut encoded); },
+        Some(e) => print!("{}", e),
         None => return Err(err),
     };
 
     use std::io::Write;
-    std::io::stdout().write(&encoded).unwrap();
     std::io::stdout().flush().unwrap();
 
     Ok(false)

@@ -162,13 +162,28 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
             }]
         }
         Rule::ifblk => {
-            let body = pair.into_inner()
-                .nth(0).unwrap().into_inner()
+            let mut ifstmt = vec![];
+
+            let mut ast = pair.into_inner();
+            let body = ast.nth(0).unwrap().into_inner()
                 .map(|p| parse_term(env, p))
                 .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
-            let mut ifstmt = vec![ZfToken::NJump(body.len() as isize)];
-            ifstmt.extend(body);
+            let orelse_ast = ast.nth(0);
+            if orelse_ast.is_some() {
+                let orelse = orelse_ast.unwrap().into_inner()
+                    .map(|p| parse_term(env, p))
+                    .fold(Vec::new(), |mut a, i| { a.extend(i); a });
+
+                ifstmt.push(ZfToken::ZJump((body.len() + 1) as isize));
+                ifstmt.extend(body);
+                ifstmt.push(ZfToken::UJump(orelse.len() as isize));
+                ifstmt.extend(orelse);
+            } else {
+                ifstmt.push(ZfToken::ZJump(body.len() as isize));
+                ifstmt.extend(body);
+            }
+
             ifstmt
         },
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),

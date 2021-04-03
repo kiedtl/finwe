@@ -36,8 +36,9 @@ pub enum ZfToken {
     Fetch(String),
     Store(String),
     Table(HashMap<ZfToken, ZfToken>),
-    Jump(isize),
-    NJump(isize),
+    CJump(isize),
+    ZJump(isize),
+    UJump(isize),
 
     Guard {
         before: Vec<GuardItem>,
@@ -60,8 +61,9 @@ impl ZfToken {
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
             ZfToken::Ident(i)   => format!("<ident {}>", i),
-            ZfToken::Jump(i)    => format!("<jmp {}>", i),
-            ZfToken::NJump(i)   => format!("<njmp {}>", i),
+            ZfToken::CJump(i)    => format!("<?jmp {}>", i),
+            ZfToken::ZJump(i)   => format!("<zjmp {}>", i),
+            ZfToken::UJump(i)    => format!("<ujmp {}>", i),
 
             ZfToken::Guard { before: _, after: _ }
                 => format!("<guard {:?}>", self),
@@ -232,16 +234,18 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             ZfToken::Store(var) => {
                 env.vars.insert(var.clone(), pop!(env));
             },
-            ZfToken::Jump(i) => if Into::<bool>::into(&pop!(env)) {
+            ZfToken::CJump(i) => if Into::<bool>::into(&pop!(env)) {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
             },
-            ZfToken::NJump(i) => if !Into::<bool>::into(&pop!(env)) {
+            ZfToken::ZJump(i) => if !Into::<bool>::into(&pop!(env)) {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
             },
+            ZfToken::UJump(i) => env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize,
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
             _ => env.pile.push(ib[ip].clone()),
         }
 
+        // FIXME: dont' increment IP on jumps
         crs = env.rs.len() - 1;
         env.rs[crs].ip += 1;
     }
