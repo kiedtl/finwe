@@ -11,7 +11,7 @@ term = _{
 
 word_decl = { "word" ~ ident ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
-until = { "_until" ~ block }
+until = { "until" ~ block }
 
 block = { ":" ~ term* ~ ";;" }
 
@@ -47,7 +47,7 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
-	"if" | "orelse" | "_until" | "word" |
+	"if" | "orelse" | "until" | "word" |
 	";;" | ":" | "[" | "]" | "{" | "}"
 }
 

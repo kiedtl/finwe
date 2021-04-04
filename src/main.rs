@@ -236,16 +236,20 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             },
             ZfToken::CJump(i) => if Into::<bool>::into(&pop!(env)) {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+                continue;
             },
             ZfToken::ZJump(i) => if !Into::<bool>::into(&pop!(env)) {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+                continue;
             },
-            ZfToken::UJump(i) => env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize,
+            ZfToken::UJump(i) => {
+                env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+                continue;
+            }
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
             _ => env.pile.push(ib[ip].clone()),
         }
 
-        // FIXME: dont' increment IP on jumps
         crs = env.rs.len() - 1;
         env.rs[crs].ip += 1;
     }

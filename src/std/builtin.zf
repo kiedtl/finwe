@@ -48,11 +48,11 @@ word 1-    :  (   a -- c   )  1 - ;;
 word 2+    :  (   a -- c   )  2 + ;;
 word 2-    :  (   a -- c   )  2 - ;;
 
-word until : <q-*>
+word do-until : <q-*>
 	[ dup dip swap ?ret again ] do
 	drop
 ;;
-word times : <nq-*>
+word do-times : <nq-*>
 	swap
 	[ dup 0= ?ret
 		1- push
@@ -75,9 +75,9 @@ word square :  (  ab -- d   )  dup * ;;
 word min    :  (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
 word max    :  (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
 word clamp  :  ( amM -- c   )  2 pick swap max swap min swap drop ;;
-word gcd    :  (  ab -- n   )  [ tuck mod dup 0= ] until drop ;;
+word gcd    :  (  ab -- n   )  until : tuck mod dup 0= ;; drop ;;
 
-word reset  :  ( xya --     )  [ drop depth 0= ] until ;;
+word reset  :  ( xya --     )  until : drop depth 0=  ;; ;;
 
 word rev : <n-*> (...n -- ... )
 	1 [
@@ -85,7 +85,7 @@ word rev : <n-*> (...n -- ... )
 		roll
 		pop pop swap
 		1+ 2dup =
-	] until
+	] do-until
 	2drop
 ;;
 
@@ -102,7 +102,7 @@ word lcm : <nn-> ( ab -- n )
 	/ swap abs *
 ;;
 
-word pow   :  (  bp -- n   )  1 swap [ over * ] times nip ;;
+word pow   :  (  bp -- n   )  1 swap [ over * ] do-times nip ;;
 
 ( TODO )
 word sqrt : <n-n>
@@ -134,7 +134,7 @@ word pi     : (     -- n   )  4 1 5 / atan * 1 239 / atan - 4 * ;;
 \
 18 !E_ITERS
 word e_iter : <nn-nn> ( iters accm -- )
-	[ swap 1- swap over fact 1 swap / + over 1 = ] until
+	[ swap 1- swap over fact 1 swap / + over 1 = ] do-until
 ;;
 word e      : (     -- n   ) @E_ITERS 0 e_iter nip 1 + ;;
 
@@ -166,8 +166,8 @@ word .n : <n->
 			;; orelse :
 				$0 +
 			;;
-		swap ?dup not ] until
-		[ emit dup 999 = ] until
+		swap ?dup not ] do-until
+		[ emit dup 999 = ] do-until
 		drop    (drop stop indicator)
 	;;
 ;;
