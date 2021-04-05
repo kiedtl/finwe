@@ -3,6 +3,8 @@ if/until/times/match
 	ackermann
 	prime?
 	romans
+log
+vim syntax
 show exec ctx on err
 guards
 panic
