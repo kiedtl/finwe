@@ -51,7 +51,7 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
-	"if" | "orelse" | "until" | "word" | "cond" | "is?" |
+	"if" | "orelse" | "until" | "word" | "cond" | "is?" | "any" |
 	"[[" | "]]" | "[" | "]" | "{" | "}"
 }
 
