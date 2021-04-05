@@ -184,6 +184,11 @@ impl ZfEnv {
             altpile: Vec::new()
         });
     }
+
+    pub fn incip(&mut self) {
+        let crs = self.rs.len() - 1;
+        self.rs[crs].ip += 1;
+    }
 }
 
 fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
@@ -194,18 +199,36 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
     loop {
         if env.rs.len() == 0 { break }
 
-        let mut crs = env.rs.len() - 1;
+        let crs = env.rs.len() - 1;
         let (c_ib, ip) = (env.rs[crs].dictid, env.rs[crs].ip);
+        let word = &env.dict[c_ib].1;
         let ib;
-        if let ZfProc::User(u) = &env.dict[c_ib].1 {
+
+        // Keeping this debug code around because, damnit, it's fun to watch.
+        //std::thread::sleep(std::time::Duration::from_millis(500));
+        //println!("{} {}", env.dict[c_ib].0, ip);
+
+        if let ZfProc::User(u) = word {
             ib = u;
-        } else { unreachable!() }
+        } else if let ZfProc::Builtin(b) = word.clone() {
+            // Pop a stack frame (builtin words assume they're on the frame of
+            // their caller.
+            env.rs.pop();
+
+            // Execute the inbuilt word and continue.
+            match (b)(env) {
+                Ok(co) => {
+                    if !co { env.incip(); }
+                    continue;
+                },
+                Err(e) => return Err(e),
+            }
+        } else { unreachable!(); }
 
         if ip >= ib.len() {
             env.rs.pop();
             if env.rs.len() > 0 {
-                crs = env.rs.len() - 1;
-                env.rs[crs].ip += 1;
+                env.incip();
             }
             continue;
         }
@@ -214,16 +237,8 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             ZfToken::Nop => (),
 
             ZfToken::Symbol(s) => {
-                match &env.dict[*s].clone().1 {
-                    ZfProc::Builtin(b) => match (b)(env) {
-                        Ok(co) => if co { continue },
-                        Err(e) => return Err(e),
-                    },
-                    ZfProc::User(_) => {
-                        env.pushrs(*s, 0);
-                        continue; // don't increment IP below
-                    },
-                }
+                env.pushrs(*s, 0);
+                continue; // don't increment IP below
             },
             ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
             ZfToken::Fetch(var) => if env.vars.contains_key(var) {
@@ -250,8 +265,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             _ => env.pile.push(ib[ip].clone()),
         }
 
-        crs = env.rs.len() - 1;
-        env.rs[crs].ip += 1;
+        env.incip();
     }
 
     Ok(())
