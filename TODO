@@ -1,10 +1,6 @@
-protected quotes
-if/until/times/match
-	ackermann
-	prime?
-	romans
-log
 vim syntax
+log
+break statement for until
 show exec ctx on err
 guards
 panic
@@ -12,3 +8,11 @@ result: err, ok
 macros
 metadata
 debugger
+protected quotes?
+
+DONE
+----
+if/until/times/match
+	ackermann
+	prime?
+	romans
