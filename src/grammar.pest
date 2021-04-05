@@ -5,7 +5,7 @@ term = _{
 	  float | string | character
 	| quote | guard  | table
 	| fetch | store  | word
-	| ifblk | until
+	| ifblk | until  | cond
 
 }
 
@@ -13,7 +13,11 @@ word_decl = { "word" ~ ident ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
 until = { "until" ~ block }
 
-block = { ":" ~ term* ~ ";;" }
+cond = { "cond" ~ "[[" ~ condarm+ ~ condany? ~ "]]" }
+condarm = { "is?" ~ block ~ block }
+condany = { "any" ~ block }
+
+block = { "[[" ~ term* ~ "]]" }
 
 quote = { "[" ~ term* ~ "]" }
 
@@ -47,8 +51,8 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
-	"if" | "orelse" | "until" | "word" |
-	";;" | ":" | "[" | "]" | "{" | "}"
+	"if" | "orelse" | "until" | "word" | "cond" | "is?" |
+	"[[" | "]]" | "[" | "]" | "{" | "}"
 }
 
 COMMENT    = _{ ("(" ~ (COMMENT|(!")" ~ ANY))* ~ ")") | ("\\" ~ (!"\n" ~ ANY)*) }

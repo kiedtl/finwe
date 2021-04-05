@@ -200,6 +200,63 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
 
             until
         },
+        Rule::cond => {
+            let mut arms = vec![];
+            let mut any  = None;
+
+            for arm_ast in pair.into_inner() {
+                if any.is_some() {
+                    // It's a syntax error for arms to come after the wildcard.
+                    panic!("Found match arm after wildcard");
+                }
+
+                match arm_ast.as_rule() {
+                    Rule::condarm => {
+                        let mut inner = arm_ast.into_inner();
+                        let cond = inner.nth(0).unwrap().into_inner()
+                            .map(|p| parse_term(env, p))
+                            .fold(Vec::new(), |mut a, i| { a.extend(i); a});
+                        let body = inner.nth(0).unwrap().into_inner()
+                            .map(|p| parse_term(env, p))
+                            .fold(Vec::new(), |mut a, i| { a.extend(i); a});
+                        arms.push((cond, body));
+                    },
+                    Rule::condany => {
+                        let body = arm_ast.into_inner()
+                            .nth(0).unwrap().into_inner()
+                            .map(|p| parse_term(env, p))
+                            .fold(Vec::new(), |mut a, i| { a.extend(i); a});
+                        any = Some(body);
+                    },
+                    _ => unreachable!(),
+                }
+            }
+
+            // Now we get to construct the bytecode for the cond block.
+            // Fun fun fun~~
+
+            let mut condblk = vec![];
+            let mut restlen = arms.iter()
+                .fold(0, |a, i| a + i.0.len() + 1 + i.1.len() + 1)
+                + any.clone().unwrap_or(vec![]).len();
+
+            for arm in arms {
+                restlen -= arm.0.len() + 1 + arm.1.len() + 1;
+                condblk.extend(arm.0);
+                condblk.push(ZfToken::ZJump((arm.1.len() + 2) as isize));
+                condblk.extend(arm.1);
+                condblk.push(ZfToken::UJump(restlen as isize + 1));
+            }
+
+            if any.is_some() {
+                condblk.extend(any.unwrap());
+            } else {
+                // Pop the last unecessary UJump.
+                condblk.pop();
+            }
+
+            condblk
+        },
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),
     }
 }

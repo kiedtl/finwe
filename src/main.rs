@@ -204,10 +204,6 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
         let word = &env.dict[c_ib].1;
         let ib;
 
-        // Keeping this debug code around because, damnit, it's fun to watch.
-        //std::thread::sleep(std::time::Duration::from_millis(500));
-        //println!("{} {}", env.dict[c_ib].0, ip);
-
         if let ZfProc::User(u) = word {
             ib = u;
         } else if let ZfProc::Builtin(b) = word.clone() {
@@ -232,6 +228,10 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             }
             continue;
         }
+
+        // Keeping this debug code around because, damnit, it's fun to watch.
+        //std::thread::sleep(std::time::Duration::from_millis(500));
+        //println!("{} {} {:?}", env.dict[c_ib].0, ip, ib[ip]);
 
         match &ib[ip] {
             ZfToken::Nop => (),
@@ -295,11 +295,11 @@ fn main() {
     keyword!("*",           MUL);
     keyword!("/mod",       DMOD);
     keyword!("and",        bAND);
-    keyword!("bor",         bOR);
-    keyword!("bxor",       bXOR);
-    keyword!("bnot",       bNOT);
-    keyword!("bshl",        SHL);
-    keyword!("bshr",        SHR);
+    keyword!("or",          bOR);
+    keyword!("xor",        bXOR);
+    keyword!("not",        bNOT);
+    keyword!("shl",         SHL);
+    keyword!("shr",         SHR);
     keyword!("emit",       EMIT);
     keyword!("wait",       WAIT);
     keyword!("push",       PUSH);

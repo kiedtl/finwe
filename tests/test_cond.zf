@@ -1,0 +1,27 @@
+\\ "not prime", "yay~~", "i dunno"
+
+( passes through the any branch )
+12 cond [[
+	is? [[ dup 1 = ]] [[ 'one' ]]
+	is? [[ dup 2 = ]] [[ 'two' ]]
+	is? [[ dup 6 = ]] [[ 'six' ]]
+	any [[ 'i dunno' ]]
+]] nip
+
+( passes through a middle branch )
+33 cond [[
+	is? [[ dup 11 = ]] [[ 'hmmst' ]]
+	is? [[ dup 22 = ]] [[ 'uhhhh' ]]
+	is? [[ dup 33 = ]] [[ 'yay~~' ]]
+	is? [[ dup 44 = ]] [[ 'oops.' ]]
+	any [[ 'big oops.' ]]
+]] nip
+
+( passes through the first branch )
+24 cond [[
+	is? [[ dup 2 mod 0= over 3 mod 0= or ]] [[ 'not prime' ]]
+	is? [[ dup 3 <= over 1 > and ]] [[ 'prime' ]]
+	any [[ '¯\_(ツ)_/¯' ]]
+]] nip
+
+dbg

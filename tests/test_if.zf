@@ -2,28 +2,28 @@
 
 @TRUE
 
-if :
+if [[
 	1
-;; orelse :
+]] orelse [[
 	2
-;;
+]]
 
 @FALSE
 
-if :
+if [[
 	2
-;; orelse :
+]] orelse [[
 	3
-;;
+]]
 
 3
 
 [
 	@TRUE
-	if :
+	if [[
 		4
 		@TRUE ?ret
-	;;
+	]]
 ] do
 
 5
