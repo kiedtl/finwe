@@ -1,16 +1,17 @@
 1 !TRUE
 0 !FALSE
 
-word over  [[  ( abc -- bca )  1 pick ]]
-word 2drop [[  (  ab -- b   )  drop drop ]]
-word dup   [[  ( abc -- bca )  0 pick ]]
-word ?dup  [[  ( abc -- bca )  dup if [[ dup ]] ]]
-word 2dup  [[  ( abc -- bca )  over over ]]
-word swap  [[  ( abc -- bca )  1 roll ]]
-word rot   [[  ( abc -- bca )  2 roll ]]
-word rot>  [[  ( abc -- cab )  rot rot ]]
-word tuck  [[  (  ab -- bab )  swap over ]]
-word nip   [[  (  ab -- b   )  swap drop ]]
+word dup     [[  ( abc -- bca )  0 pick ]]
+word over    [[  ( abc -- bca )  1 pick ]]
+word uncover [[  ( abc -- abca)  2 pick ]]
+word 2drop   [[  (  ab -- b   )  drop drop ]]
+word ?dup    [[  ( abc -- bca )  dup if [[ dup ]] ]]
+word 2dup    [[  ( abc -- bca )  over over ]]
+word swap    [[  ( abc -- bca )  1 roll ]]
+word rot     [[  ( abc -- bca )  2 roll ]]
+word rot>    [[  ( abc -- cab )  rot rot ]]
+word tuck    [[  (  ab -- bab )  swap over ]]
+word nip     [[  (  ab -- b   )  swap drop ]]
 
 word do-cond [[ <aqq-> ( f qT qF -- * )
 	push over push   (f qT)  ((qF f))
@@ -104,7 +105,6 @@ word lcm [[ <nn-> ( ab -- n )
 
 word pow   [[  (  bp -- n   )  1 swap [ over * ] do-times nip ]]
 
-( TODO )
 word sqrt [[ <n-n>
 	1
 	[
@@ -119,6 +119,33 @@ word sqrt [[ <n-n>
 		again
 	] do
 	drop nip
+]]
+
+
+\ stolen from this SO answer: https://stackoverflow.com/a/26760082
+word prime? [[
+	cond [[
+		is? [[ dup dup 2 = swap 3 =           or ]] [[ drop @TRUE  ]]
+		is? [[ dup dup 2 mod 0= swap 3 mod 0= or ]] [[ drop @FALSE ]]
+		any [[
+			25 over > if [[
+				drop @TRUE dup ?ret
+			]]
+
+			5 until [[
+				(x i)
+				2dup 2dup mod 0= rot> 2+ mod 0= or if [[
+					2drop @FALSE
+					@TRUE ?ret
+				]] orelse [[
+					6 +
+					dup square uncover >
+				]]
+			]]
+
+			2drop @TRUE
+		]]
+	]]
 ]]
 
 \ this uses the machin formula
