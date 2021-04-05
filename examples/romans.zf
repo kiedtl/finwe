@@ -1,0 +1,31 @@
+\\ A very simple roman numeral converter.
+\\ It can't handle things like `iv', `mcm`, etc properly.
+
+word roman-numeral-value [[
+	cond [[
+		is? [[ dup $m = ]] [[ 1000 ]]
+		is? [[ dup $d = ]] [[ 500  ]]
+		is? [[ dup $c = ]] [[ 100  ]]
+		is? [[ dup $l = ]] [[ 50   ]]
+		is? [[ dup $x = ]] [[ 10   ]]
+		is? [[ dup $v = ]] [[ 5    ]]
+		is? [[ dup $i = ]] [[ 1    ]]
+		any [[ 0 ]]
+	]] nip
+]]
+
+word roman-numerals-to-number [[
+	0 0 rot>
+
+	until [[
+		( index string accm )
+		2dup & roman-numeral-value 
+		3 roll + rot>
+		1+ 2dup swap # =
+	]]
+
+	rot nip nip
+]]
+
+'xvii'     roman-numerals-to-number .n cr
+'mmlxxxvi' roman-numerals-to-number .n cr
