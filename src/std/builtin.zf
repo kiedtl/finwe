@@ -12,7 +12,7 @@ word rot>  :  ( abc -- cab )  rot rot ;;
 word tuck  :  (  ab -- bab )  swap over ;;
 word nip   :  (  ab -- b   )  swap drop ;;
 
-word cond : <aqq-> ( f qT qF -- * )
+word do-cond : <aqq-> ( f qT qF -- * )
 	push over push   (f qT)  ((qF f))
 	?do              ()
 	pop pop          (f qF)  (())
@@ -72,20 +72,20 @@ word int    :  (   f -- n   )  0 bxor ;;
 word negate :  (  ab -- d   )  -1  * ;;
 word abs    :  (   a -- c   )  dup 0< if : negate ;; ;;
 word square :  (  ab -- d   )  dup * ;;
-word min    :  (  am -- c   )  2dup < [ nip ] [ drop ] cond ;;
-word max    :  (  aM -- c   )  2dup > [ nip ] [ drop ] cond ;;
+word min    :  (  am -- c   )  2dup < if : nip ;; orelse : drop ;; ;;
+word max    :  (  aM -- c   )  2dup > if : nip ;; orelse : drop ;; ;;
 word clamp  :  ( amM -- c   )  2 pick swap max swap min swap drop ;;
 word gcd    :  (  ab -- n   )  until : tuck mod dup 0= ;; drop ;;
 
 word reset  :  ( xya --     )  until : drop depth 0=  ;; ;;
 
 word rev : <n-*> (...n -- ... )
-	1 [
+	1 until :
 		swap push dup push
 		roll
 		pop pop swap
 		1+ 2dup =
-	] do-until
+	;;
 	2drop
 ;;
 
@@ -134,12 +134,17 @@ word pi     : (     -- n   )  4 1 5 / atan * 1 239 / atan - 4 * ;;
 \
 18 !E_ITERS
 word e_iter : <nn-nn> ( iters accm -- )
-	[ swap 1- swap over fact 1 swap / + over 1 = ] do-until
+	until :
+		swap 1- swap over
+		fact 1
+		swap / + over
+		1 =
+	;;
 ;;
 word e      : (     -- n   ) @E_ITERS 0 e_iter nip 1 + ;;
 
-\pi !PI
-\e  !E
+pi !PI
+e  !E
 
 word spc    : (     --     )  32 emit ;;
 word cr     : (     --     )  10 emit ;;
@@ -157,7 +162,8 @@ word .n : <n->
 		$0 emit
 	;; orelse :
 		999 swap (stop indicator)
-		[
+
+		until :
 			@BASE /mod   (r q)
 			int swap int (q r)
 
@@ -166,8 +172,11 @@ word .n : <n->
 			;; orelse :
 				$0 +
 			;;
-		swap ?dup not ] do-until
-		[ emit dup 999 = ] do-until
+			swap ?dup not
+		;;
+
+		until : emit dup 999 = ;;
+
 		drop    (drop stop indicator)
 	;;
 ;;
