@@ -1,4 +1,8 @@
 vim syntax
+.t (tables)
+.s (strings)
+.f (floats)
+.b (boolean)
 log
 break statement for until
 show exec ctx on err
