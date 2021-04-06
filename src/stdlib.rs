@@ -260,7 +260,7 @@ pub fn ATAN(env: &mut ZfEnv) -> Result<bool, String> {
 // --- string/table stuff ---
 
 pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {
-    let len = match pop!(env) {
+    let len = match peek!(env) {
         ZfToken::String(s) => s.len(),
         ZfToken::Table(t)  => t.len(),
         x => return Err(format!("{:?} is not indexable", x)),
@@ -271,7 +271,7 @@ pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {
 
 pub fn AT(env: &mut ZfEnv) -> Result<bool, String> {
     let index = pop_as!(env, Number);
-    let item = match pop!(env) {
+    let item = match peek!(env) {
         ZfToken::String(s) => match s.chars().nth(index as usize) {
             Some(c) => ZfToken::Number(c as u32 as f64),
             None => return Err(format!("index out of range: {} >= {}",

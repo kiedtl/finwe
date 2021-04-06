@@ -19,9 +19,9 @@ word roman-numerals-to-number [[
 
 	until [[
 		( index string accm )
-		2dup & roman-numeral-value 
+		dup rot> & roman-numeral-value
 		3 roll + rot>
-		1+ 2dup swap # =
+		swap 1+ swap # rot swap over =
 	]]
 
 	rot nip nip

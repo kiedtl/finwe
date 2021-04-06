@@ -7,13 +7,22 @@ macro_rules! pop {
     }
 }
 
+macro_rules! peek {
+    ($e:ident) => {{
+        let len = $e.pile.len();
+        if len == 0 {
+            return Err(format!("stack underflow"));
+        }
+        &$e.pile[len - 1]
+    }}
+}
+
 macro_rules! pop_as {
     ($e:ident, $t:ident) => {{
-        let popped = pop!($e);
-        match popped {
+        match pop!($e) {
             ZfToken::$t(v) => v,
-            _ => return Err(format!("expected {}, got {:?}",
-                    stringify!($t), popped)),
+            x => return Err(format!("expected {}, got {:?}",
+                    stringify!($t), x)),
         }
     }}
 }
