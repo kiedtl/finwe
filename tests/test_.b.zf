@@ -1,0 +1,15 @@
+\\ True
+\\ False
+\\ True
+\\ True
+\\ True
+\\ True
+\\ False
+
+@TRUE       .b cr
+@FALSE      .b cr
+     1      .b cr
+     0 bnot .b cr
+ 23423      .b cr
+  -213      .b cr
+     0      .b cr
