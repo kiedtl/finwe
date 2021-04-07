@@ -1,8 +1,6 @@
 vim syntax
 .t (tables)
-.s (strings)
 .f (floats)
-.b (boolean)
 log
 break statement for until
 show exec ctx on err
@@ -20,3 +18,5 @@ if/until/times/match
 	ackermann
 	prime?
 	romans
+.b (boolean)
+.s (strings)
