@@ -103,7 +103,7 @@ word lcm [[ <nn-> ( ab -- n )
 	/ swap abs *
 ]]
 
-word pow   [[  (  bp -- n   )  1 swap [ over * ] do-times nip ]]
+word ipow  [[  (  bp -- n   )  1 swap [ over * ] do-times nip ]]
 
 word sqrt [[ <n-n>
 	1
@@ -173,6 +173,21 @@ word e      [[ (     -- n   ) @E_ITERS 0 e_iter nip 1 + ]]
 pi !PI
 e  !E
 
+word lg     [[  (   a -- c   )  10 logn ]]
+word lb     [[  (   a -- c   )   2 logn ]]
+word ln     [[  (   a -- c   )  @E logn ]]
+
+3735928559 !_RAND
+word rand [[ <n->
+	@_RAND 11109 * 13849 +
+	524287 and 1 shr
+	dup !_RAND
+]]
+
+
+( ----- formatting, misc IO stuff ----- )
+
+
 word spc    [[ (     --     )  32 emit ]]
 word cr     [[ (     --     )  10 emit ]]
 
@@ -215,13 +230,6 @@ word .n [[ <n->
 
 		drop    (drop stop indicator)
 	]]
-]]
-
-3735928559 !_RAND
-word rand [[ <n->
-	@_RAND 11109 * 13849 +
-	524287 and 1 shr
-	dup !_RAND
 ]]
 
 
