@@ -297,7 +297,7 @@ fn main() {
     keyword!("and",        bAND);
     keyword!("or",          bOR);
     keyword!("xor",        bXOR);
-    keyword!("not",        bNOT);
+    keyword!("bnot",       bNOT);
     keyword!("shl",         SHL);
     keyword!("shr",         SHR);
     keyword!("emit",       EMIT);

@@ -176,16 +176,18 @@ e  !E
 word spc    [[ (     --     )  32 emit ]]
 word cr     [[ (     --     )  10 emit ]]
 
-10 !BASE
-word decimal [[ 10 !BASE ]]
-word hex     [[ 16 !BASE ]]
-
 word .s [[
 	0 until [[
 		dup rot> & emit
 		# rot 1+ tuck =
 	]]
 ]]
+
+word .b [[ 0= if [[ 'False' ]] orelse [[ 'True' ]] .s ]]
+
+10 !BASE
+word decimal [[ 10 !BASE ]]
+word hex     [[ 16 !BASE ]]
 
 word .n [[ <n->
 	dup 0< if [[
