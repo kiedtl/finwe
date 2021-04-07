@@ -1,6 +1,5 @@
 vim syntax
 .t (tables)
-.f (floats)
 break statement for until
 show exec ctx on err
 guards
@@ -20,3 +19,4 @@ if/until/times/match
 .b (boolean)
 .s (strings)
 log
+.f (floats)
