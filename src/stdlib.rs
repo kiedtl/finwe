@@ -269,6 +269,12 @@ pub fn POW(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
+pub fn FFMT(env: &mut ZfEnv) -> Result<bool, String> {
+    let (prec, x) = (pop_as!(env, Number) as usize, pop_as!(env, Number));
+    env.pile.push(ZfToken::String(format!("{:.1$}", x, prec)));
+    Ok(false)
+}
+
 // --- string/table stuff ---
 
 pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {

@@ -201,6 +201,9 @@ word .s [[
 
 word .b [[ 0= if [[ 'False' ]] orelse [[ 'True' ]] .s ]]
 
+3  !PRECISION
+word .f [[ @PRECISION _.f .s ]]
+
 10 !BASE
 word decimal [[ 10 !BASE ]]
 word hex     [[ 16 !BASE ]]

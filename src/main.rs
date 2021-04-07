@@ -311,6 +311,7 @@ fn main() {
     keyword!("atan",       ATAN);
     keyword!("logn",       LOGN);
     keyword!("pow",         POW);
+    keyword!("_.f",        FFMT);
     keyword!("#",         TALLY);
     keyword!("&",            AT);
 
