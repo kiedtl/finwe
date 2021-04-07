@@ -1,10 +1,10 @@
-word collatz : <n-*>
-	[
+word collatz [[ <n-*>
+	until [[
 		dup even?
-			[ dup 2 / int ]
-			[ dup 3 * 1 + ]
-		cond
-	dup 1 = ] until
-;;
+		if     [[ dup 2 / int ]]
+		orelse [[ dup 3 * 1 + ]]
+		dup 1 =
+	]]
+]]
 
-24 collatz .S
+24 collatz dbg
