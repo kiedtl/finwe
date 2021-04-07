@@ -180,6 +180,13 @@ word cr     [[ (     --     )  10 emit ]]
 word decimal [[ 10 !BASE ]]
 word hex     [[ 16 !BASE ]]
 
+word .s [[
+	0 until [[
+		dup rot> & emit
+		# rot 1+ tuck =
+	]]
+]]
+
 word .n [[ <n->
 	dup 0< if [[
 		$- emit -1 *
@@ -214,3 +221,13 @@ word rand [[ <n->
 	524287 and 1 shr
 	dup !_RAND
 ]]
+
+
+( ----- tables, high-order functions, apl imitations ----- )
+( TODO: implement macros and replace the redundant aliases )
+
+
+\ ⊢
+word identity [[ ]]
+
+

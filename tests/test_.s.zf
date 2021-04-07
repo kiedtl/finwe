@@ -1,0 +1,7 @@
+\\ test
+\\ This is a test.
+\\ This is another test.
+
+'test' .s cr
+'This is a test.' .s cr
+'This is another test.' .s cr
