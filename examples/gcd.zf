@@ -1,7 +1,7 @@
-word gcd : <nn-n>
-	[ tuck mod dup 0= ] until
+word gcd [[ <nn-n>
+	[ tuck mod dup 0= ] do-until
 	drop
-;;
+]]
 
    54    45 gcd .n cr   \ => 9
 23328 15876 gcd .n cr   \ => 324
