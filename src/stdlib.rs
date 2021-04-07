@@ -257,6 +257,18 @@ pub fn ATAN(env: &mut ZfEnv) -> Result<bool, String> {
     Ok(false)
 }
 
+pub fn LOGN(env: &mut ZfEnv) -> Result<bool, String> {
+    let (x, base) = (pop_as!(env, Number), pop_as!(env, Number));
+    env.pile.push(ZfToken::Number(base.log(x)));
+    Ok(false)
+}
+
+pub fn POW(env: &mut ZfEnv) -> Result<bool, String> {
+    let (y, x) = (pop_as!(env, Number), pop_as!(env, Number));
+    env.pile.push(ZfToken::Number(x.powf(y)));
+    Ok(false)
+}
+
 // --- string/table stuff ---
 
 pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {

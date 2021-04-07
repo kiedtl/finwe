@@ -309,6 +309,8 @@ fn main() {
     keyword!("ceil",       CEIL);
     keyword!("floor",     FLOOR);
     keyword!("atan",       ATAN);
+    keyword!("logn",       LOGN);
+    keyword!("pow",         POW);
     keyword!("#",         TALLY);
     keyword!("&",            AT);
 
