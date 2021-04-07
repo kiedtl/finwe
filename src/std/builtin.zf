@@ -69,7 +69,8 @@ word mod    [[  (  ab -- d   )  /mod drop ]]
 word fact   [[  (   n -- n   )  dup 1 <= ?ret dup 1- fact * ]]
 word even?  [[  (   n -- f   )  2 mod 0= ]]
 word odd?   [[  (   n -- f   )  even? not ]]
-word int    [[  (   f -- n   )  0 xor ]]
+word trunc  [[  (   f -- n   )  0 xor ]]
+word fract  [[  (   f -- n   )  dup trunc - ]]
 word negate [[  (  ab -- d   )  -1  * ]]
 word abs    [[  (   a -- c   )  dup 0< if [[ negate ]] ]]
 word square [[  (  ab -- d   )  dup * ]]
@@ -216,7 +217,7 @@ word .n [[ <n->
 
 		until [[
 			@BASE /mod   (r q)
-			int swap int (q r)
+			trunc swap trunc (q r)
 
 			dup 9 > if [[
 				10 - $a +
