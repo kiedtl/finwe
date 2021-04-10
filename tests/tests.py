@@ -32,7 +32,9 @@ def do_test(test):
     return (True, None)
 
 failed = []
+
 tests = [s for s in os.listdir(testdir) if 'test_' in s]
+tests = list(sorted(tests, key=lambda i: i, ))
 
 for test in tests:
     test_name = test.replace("test_", "", 1).replace(".zf", "", 1)
