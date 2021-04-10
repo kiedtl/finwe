@@ -35,12 +35,13 @@ failed = []
 tests = [s for s in os.listdir(testdir) if 'test_' in s]
 
 for test in tests:
-    print(f"{test}... ", end="")
+    test_name = test.replace("test_", "", 1).replace(".zf", "", 1)
+    print(f"testing \033[97m{test_name:6}\033[m... ", end="")
 
     r = do_test(test)
     if r[0]:
         PASSED += 1
-        print("\033[1;33mok\033[m")
+        print("\033[1;32mok\033[m")
     else:
         FAILED += 1
         failed.append([test, r[1], r[2]])
