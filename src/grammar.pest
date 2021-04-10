@@ -6,12 +6,16 @@ term = _{
 	| quote | guard  | table
 	| fetch | store  | word
 	| ifblk | until  | cond
+	| breakstmt | continuestmt
 
 }
 
 word_decl = { "word" ~ ident ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
+
 until = { "until" ~ block }
+continuestmt = { "continue" }
+breakstmt = { "break" }
 
 cond = { "cond" ~ "[[" ~ condarm+ ~ condany? ~ "]]" }
 condarm = { "is?" ~ block ~ block }
@@ -52,6 +56,7 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
 	"if" | "orelse" | "until" | "word" | "cond" | "is?" | "any" |
+	"continue" | "break" |
 	"[[" | "]]" | "[" | "]" | "{" | "}"
 }
 

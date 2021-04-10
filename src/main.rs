@@ -47,6 +47,8 @@ pub enum ZfToken {
 
     // Only used during parsing.
     Ident(String),
+    Continue,
+    Break,
 }
 
 impl ZfToken {
@@ -61,9 +63,11 @@ impl ZfToken {
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
             ZfToken::Ident(i)   => format!("<ident {}>", i),
-            ZfToken::CJump(i)    => format!("<?jmp {}>", i),
+            ZfToken::CJump(i)   => format!("<?jmp {}>", i),
             ZfToken::ZJump(i)   => format!("<zjmp {}>", i),
-            ZfToken::UJump(i)    => format!("<ujmp {}>", i),
+            ZfToken::UJump(i)   => format!("<ujmp {}>", i),
+            ZfToken::Continue   => format!("<continue>"),
+            ZfToken::Break      => format!("<break>"),
 
             ZfToken::Guard { before: _, after: _ }
                 => format!("<guard {:?}>", self),

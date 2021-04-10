@@ -19,19 +19,19 @@ fn parse_pairs(env: &mut ZfEnv, pairs: Pairs<Rule>)
 {
     let mut ast = vec![];
     for pair in pairs {
-        ast.extend(parse_term(env, pair));
+        ast.extend(parse_term(env, pair, false));
     }
     Ok(ast)
 }
 
-fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
+fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>, in_loop: bool) -> Vec<ZfToken> {
     match pair.as_rule() {
         Rule::EOI => vec![],
         Rule::word_decl => {
             let mut items = pair.into_inner();
 
             let name;
-            let ident = parse_term(env, items.nth(0).unwrap())[0].clone();
+            let ident = parse_term(env, items.nth(0).unwrap(), false)[0].clone();
             if let ZfToken::Ident(s) = ident {
                 name = s;
             } else { unreachable!() }
@@ -43,14 +43,14 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
 
             let body = items
                 .nth(0).unwrap().into_inner()
-                .map(|p| parse_term(env, p))
+                .map(|p| parse_term(env, p, false))
                 .fold(Vec::new(), |mut a, i| { a.extend(i); a });
             env.addword(name, body);
             vec![]
         }
         Rule::quote => {
             let quote = pair.into_inner()
-                .map(|p| parse_term(env, p))
+                .map(|p| parse_term(env, p, false))
                 .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
             // If the quote has only one element, and that element is a word,
@@ -118,14 +118,14 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
             pair.into_inner().for_each(|item| {
                 match item.as_rule() {
                     Rule::table_val => {
-                        let val = parse_term(env, item.into_inner().next().unwrap());
+                        let val = parse_term(env, item.into_inner().next().unwrap(), in_loop);
                         res.insert(ZfToken::Number(ctr), val[0].clone()); 
                         ctr += 1.;
                     },
                     Rule::table_keyval => {
                         let mut items = item.into_inner();
-                        let key = parse_term(env, items.nth(0).unwrap())[0].clone();
-                        let val = parse_term(env, items.nth(1).unwrap())[1].clone();
+                        let key = parse_term(env, items.nth(0).unwrap(), in_loop)[0].clone();
+                        let val = parse_term(env, items.nth(1).unwrap(), in_loop)[1].clone();
                         res.insert(key, val);
                     },
                     _ => unreachable!(),
@@ -166,13 +166,13 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
 
             let mut ast = pair.into_inner();
             let body = ast.nth(0).unwrap().into_inner()
-                .map(|p| parse_term(env, p))
+                .map(|p| parse_term(env, p, in_loop))
                 .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
             let orelse_ast = ast.nth(0);
             if orelse_ast.is_some() {
                 let orelse = orelse_ast.unwrap().into_inner()
-                    .map(|p| parse_term(env, p))
+                    .map(|p| parse_term(env, p, in_loop))
                     .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
                 ifstmt.push(ZfToken::ZJump((body.len() + 2) as isize));
@@ -186,17 +186,29 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
 
             ifstmt
         },
+        Rule::continuestmt if in_loop => vec![ZfToken::Continue],
+        Rule::breakstmt    if in_loop => vec![ZfToken::Break],
         Rule::until => {
             let mut until = vec![];
 
             let mut ast = pair.into_inner();
             let body = ast.nth(0).unwrap().into_inner()
-                .map(|p| parse_term(env, p))
+                .map(|p| parse_term(env, p, true))
                 .fold(Vec::new(), |mut a, i| { a.extend(i); a });
 
             let len = body.len() as isize;
             until.extend(body);
             until.push(ZfToken::ZJump(-len));
+
+            // Convert breaks and continues to jumps
+            for i in 0..until.len() {
+                match &until[i] {
+                    ZfToken::Continue => until[i] = ZfToken::UJump(-(i as isize)),
+                    ZfToken::Break =>
+                        until[i] = ZfToken::UJump((until.len() - i) as isize),
+                    _ => (),
+                }
+            }
 
             until
         },
@@ -214,17 +226,17 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>) -> Vec<ZfToken> {
                     Rule::condarm => {
                         let mut inner = arm_ast.into_inner();
                         let cond = inner.nth(0).unwrap().into_inner()
-                            .map(|p| parse_term(env, p))
+                            .map(|p| parse_term(env, p, in_loop))
                             .fold(Vec::new(), |mut a, i| { a.extend(i); a});
                         let body = inner.nth(0).unwrap().into_inner()
-                            .map(|p| parse_term(env, p))
+                            .map(|p| parse_term(env, p, in_loop))
                             .fold(Vec::new(), |mut a, i| { a.extend(i); a});
                         arms.push((cond, body));
                     },
                     Rule::condany => {
                         let body = arm_ast.into_inner()
                             .nth(0).unwrap().into_inner()
-                            .map(|p| parse_term(env, p))
+                            .map(|p| parse_term(env, p, in_loop))
                             .fold(Vec::new(), |mut a, i| { a.extend(i); a});
                         any = Some(body);
                     },
