@@ -33,19 +33,48 @@ pub fn AGAIN(env: &mut ZfEnv) -> Result<bool, String> {
 }
 
 pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {
-    let len = env.rs.len() - 1;
-    let item = env.pop()?;
-    env.rs[len].altpile.push(item);
+    let item = env.pop_from("_")?;
+    env.push(item);
     Ok(false)
 }
 
 pub fn POP(env: &mut ZfEnv) -> Result<bool, String> {
-    let len = env.rs.len() - 1;
-    let pupped = match env.rs[len].altpile.pop() {
-        Some(v) => v,
-        None => return Err(format!("stack underflow on alternate stack")),
-    };
+    let pupped = env.pop()?;
+    env.push_to("_", pupped);
+    Ok(false)
+}
+
+pub fn S_PUSH(env: &mut ZfEnv) -> Result<bool, String> {
+    let stack = pop_as!(env, Stack);
+    let item = env.pop()?;
+    env.push_to(&stack, item);
+    Ok(false)
+}
+
+pub fn S_DUPPUSH(env: &mut ZfEnv) -> Result<bool, String> {
+    let stack = pop_as!(env, Stack);
+    let item = env.peek()?.clone();
+    env.push_to(&stack, item);
+    Ok(false)
+}
+
+pub fn S_POP(env: &mut ZfEnv) -> Result<bool, String> {
+    let stack = pop_as!(env, Stack);
+    let pupped = env.pop_from(&stack)?;
     env.push(pupped);
+    Ok(false)
+}
+
+pub fn S_DUPPOP(env: &mut ZfEnv) -> Result<bool, String> {
+    let stack = pop_as!(env, Stack);
+    let pupped = env.peek_from(&stack)?.clone();
+    env.push(pupped);
+    Ok(false)
+}
+
+pub fn S_DROP(env: &mut ZfEnv) -> Result<bool, String> {
+    let stack = pop_as!(env, Stack);
+    let _ = env.pop_from(&stack)?;
     Ok(false)
 }
 

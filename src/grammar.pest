@@ -4,7 +4,7 @@ value = _{ float|string|character|table|quote }
 term = _{
 	  float | string | character
 	| quote | guard  | table
-	| fetch | store  | word
+	| stack | fetch  | store  | word
 	| ifblk | until  | cond
 	| breakstmt | continuestmt
 
@@ -25,6 +25,7 @@ block = { "[[" ~ term* ~ "]]" }
 
 quote = { "[" ~ term* ~ "]" }
 
+stack = { "%" ~ ident }
 fetch = { "@" ~ ident }
 store = { "!" ~ ident }
 

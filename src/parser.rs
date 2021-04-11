@@ -108,6 +108,7 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>, in_loop: bool) -> Vec<ZfToken> 
                 None => panic!("unknown word {}", ident),
             }
         }
+        Rule::stack => vec![ZfToken::Stack(pair.as_str()[1..].to_owned())],
         Rule::fetch => vec![ZfToken::Fetch(pair.as_str()[1..].to_owned())],
         Rule::store => vec![ZfToken::Store(pair.as_str()[1..].to_owned())],
         Rule::ident => vec![ZfToken::Ident(pair.as_str().to_owned())],

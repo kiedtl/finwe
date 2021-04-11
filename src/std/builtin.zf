@@ -14,17 +14,13 @@ word tuck    [[  (  ab -- bab )  swap over ]]
 word nip     [[  (  ab -- b   )  swap drop ]]
 
 word do-cond [[ <aqq-> ( f qT qF -- * )
-	push over push   (f qT)  ((qF f))
-	?do              ()
-	pop pop          (f qF)  (())
-	swap not swap    (x qF)
-	?do
+	%F <- swap %f <<- swap ?do   \ true branch
+	%f -> not %F ->        ?do   \ false branch
 ]]
 
 word do    [[  (   q --     )  @TRUE swap ?do ]]
-word dip   [[  (  vq -- v   )  swap push do pop ]]
-word ?dip  [[  (  vq -- v   )  push dup not ?ret pop dip ]]
-word sip   [[  (  vq -- v   )  push dup pop swap [ do ] dip ]]
+word dip   [[  (  vq -- v   )  swap %v <- do %v -> ]]
+word sip   [[  (  vq -- v   )  %f <- dup %f -> swap [ do ] dip ]]
 word bi    [[  ( xqq --     )  [ sip ] dip do ]]
 word bi*   [[  (xyqq --     )  [ dip ] dip do ]]
 word bi@   [[  ( xyq --     )  dup bi* ]]
@@ -54,14 +50,21 @@ word do-until [[ <q-*>
 	drop
 ]]
 word do-times [[ <nq-*>
-	swap
-	[ dup 0= ?ret
-		1- push
-		dup push do
-		pop pop
-		again
-	] do
-	2drop
+	%f <- %i <-
+
+	%i ->> 0= if [[
+		%f >-
+		drop
+		@TRUE ?ret
+	]]
+
+	until [[
+		%i -> 1- %i <-
+		%f ->> do
+		%i ->> 0=
+	]]
+
+	%i >- %f >-
 ]]
 
 word /      [[  (  ab -- c   )  /mod swap drop ]]
@@ -82,10 +85,12 @@ word gcd    [[  (  ab -- n   )  until [[ tuck mod dup 0= ]] drop ]]
 word reset  [[  ( xya --     )  until [[ drop depth 0=  ]] ]]
 
 word rev [[ <n-*> (...n -- ... )
+	( keep rolling higher and higher amounts to reverse
+	  the stack )
 	1 until [[
-		swap push dup push
+		swap %ctr <- %roll <<-
 		roll
-		pop pop swap
+		%ctr -> %roll ->
 		1+ 2dup =
 	]]
 	2drop

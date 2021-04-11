@@ -1,4 +1,7 @@
 vim syntax
+remove `again'
+move `?do' to builtin.zf
+add ret
 .t (tables)
 break statement for until
 show exec ctx on err

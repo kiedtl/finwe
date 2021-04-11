@@ -38,7 +38,7 @@ tests = list(sorted(tests, key=lambda i: i, ))
 
 for test in tests:
     test_name = test.replace("test_", "", 1).replace(".zf", "", 1)
-    print(f"testing \033[97m{test_name:6}\033[m... ", end="")
+    print(f"testing \033[97m{test_name:8}\033[m... ", end="")
 
     r = do_test(test)
     if r[0]:

@@ -3,7 +3,7 @@
 
 ( We test ln() with the following formula:
   √S = pow(e, 0.5×ln(S)) )
-word ln-sqrt [[ push @E 0.5 pop ln * pow ceil ]]
+word ln-sqrt [[ %X <- @E 0.5 %X -> ln * pow ceil ]]
 
 25 ln-sqrt .n cr
 

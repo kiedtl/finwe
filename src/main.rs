@@ -35,6 +35,7 @@ pub enum ZfToken {
     String(String),
     Symbol(usize),
     SymbRef(usize),
+    Stack(String),
     Fetch(String),
     Store(String),
     Table(HashMap<ZfToken, ZfToken>),
@@ -61,6 +62,7 @@ impl ZfToken {
             ZfToken::String(s)  => format!("{:?}", s),
             ZfToken::Symbol(s)  => format!("<symb {}>", e.dict[*s].0),
             ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
+            ZfToken::Stack(s)   => format!("<stack {}>", s),
             ZfToken::Fetch(s)   => format!("<fetch {}>", s),
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
@@ -101,7 +103,6 @@ impl PartialEq for ZfToken {
 
                 true
             },
-            (Ident(l),     Ident(r)) => l == r,
             (Guard{before: lb, after: la},
                 Guard{before: rb, after: ra}) => lb == rb && la == ra,
             _ => false,
@@ -152,7 +153,6 @@ pub enum ZfProc {
 pub struct ZfRsFrame {
     dictid: usize,
     ip: usize,
-    altpile: Vec<ZfToken>,
 }
 
 #[derive(Clone)]
@@ -188,12 +188,17 @@ impl ZfEnv {
         self.stack(cur)
     }
 
-    pub fn push(&mut self, item: ZfToken) {
-        self.cur_stack().push(item);
+    pub fn push_to(&mut self, stack: &str, item: ZfToken) {
+        self.stack(stack).push(item);
     }
 
-    pub fn peek<'a>(&'a mut self) -> Result<&'a ZfToken, String> {
-        let stack = self.cur_stack();
+    pub fn push(&mut self, item: ZfToken) {
+        let cur = &self.current.clone();
+        self.push_to(cur, item);
+    }
+
+    pub fn peek_from<'a>(&'a mut self, stack: &str) -> Result<&'a ZfToken, String> {
+        let stack = self.stack(stack);
         let len = stack.len();
 
         match len {
@@ -202,11 +207,21 @@ impl ZfEnv {
         }
     }
 
-    pub fn pop(&mut self) -> Result<ZfToken, String> {
-        match self.cur_stack().pop() {
+    pub fn peek<'a>(&'a mut self) -> Result<&'a ZfToken, String> {
+        let cur = &self.current.clone();
+        self.peek_from(cur)
+    }
+
+    pub fn pop_from(&mut self, stack: &str) -> Result<ZfToken, String> {
+        match self.stack(stack).pop() {
             Some(e) => Ok(e),
             None => Err(format!("stack underflow")),
         }
+    }
+
+    pub fn pop(&mut self) -> Result<ZfToken, String> {
+        let cur = &self.current.clone();
+        self.pop_from(cur)
     }
 
     pub fn findword(&self, name: &str) -> Option<usize> {
@@ -230,7 +245,6 @@ impl ZfEnv {
         self.rs.push(ZfRsFrame {
             dictid: funcid,
             ip: iptr,
-            altpile: Vec::new()
         });
     }
 
@@ -356,6 +370,11 @@ fn main() {
     keyword!("wait",       WAIT);
     keyword!("push",       PUSH);
     keyword!("pop",         POP);
+    keyword!("<-",       S_PUSH);
+    keyword!("<<-",   S_DUPPUSH);
+    keyword!("->",        S_POP);
+    keyword!("->>",    S_DUPPOP);
+    keyword!(">-",       S_DROP);
     keyword!("dbg",         DBG);
     keyword!("ddbg",    DICTDBG);
     keyword!("ceil",       CEIL);
