@@ -1,5 +1,4 @@
 vim syntax
-remove `again'
 move `?do' to builtin.zf
 add ret
 .t (tables)
@@ -23,3 +22,4 @@ if/until/times/match
 log
 .f (floats)
 break statement for until
+remove `again'

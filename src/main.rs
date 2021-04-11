@@ -347,7 +347,6 @@ fn main() {
     }
 
     keyword!("?do",          IF);
-    keyword!("again",     AGAIN);
     keyword!("ret",         RET);
     keyword!("?ret",       CRET);
     keyword!("depth",     DEPTH);

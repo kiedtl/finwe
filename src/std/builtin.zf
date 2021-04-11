@@ -45,10 +45,8 @@ word 1-    [[  (   a -- c   )  1 - ]]
 word 2+    [[  (   a -- c   )  2 + ]]
 word 2-    [[  (   a -- c   )  2 - ]]
 
-word do-until [[ <q-*>
-	[ dup dip swap ?ret again ] do
-	drop
-]]
+word do-until [[ <q-*> until [[ dup dip swap ]] drop ]]
+
 word do-times [[ <nq-*>
 	$f <- $i <-
 
@@ -112,17 +110,12 @@ word ipow  [[  (  bp -- n   )  1 swap [ over * ] do-times nip ]]
 
 word sqrt [[ <n-n>
 	1
-	[
+	0 $last <-
+	loop [[
 		2dup / over - 2 /
-
-		\ TODO: intead of comparing with 0, compare for equality with
-		\ the previous iteration's value. This is to prevent infinite
-		\ loops on inputs such as 232.
-		dup 0= ?ret
-
-		+
-		again
-	] do
+		dup $last -> = if [[ break ]]
+		$last <<- +
+	]]
 	drop nip
 ]]
 

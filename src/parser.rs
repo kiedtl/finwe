@@ -189,6 +189,27 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>, in_loop: bool) -> Vec<ZfToken> 
         },
         Rule::continuestmt if in_loop => vec![ZfToken::Continue],
         Rule::breakstmt    if in_loop => vec![ZfToken::Break],
+        Rule::loopblk => {
+            let mut ast = pair.into_inner();
+            let mut loopblk = ast.nth(0).unwrap().into_inner()
+                .map(|p| parse_term(env, p, true))
+                .fold(Vec::new(), |mut a, i| { a.extend(i); a });
+
+            let len = loopblk.len() as isize;
+            loopblk.push(ZfToken::UJump(-len));
+
+            // Convert breaks and continues to jumps
+            for i in 0..loopblk.len() {
+                match &loopblk[i] {
+                    ZfToken::Continue => loopblk[i] = ZfToken::UJump(-(i as isize)),
+                    ZfToken::Break =>
+                        loopblk[i] = ZfToken::UJump((loopblk.len() - i) as isize),
+                    _ => (),
+                }
+            }
+
+            loopblk
+        },
         Rule::until => {
             let mut until = vec![];
 

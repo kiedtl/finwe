@@ -35,12 +35,6 @@ pub fn IF(env: &mut ZfEnv) -> Result<bool, String> {
     }
 }
 
-pub fn AGAIN(env: &mut ZfEnv) -> Result<bool, String> {
-    let len = env.rs.len() - 1;
-    env.rs[len].ip = 0;
-    Ok(true)
-}
-
 pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {
     let item = env.pop_from("_")?;
     env.push(item);
