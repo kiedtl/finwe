@@ -3,7 +3,7 @@
 use crate::*;
 
 pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
-    if Into::<bool>::into(&pop!(env)) {
+    if Into::<bool>::into(&env.pop()?) {
         env.rs.pop();
         if env.rs.len() > 0 {
             let l = env.rs.len() - 1;
@@ -18,7 +18,7 @@ pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
 pub fn IF(env: &mut ZfEnv) -> Result<bool, String> {
     let func = pop_as!(env, Symbol);
 
-    if Into::<bool>::into(&pop!(env)) {
+    if Into::<bool>::into(&env.pop()?) {
         env.pushrs(func, 0);
         Ok(true)
     } else {
@@ -34,21 +34,24 @@ pub fn AGAIN(env: &mut ZfEnv) -> Result<bool, String> {
 
 pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {
     let len = env.rs.len() - 1;
-    env.rs[len].altpile.push(pop!(env));
+    let item = env.pop()?;
+    env.rs[len].altpile.push(item);
     Ok(false)
 }
 
 pub fn POP(env: &mut ZfEnv) -> Result<bool, String> {
     let len = env.rs.len() - 1;
-    env.pile.push(match env.rs[len].altpile.pop() {
+    let pupped = match env.rs[len].altpile.pop() {
         Some(v) => v,
         None => return Err(format!("stack underflow on alternate stack")),
-    });
+    };
+    env.push(pupped);
     Ok(false)
 }
 
 pub fn DEPTH(env: &mut ZfEnv) -> Result<bool, String> {
-    env.pile.push(ZfToken::Number(env.pile.len() as f64));
+    let depth = env.cur_stack().len();
+    env.push(ZfToken::Number(depth as f64));
     Ok(false)
 }
 
@@ -56,12 +59,12 @@ pub fn ARRANGE(env: &mut ZfEnv) -> Result<bool, String> {
     let mut cells = HashMap::new();
     let (b, a) = (pop_as!(env, String), pop_as!(env, String));
 
-    for ch in a.chars() { cells.insert(ch, pop!(env)); }
+    for ch in a.chars() { cells.insert(ch, env.pop()?); }
     for ch in b.chars() {
         if !cells.contains_key(&ch) {
             return Err(format!("unknown identifier '{}'", ch));
         }
-        env.pile.push(cells[&ch].clone());
+        env.push(cells[&ch].clone());
     }
 
     Ok(false)
@@ -69,14 +72,14 @@ pub fn ARRANGE(env: &mut ZfEnv) -> Result<bool, String> {
 
 pub fn PICK(env: &mut ZfEnv) -> Result<bool, String> {
     let i = pop_as!(env, Number) as usize;
+    let len = env.cur_stack().len();
 
-    if (i + 1) > env.pile.len() {
-        return Err(format!("stack underflow ({} > {})",
-            (i + 1), env.pile.len()));
+    if i + 1 > len {
+        return Err(format!("stack underflow ({} > {})", (i + 1), len));
     }
 
-    let v = env.pile[env.pile.len()-1-i].clone();
-    env.pile.push(v);
+    let v = env.cur_stack()[len - 1 - i].clone();
+    env.push(v);
     Ok(false)
 }
 
@@ -85,104 +88,104 @@ pub fn ROLL(env: &mut ZfEnv) -> Result<bool, String> {
 
     let mut stuff = Vec::new();
     while i > 0 {
-        stuff.push(pop!(env));
+        stuff.push(env.pop()?);
         i -= 1;
     }
-    let needle = pop!(env);
+    let needle = env.pop()?;
     for thing in stuff.iter().rev() {
-        env.pile.push(thing.clone());
+        env.push(thing.clone());
     }
-    env.pile.push(needle);
+    env.push(needle);
 
     Ok(false)
 }
 
 pub fn DROP(env: &mut ZfEnv) -> Result<bool, String> {
-    let _ = pop!(env);
+    let _ = env.pop()?;
     Ok(false)
 }
 
 pub fn NOT(env: &mut ZfEnv) -> Result<bool, String> {
-    let c = !Into::<bool>::into(&pop!(env));
-    env.pile.push(ZfToken::Number(if c {1f64} else {0f64}));
+    let c = !Into::<bool>::into(&env.pop()?);
+    env.push(ZfToken::Number(if c {1f64} else {0f64}));
     Ok(false)
 }
 
 pub fn CMP(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
     if a == b {
-        env.pile.push(ZfToken::Number( 0f64));
+        env.push(ZfToken::Number( 0f64));
     } else if a > b {
-        env.pile.push(ZfToken::Number( 1f64));
+        env.push(ZfToken::Number( 1f64));
     } else if a < b {
-        env.pile.push(ZfToken::Number(-1f64));
+        env.push(ZfToken::Number(-1f64));
     }
     Ok(false)
 }
 
 pub fn PLUS(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(a + b));
+    env.push(ZfToken::Number(a + b));
     Ok(false)
 }
 
 pub fn SUB(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(a - b));
+    env.push(ZfToken::Number(a - b));
     Ok(false)
 }
 
 pub fn MUL(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(a * b));
+    env.push(ZfToken::Number(a * b));
     Ok(false)
 }
 
 pub fn DMOD(env: &mut ZfEnv) -> Result<bool, String> {
     let (b, a) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(a % b));
-    env.pile.push(ZfToken::Number(a / b));
+    env.push(ZfToken::Number(a % b));
+    env.push(ZfToken::Number(a / b));
     Ok(false)
 }
 
 pub fn bAND(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((a & b) as f64));
+    env.push(ZfToken::Number((a & b) as f64));
     Ok(false)
 }
 
 pub fn bOR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((a | b) as f64));
+    env.push(ZfToken::Number((a | b) as f64));
     Ok(false)
 }
 
 pub fn bXOR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((a ^ b) as f64));
+    env.push(ZfToken::Number((a ^ b) as f64));
     Ok(false)
 }
 
 pub fn bNOT(env: &mut ZfEnv) -> Result<bool, String> {
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((!a) as f64));
+    env.push(ZfToken::Number((!a) as f64));
     Ok(false)
 }
 
 pub fn SHL(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((a << b) as f64));
+    env.push(ZfToken::Number((a << b) as f64));
     Ok(false)
 }
 
 pub fn SHR(env: &mut ZfEnv) -> Result<bool, String> {
     let b = pop_as!(env, Number) as usize;
     let a = pop_as!(env, Number) as usize;
-    env.pile.push(ZfToken::Number((a >> b) as f64));
+    env.push(ZfToken::Number((a >> b) as f64));
     Ok(false)
 }
 
@@ -210,10 +213,11 @@ pub fn WAIT(env: &mut ZfEnv) -> Result<bool, String> {
 }
 
 pub fn DBG(env: &mut ZfEnv) -> Result<bool, String> {
-    if env.pile.len() > 0 {
-        print!("{}", env.pile[env.pile.len()-1].fmt(env));
-        if env.pile.len() > 1 {
-            for thing in env.pile.iter().rev().skip(1) {
+    let stack = env.cur_stack().clone(); // fuck u borrow chkr
+    if stack.len() > 0 {
+        print!("{}", stack[stack.len()-1].fmt(env));
+        if stack.len() > 1 {
+            for thing in stack.iter().rev().skip(1) {
                 print!(", {}", thing.fmt(env));
             }
         }
@@ -241,55 +245,55 @@ pub fn DICTDBG(env: &mut ZfEnv) -> Result<bool, String> {
 
 pub fn CEIL(env: &mut ZfEnv) -> Result<bool, String> {
     let r = pop_as!(env, Number).ceil();
-    env.pile.push(ZfToken::Number(r));
+    env.push(ZfToken::Number(r));
     Ok(false)
 }
 
 pub fn FLOOR(env: &mut ZfEnv) -> Result<bool, String> {
     let r = pop_as!(env, Number).floor();
-    env.pile.push(ZfToken::Number(r));
+    env.push(ZfToken::Number(r));
     Ok(false)
 }
 
 pub fn ATAN(env: &mut ZfEnv) -> Result<bool, String> {
     let r = pop_as!(env, Number).atan();
-    env.pile.push(ZfToken::Number(r));
+    env.push(ZfToken::Number(r));
     Ok(false)
 }
 
 pub fn LOGN(env: &mut ZfEnv) -> Result<bool, String> {
     let (x, base) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(base.log(x)));
+    env.push(ZfToken::Number(base.log(x)));
     Ok(false)
 }
 
 pub fn POW(env: &mut ZfEnv) -> Result<bool, String> {
     let (y, x) = (pop_as!(env, Number), pop_as!(env, Number));
-    env.pile.push(ZfToken::Number(x.powf(y)));
+    env.push(ZfToken::Number(x.powf(y)));
     Ok(false)
 }
 
 pub fn FFMT(env: &mut ZfEnv) -> Result<bool, String> {
     let (prec, x) = (pop_as!(env, Number) as usize, pop_as!(env, Number));
-    env.pile.push(ZfToken::String(format!("{:.1$}", x, prec)));
+    env.push(ZfToken::String(format!("{:.1$}", x, prec)));
     Ok(false)
 }
 
 // --- string/table stuff ---
 
 pub fn TALLY(env: &mut ZfEnv) -> Result<bool, String> {
-    let len = match peek!(env) {
+    let len = match env.peek()? {
         ZfToken::String(s) => s.len(),
         ZfToken::Table(t)  => t.len(),
         x => return Err(format!("{:?} is not indexable", x)),
     };
-    env.pile.push(ZfToken::Number(len as f64));
+    env.push(ZfToken::Number(len as f64));
     Ok(false)
 }
 
 pub fn AT(env: &mut ZfEnv) -> Result<bool, String> {
     let index = pop_as!(env, Number);
-    let item = match peek!(env) {
+    let item = match env.peek()? {
         ZfToken::String(s) => match s.chars().nth(index as usize) {
             Some(c) => ZfToken::Number(c as u32 as f64),
             None => return Err(format!("index out of range: {} >= {}",
@@ -301,6 +305,6 @@ pub fn AT(env: &mut ZfEnv) -> Result<bool, String> {
         },
         x => return Err(format!("{:?} is not indexable", x)),
     };
-    env.pile.push(item);
+    env.push(item);
     Ok(false)
 }

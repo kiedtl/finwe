@@ -20,6 +20,8 @@ mod errors;
 mod stdlib;
 mod random;
 
+pub const DEFAULT_STACK: &'static str = "_";
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GuardItem {
     Any, Number, Str, Quote,
@@ -153,16 +155,59 @@ pub struct ZfRsFrame {
     altpile: Vec<ZfToken>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ZfEnv {
-    pile: Vec<ZfToken>,
-    vars: HashMap<String, ZfToken>,
-    dict: Vec<(String, ZfProc)>,
-    rs:   Vec<ZfRsFrame>,
+    vars:  HashMap<String, ZfToken>,
+    piles: HashMap<String, Vec<ZfToken>>,
+    current: String,
+    dict:  Vec<(String, ZfProc)>,
+    rs:    Vec<ZfRsFrame>,
 }
 
 impl ZfEnv {
-    pub fn new() -> ZfEnv { Default::default() }
+    pub fn new() -> ZfEnv {
+        ZfEnv {
+            vars: HashMap::new(),
+            piles: HashMap::new(),
+            current: DEFAULT_STACK.to_owned(),
+            dict: Vec::new(),
+            rs: Vec::new(),
+        }
+    }
+
+    pub fn stack<'a>(&'a mut self, name: &str) -> &'a mut Vec<ZfToken> {
+        if !self.piles.contains_key(name) {
+            self.piles.insert(name.to_owned(), Vec::new());
+        }
+
+        self.piles.get_mut(name).unwrap().as_mut()
+    }
+
+    pub fn cur_stack(&mut self) -> &mut Vec<ZfToken> {
+        let cur = &self.current.clone();
+        self.stack(cur)
+    }
+
+    pub fn push(&mut self, item: ZfToken) {
+        self.cur_stack().push(item);
+    }
+
+    pub fn peek<'a>(&'a mut self) -> Result<&'a ZfToken, String> {
+        let stack = self.cur_stack();
+        let len = stack.len();
+
+        match len {
+            0 => Err(format!("stack underflow")),
+            _ => Ok(&stack[len - 1])
+        }
+    }
+
+    pub fn pop(&mut self) -> Result<ZfToken, String> {
+        match self.cur_stack().pop() {
+            Some(e) => Ok(e),
+            None => Err(format!("stack underflow")),
+        }
+    }
 
     pub fn findword(&self, name: &str) -> Option<usize> {
         for i in 0..self.dict.len() {
@@ -205,25 +250,25 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
 
         let crs = env.rs.len() - 1;
         let (c_ib, ip) = (env.rs[crs].dictid, env.rs[crs].ip);
-        let word = &env.dict[c_ib].1;
+
         let ib;
+        match env.dict[c_ib].1.clone() {
+            ZfProc::User(u) => ib = u,
+            ZfProc::Builtin(b) => {
+                // Pop a stack frame (builtin words assume that they're on the
+                // frame of their caller).
+                env.rs.pop();
 
-        if let ZfProc::User(u) = word {
-            ib = u;
-        } else if let ZfProc::Builtin(b) = word.clone() {
-            // Pop a stack frame (builtin words assume they're on the frame of
-            // their caller.
-            env.rs.pop();
-
-            // Execute the inbuilt word and continue.
-            match (b)(env) {
-                Ok(co) => {
-                    if !co { env.incip(); }
-                    continue;
-                },
-                Err(e) => return Err(e),
-            }
-        } else { unreachable!(); }
+                // Execute the inbuilt word and continue.
+                match (b)(env) {
+                    Ok(co) => {
+                        if !co { env.incip(); }
+                        continue;
+                    },
+                    Err(e) => return Err(e),
+                }
+            },
+        }
 
         if ip >= ib.len() {
             env.rs.pop();
@@ -233,10 +278,6 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
             continue;
         }
 
-        // Keeping this debug code around because, damnit, it's fun to watch.
-        //std::thread::sleep(std::time::Duration::from_millis(500));
-        //println!("{} {} {:?}", env.dict[c_ib].0, ip, ib[ip]);
-
         match &ib[ip] {
             ZfToken::Nop => (),
 
@@ -244,29 +285,36 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                 env.pushrs(*s, 0);
                 continue; // don't increment IP below
             },
-            ZfToken::SymbRef(i) => env.pile.push(ZfToken::Symbol(*i)),
+            ZfToken::SymbRef(i) => env.push(ZfToken::Symbol(*i)),
             ZfToken::Fetch(var) => if env.vars.contains_key(var) {
-                env.pile.push(env.vars[var].clone());
+                env.push(env.vars[var].clone());
             } else {
                 return Err(format!("unknown variable {}", var))
             },
             ZfToken::Store(var) => {
-                env.vars.insert(var.clone(), pop!(env));
+                let i = env.pop()?;
+                env.vars.insert(var.clone(), i);
             },
-            ZfToken::CJump(i) => if Into::<bool>::into(&pop!(env)) {
-                env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
-                continue;
+            ZfToken::CJump(i) => {
+                let item = env.pop()?;
+                if Into::<bool>::into(&item) {
+                    env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+                    continue;
+                }
             },
-            ZfToken::ZJump(i) => if !Into::<bool>::into(&pop!(env)) {
-                env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
-                continue;
+            ZfToken::ZJump(i) => {
+                let item = env.pop()?;
+                if !Into::<bool>::into(&item) {
+                    env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
+                    continue;
+                }
             },
             ZfToken::UJump(i) => {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
                 continue;
             }
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
-            _ => env.pile.push(ib[ip].clone()),
+            _ => env.push(ib[ip].clone()),
         }
 
         env.incip();

@@ -9,17 +9,6 @@ pub fn stacktrace(e: &mut ZfEnv) {
         eprintln!("  => {:12}[{}] at {}", name, frame.dictid, frame.ip);
     }
 
-    eprintln!("data stack:");
-    let mut ctr = 1;
-    for item in e.pile.iter().rev() {
-        if ctr > 9 {
-            break;
-        }
-
-        eprintln!("  {}. {}", ctr, item.fmt(e));
-        ctr += 1;
-    }
-
     eprintln!("execution context:");
     let curframe = e.rs.len() - 1;
     if let ZfProc::User(code) = &e.dict[e.rs[curframe].dictid].1 {
