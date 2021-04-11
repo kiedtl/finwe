@@ -20,10 +20,7 @@ if [[
 
 [
 	@TRUE
-	if [[
-		4
-		@TRUE ?ret
-	]]
+	if [[ 4 ret ]]
 ] do
 
 5

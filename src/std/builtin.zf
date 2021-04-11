@@ -54,8 +54,7 @@ word do-times [[ <nq-*>
 
 	$i ->> 0= if [[
 		$f >-
-		drop
-		@TRUE ?ret
+		drop ret
 	]]
 
 	until [[
@@ -142,7 +141,7 @@ word prime? [[
 				(x i)
 				2dup 2dup mod 0= rot> 2+ mod 0= or if [[
 					2drop @FALSE
-					@TRUE ?ret
+					ret
 				]] orelse [[
 					6 +
 					dup square uncover >

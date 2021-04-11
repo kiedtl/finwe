@@ -2,6 +2,15 @@
 
 use crate::*;
 
+pub fn RET(env: &mut ZfEnv) -> Result<bool, String> {
+    env.rs.pop();
+    if env.rs.len() > 0 {
+        let l = env.rs.len() - 1;
+        env.rs[l].ip += 1;
+    }
+    Ok(true)
+}
+
 pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
     if Into::<bool>::into(&env.pop()?) {
         env.rs.pop();
