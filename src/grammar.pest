@@ -25,7 +25,7 @@ block = { "[[" ~ term* ~ "]]" }
 
 quote = { "[" ~ term* ~ "]" }
 
-stack = { "%" ~ ident }
+stack = { "$" ~ ident }
 fetch = { "@" ~ ident }
 store = { "!" ~ ident }
 
@@ -39,9 +39,8 @@ float = @{
 	) ~ forced_ws
 }
 
-// TODO: use '' for char, "" for string
-string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
-character = @{ "$" ~ (!WHITESPACE ~ ANY) }
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+character = @{ "'" ~ (!WHITESPACE ~ ANY) ~ "'" }
 
 table = { ("{{" ~ table_keyval* ~ "}}")|("{" ~ table_val* ~ "}")}
 table_keyval = { value ~ value }

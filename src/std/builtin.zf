@@ -14,13 +14,13 @@ word tuck    [[  (  ab -- bab )  swap over ]]
 word nip     [[  (  ab -- b   )  swap drop ]]
 
 word do-cond [[ <aqq-> ( f qT qF -- * )
-	%F <- swap %f <<- swap ?do   \ true branch
-	%f -> not %F ->        ?do   \ false branch
+	$F <- swap $f <<- swap ?do   \ true branch
+	$f -> not $F ->        ?do   \ false branch
 ]]
 
 word do    [[  (   q --     )  @TRUE swap ?do ]]
-word dip   [[  (  vq -- v   )  swap %v <- do %v -> ]]
-word sip   [[  (  vq -- v   )  %f <- dup %f -> swap [ do ] dip ]]
+word dip   [[  (  vq -- v   )  swap $v <- do $v -> ]]
+word sip   [[  (  vq -- v   )  $f <- dup $f -> swap [ do ] dip ]]
 word bi    [[  ( xqq --     )  [ sip ] dip do ]]
 word bi*   [[  (xyqq --     )  [ dip ] dip do ]]
 word bi@   [[  ( xyq --     )  dup bi* ]]
@@ -50,21 +50,21 @@ word do-until [[ <q-*>
 	drop
 ]]
 word do-times [[ <nq-*>
-	%f <- %i <-
+	$f <- $i <-
 
-	%i ->> 0= if [[
-		%f >-
+	$i ->> 0= if [[
+		$f >-
 		drop
 		@TRUE ?ret
 	]]
 
 	until [[
-		%i -> 1- %i <-
-		%f ->> do
-		%i ->> 0=
+		$i -> 1- $i <-
+		$f ->> do
+		$i ->> 0=
 	]]
 
-	%i >- %f >-
+	$i >- $f >-
 ]]
 
 word /      [[  (  ab -- c   )  /mod swap drop ]]
@@ -88,9 +88,9 @@ word rev [[ <n-*> (...n -- ... )
 	( keep rolling higher and higher amounts to reverse
 	  the stack )
 	1 until [[
-		swap %ctr <- %roll <<-
+		swap $ctr <- $roll <<-
 		roll
-		%ctr -> %roll ->
+		$ctr -> $roll ->
 		1+ 2dup =
 	]]
 	2drop
@@ -204,7 +204,7 @@ word .s [[
 	]]
 ]]
 
-word .b [[ 0= if [[ 'False' ]] orelse [[ 'True' ]] .s ]]
+word .b [[ 0= if [[ "False" ]] orelse [[ "True" ]] .s ]]
 
 3  !PRECISION
 word .f [[ @PRECISION _.f .s ]]
@@ -215,11 +215,11 @@ word hex     [[ 16 !BASE ]]
 
 word .n [[ <n->
 	dup 0< if [[
-		$- emit -1 *
+		'-' emit -1 *
 	]]
 
 	?dup 0= if [[
-		$0 emit
+		'0' emit
 	]] orelse [[
 		999 swap (stop indicator)
 
@@ -228,9 +228,9 @@ word .n [[ <n->
 			trunc swap trunc (q r)
 
 			dup 9 > if [[
-				10 - $a +
+				10 - 'a' +
 			]] orelse [[
-				$0 +
+				'0' +
 			]]
 			swap ?dup not
 		]]
