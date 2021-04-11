@@ -1,0 +1,17 @@
+\\ 9, 5, 2
+
+@TRUE   [ 2 ]
+	[ 3 ]
+do-cond
+
+@FALSE  [ 4 ]
+	[ 5 ]
+do-cond
+
+@TRUE   [
+	@FALSE  [ 8 ]
+		[ 9 ]
+	do-cond
+] [ "uh oh" ] do-cond
+
+dbg
