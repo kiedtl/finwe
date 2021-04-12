@@ -1,6 +1,5 @@
 vim syntax
 move `?do' to builtin.zf
-add ret
 .t (tables)
 show exec ctx on err
 guards
@@ -23,3 +22,4 @@ log
 .f (floats)
 break statement for until
 remove `again'
+add ret
