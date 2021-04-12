@@ -4,9 +4,9 @@ value = _{ float|string|character|table|quote }
 term = _{
 	  float | string | character
 	| quote | guard  | table
-	| stack | fetch  | store  | word
-	| ifblk | until  | cond   | loopblk
-	| breakstmt | continuestmt
+	| stack | fetch  | store   | word
+	| ifblk | until  | cond    | loopblk
+	| breakstmt | continuestmt | stackblk
 
 }
 
@@ -22,11 +22,13 @@ cond = { "cond" ~ "[[" ~ condarm+ ~ condany? ~ "]]" }
 condarm = { "is?" ~ block ~ block }
 condany = { "any" ~ block }
 
+stack = { "$" ~ ident }
+stackblk = { "sw:" ~ stack ~ block }
+
 block = { "[[" ~ term* ~ "]]" }
 
 quote = { "[" ~ term* ~ "]" }
 
-stack = { "$" ~ ident }
 fetch = { "@" ~ ident }
 store = { "!" ~ ident }
 
@@ -57,7 +59,7 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
 	"if" | "orelse" | "until" | "word" | "cond" | "is?" | "any" |
-	"continue" | "break" | "loop" |
+	"continue" | "break" | "loop" | "sw:" |
 	"[[" | "]]" | "[" | "]" | "{" | "}"
 }
 

@@ -35,6 +35,7 @@ pub enum ZfToken {
     String(String),
     Symbol(usize),
     SymbRef(usize),
+    Switch(String),
     Stack(String),
     Fetch(String),
     Store(String),
@@ -63,6 +64,7 @@ impl ZfToken {
             ZfToken::Symbol(s)  => format!("<symb {}>", e.dict[*s].0),
             ZfToken::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
             ZfToken::Stack(s)   => format!("<stack {}>", s),
+            ZfToken::Switch(s)  => format!("<sw {}>", s),
             ZfToken::Fetch(s)   => format!("<fetch {}>", s),
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
@@ -327,6 +329,7 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                 env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
                 continue;
             }
+            ZfToken::Switch(s) => env.current = s.clone(),
             ZfToken::Guard { before: _b, after: _a } => (), // TODO
             _ => env.push(ib[ip].clone()),
         }

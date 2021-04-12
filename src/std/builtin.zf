@@ -56,7 +56,7 @@ word do-times [[ <nq-*>
 	]]
 
 	until [[
-		$i -> 1- $i <-
+		sw: $i [[ 1- ]]
 		$f ->> do
 		$i ->> 0=
 	]]

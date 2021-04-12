@@ -187,6 +187,26 @@ fn parse_term(env: &mut ZfEnv, pair: Pair<Rule>, in_loop: bool) -> Vec<ZfToken> 
 
             ifstmt
         },
+        Rule::stackblk => {
+            let mut stackblk = vec![];
+            let mut ast = pair.into_inner();
+
+            let name;
+            let ident = parse_term(env, ast.nth(0).unwrap(), false)[0].clone();
+            if let ZfToken::Stack(s) = ident {
+                name = s;
+            } else { unreachable!() }
+
+            let body = ast.nth(0).unwrap().into_inner()
+                .map(|p| parse_term(env, p, true))
+                .fold(Vec::new(), |mut a, i| { a.extend(i); a });
+
+            stackblk.push(ZfToken::Switch(name));
+            stackblk.extend(body);
+            stackblk.push(ZfToken::Switch(DEFAULT_STACK.to_owned()));
+
+            stackblk
+        },
         Rule::continuestmt if in_loop => vec![ZfToken::Continue],
         Rule::breakstmt    if in_loop => vec![ZfToken::Break],
         Rule::loopblk => {
