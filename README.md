@@ -26,6 +26,11 @@ See `examples/*.zf` and `src/std/builtin.zf`.
   - `err` and `ok`
   - `key`
   - `import`
+  - `>>-`
+- Docs for functions
+- Escape sequences for characters and strings
+- zF equivalents for the following:
+  - retro-describe (RETRO)
 - Show code context on syntax/runtime error.
 - Flesh out stack guards.
 - Very, very simple macro system.
