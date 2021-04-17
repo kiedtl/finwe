@@ -20,6 +20,15 @@ mod parser_tests {
             Word("abcd".to_owned()), Number(99.), Char(98.)
         ]);
     }
+
+    #[test]
+    fn test_decl() {
+        assert_eq!(do_parse("word foo [[ 1 2 3 ]]").unwrap(), vec![
+            Decl(("foo".to_string(), vec![
+                    Number(1.), Number(2.), Number(3.)
+            ]))
+        ]);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
