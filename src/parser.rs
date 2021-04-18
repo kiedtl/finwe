@@ -34,12 +34,32 @@ pub enum Node {
     Break,
 }
 
-pub fn compile(env: &mut ZfEnv, source: Vec<Node>) -> Result<Vec<ZfToken>, ()> {
+pub fn compile(env: &mut ZfEnv, mut source: Vec<Node>) -> Result<Vec<ZfToken>, ()> {
     let mut bytecode = vec![];
+
+    // A bit of pre-processing.
+    set_empty_decls(env, &mut source);
+
+    // Now the actual codegen stage
     for node in source {
         bytecode.extend(compile_node(env, node)?);
     }
+
     Ok(bytecode)
+}
+
+// Add an empty definition for every word declaration. This allows for recursive
+// words, mutually-recursive words, and just forward-calling in general (calling
+// a word defined later on).
+fn set_empty_decls(env: &mut ZfEnv, ast: &mut Vec<Node>) {
+    for i in 0..ast.len() {
+        if let Node::Decl((n, _)) = &ast[i] {
+            env.addword(n.clone(), vec![]);
+        }
+
+        // Since declarations can be global only and not nested, we don't need
+        // to traverse subtrees
+    }
 }
 
 fn compile_block(env: &mut ZfEnv, nodes: Vec<Node>) -> Result<Vec<ZfToken>, ()> {
