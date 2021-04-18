@@ -10,6 +10,7 @@ various ideas, syntaxes, and language features:
   - Table "templates" that can be used like `struct`ures.
 - Slightly more advanced control-flow.
 - Stack "guards" that act as a runtime `assert` on stack usage.
+- Parallel compilation.
 - A few others I've forgotten.
 
 ## Examples
@@ -18,7 +19,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 
 ## TODO
 
-- Vim syntax
+- A better name! `zF` isn't very creative.
 - Move `?do` to builtin.zf
 - Add:
   - `.t` (tables)
@@ -31,9 +32,9 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Escape sequences for characters and strings
 - zF equivalents for the following:
   - retro-describe (RETRO)
+  - retro-document (RETRO)
 - Show code context on syntax/runtime error.
 - Flesh out stack guards.
-- Very, very simple macro system.
 - Rust-like expression metadata.
   - Something like `%[inline always] word blah [[ ]]`
 - A visualizer as a debugger!
@@ -52,3 +53,4 @@ See `examples/*.zf` and `src/std/builtin.zf`.
   - `ackermann`
   - `prime?`
   - `romans`
+- Vim syntax
