@@ -24,15 +24,10 @@ pub fn CRET(env: &mut ZfEnv) -> Result<bool, String> {
     }
 }
 
-pub fn IF(env: &mut ZfEnv) -> Result<bool, String> {
+pub fn DO(env: &mut ZfEnv) -> Result<bool, String> {
     let func = pop_as!(env, Symbol);
-
-    if Into::<bool>::into(&env.pop()?) {
-        env.pushrs(func, 0);
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    env.pushrs(func, 0);
+    Ok(true)
 }
 
 pub fn PUSH(env: &mut ZfEnv) -> Result<bool, String> {

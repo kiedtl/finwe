@@ -20,7 +20,6 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 ## TODO
 
 - A better name! `zF` isn't very creative.
-- Move `?do` to builtin.zf
 - Add:
   - `.t` (tables)
   - `panic`
@@ -54,3 +53,4 @@ See `examples/*.zf` and `src/std/builtin.zf`.
   - `prime?`
   - `romans`
 - Vim syntax
+- Move `?do` to builtin.zf

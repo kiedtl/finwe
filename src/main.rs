@@ -338,7 +338,7 @@ fn main() {
                 ZfProc::Builtin(Rc::new(Box::new(stdlib::$x))))))
     }
 
-    keyword!("?do",          IF);
+    keyword!("do",           DO);
     keyword!("ret",         RET);
     keyword!("?ret",       CRET);
     keyword!("depth",     DEPTH);

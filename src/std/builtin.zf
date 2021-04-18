@@ -13,17 +13,17 @@ word rot>    [[  ( abc -- cab )  rot rot ]]
 word tuck    [[  (  ab -- bab )  swap over ]]
 word nip     [[  (  ab -- b   )  swap drop ]]
 
-word do-cond [[ <aqq-> ( f qT qF -- * )
-	$F <- swap $f <<- swap ?do   \ true branch
-	$f -> not $F ->        ?do   \ false branch
-]]
-
-word do    [[  (   q --     )  @TRUE swap ?do ]]
+word ?do   [[  (   q --     )  swap if [[ do ]] orelse [[ drop ]] ]]
 word dip   [[  (  vq -- v   )  swap $v <- do $v -> ]]
 word sip   [[  (  vq -- v   )  $f <- dup $f -> swap [ do ] dip ]]
 word bi    [[  ( xqq --     )  [ sip ] dip do ]]
 word bi*   [[  (xyqq --     )  [ dip ] dip do ]]
 word bi@   [[  ( xyq --     )  dup bi* ]]
+
+word do-cond [[ <aqq-> ( f qT qF -- * )
+	$F <- swap $f <<- swap ?do   \ true branch
+	$f -> not $F ->        ?do   \ false branch
+]]
 
 word =     [[  (  ab -- c   )  cmp not ]]
 word <>    [[  (  ab -- c   )  = not ]]
