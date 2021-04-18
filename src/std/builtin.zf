@@ -1,24 +1,24 @@
 1 !TRUE
 0 !FALSE
 
-word dup     [[  ( abc -- bca )  0 pick ]]
-word over    [[  ( abc -- bca )  1 pick ]]
-word uncover [[  ( abc -- abca)  2 pick ]]
-word 2drop   [[  (  ab -- b   )  drop drop ]]
-word ?dup    [[  ( abc -- bca )  dup if [[ dup ]] ]]
-word 2dup    [[  ( abc -- bca )  over over ]]
-word swap    [[  ( abc -- bca )  1 roll ]]
-word rot     [[  ( abc -- bca )  2 roll ]]
-word rot>    [[  ( abc -- cab )  rot rot ]]
-word tuck    [[  (  ab -- bab )  swap over ]]
-word nip     [[  (  ab -- b   )  swap drop ]]
+word dup     ( abc -- bca )  [[ 0 pick                                   ]]
+word over    ( abc -- bca )  [[ 1 pick                                   ]]
+word uncover ( abc -- abca)  [[ 2 pick                                   ]]
+word 2drop   (  ab -- b   )  [[ drop drop                                ]]
+word ?dup    ( abc -- bca )  [[ dup if [[ dup ]]                         ]]
+word 2dup    ( abc -- bca )  [[ over over                                ]]
+word swap    ( abc -- bca )  [[ 1 roll                                   ]]
+word rot     ( abc -- bca )  [[ 2 roll                                   ]]
+word rot>    ( abc -- cab )  [[ rot rot                                  ]]
+word tuck    (  ab -- bab )  [[ swap over                                ]]
+word nip     (  ab -- b   )  [[ swap drop                                ]]
 
-word ?do   [[  (   q --     )  swap if [[ do ]] orelse [[ drop ]] ]]
-word dip   [[  (  vq -- v   )  swap $v <- do $v -> ]]
-word sip   [[  (  vq -- v   )  $f <- dup $f -> swap [ do ] dip ]]
-word bi    [[  ( xqq --     )  [ sip ] dip do ]]
-word bi*   [[  (xyqq --     )  [ dip ] dip do ]]
-word bi@   [[  ( xyq --     )  dup bi* ]]
+word ?do     (   q --     )  [[ swap if [[ do ]] orelse [[ drop ]]       ]]
+word dip     (  vq -- v   )  [[ swap $v <- do $v ->                      ]]
+word sip     (  vq -- v   )  [[ $f <- dup $f -> swap [ do ] dip          ]]
+word bi      ( xqq --     )  [[ [ sip ] dip do                           ]]
+word bi*     (xyqq --     )  [[ [ dip ] dip do                           ]]
+word bi@     ( xyq --     )  [[ dup bi*                                  ]]
 
 word do-cond [[ <aqq-> ( f qT qF -- * )
 	$F <- swap $f <<- swap ?do   \ true branch
