@@ -40,7 +40,6 @@ pub enum ZfToken {
     Fetch(String),
     Store(String),
     Table(HashMap<ZfToken, ZfToken>),
-    CJump(isize),
     ZJump(isize),
     UJump(isize),
 
@@ -50,7 +49,6 @@ pub enum ZfToken {
     },
 
     // Only used during parsing.
-    Ident(String),
     Continue,
     Break,
 }
@@ -68,8 +66,6 @@ impl ZfToken {
             ZfToken::Fetch(s)   => format!("<fetch {}>", s),
             ZfToken::Store(s)   => format!("<store {}>", s),
             ZfToken::Table(t)   => format!("{:?}", t),
-            ZfToken::Ident(i)   => format!("<ident {}>", i),
-            ZfToken::CJump(i)   => format!("<?jmp {}>", i),
             ZfToken::ZJump(i)   => format!("<zjmp {}>", i),
             ZfToken::UJump(i)   => format!("<ujmp {}>", i),
             ZfToken::Continue   => format!("<continue>"),
@@ -124,7 +120,7 @@ impl std::hash::Hash for ZfToken {
             },
 
             // This method will only be called when using tables in Zf code.
-            // Fetch/Store/Guard/Ident/Nop cannot be put into a table, so this
+            // Fetch/Store/Guard/Nop cannot be put into a table, so this
             // path should never be chosen.
             _ => unreachable!(),
         }
@@ -311,13 +307,6 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
                 let i = env.pop()?;
                 env.vars.insert(var.clone(), i);
             },
-            ZfToken::CJump(i) => {
-                let item = env.pop()?;
-                if Into::<bool>::into(&item) {
-                    env.rs[crs].ip = (env.rs[crs].ip as isize + i) as usize;
-                    continue;
-                }
-            },
             ZfToken::ZJump(i) => {
                 let item = env.pop()?;
                 if !Into::<bool>::into(&item) {
@@ -389,25 +378,20 @@ fn main() {
     keyword!("#",         TALLY);
     keyword!("&",            AT);
 
-    macro_rules! include_zf {
-        ($path:expr) => {
-            run(parser::parse(&mut env,
-                    std::str::from_utf8(include_bytes!($path)).unwrap()).unwrap(),
-                &mut env).unwrap()
-        }
-    }
-
-    include_zf!("std/builtin.zf");
+    let parsed = parser::parse(include_str!("std/builtin.zf"));
+    let compiled = parser::compile(&mut env, parsed.unwrap());
+    run(compiled.unwrap(), &mut env).unwrap();
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
 
-    let parsed = match parser::parse(&mut env, &buffer) {
+    let parsed = match parser::parse(&buffer) {
         Ok(tokens) => tokens,
         Err(error) => { eprintln!("{}", error); return; },
     };
+    let compiled = parser::compile(&mut env, parsed).unwrap();
 
-    match run(parsed, &mut env) {
+    match run(compiled, &mut env) {
         Ok(()) => (),
         Err(e) => {
             eprintln!("error: {}", e);
