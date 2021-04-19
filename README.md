@@ -36,6 +36,14 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Flesh out stack guards.
 - Rust-like expression metadata.
   - Something like `%[inline always] word blah [[ ]]`
+  - The following metadata:
+    - `pure` (none)
+    - `for` (`linux`, `windows`, `darwin`)
+    - `alias` (`<name>`)
+    - `export`
+    - `test`
+- Tail-call optimizations
+- Research other optimizations
 - A visualizer as a debugger!
 
 ### DONE
