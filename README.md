@@ -37,7 +37,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Rust-like expression metadata.
   - Something like `%[inline always] word blah [[ ]]`
   - The following metadata:
-    - `pure` (none)
+    - `impure` (none)
     - `for` (`linux`, `windows`, `darwin`)
     - `alias` (`<name>`)
     - `export`
