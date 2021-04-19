@@ -44,6 +44,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
     - `test`
 - Tail-call optimizations
 - Research other optimizations
+- Static analysis on stack usage to catch stack underflows
 - A visualizer as a debugger!
 
 ### DONE
