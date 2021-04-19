@@ -12,74 +12,7 @@ word rot     ( abc -- bca )  [[ 2 roll                                   ]]
 word rot>    ( abc -- cab )  [[ rot rot                                  ]]
 word tuck    (  ab -- bab )  [[ swap over                                ]]
 word nip     (  ab -- b   )  [[ swap drop                                ]]
-
-word ?do     (   q --     )  [[ swap if [[ do ]] orelse [[ drop ]]       ]]
-word dip     (  vq -- v   )  [[ swap $v <- do $v ->                      ]]
-word sip     (  vq -- v   )  [[ $f <- dup $f -> swap [ do ] dip          ]]
-word bi      ( xqq --     )  [[ [ sip ] dip do                           ]]
-word bi*     (xyqq --     )  [[ [ dip ] dip do                           ]]
-word bi@     ( xyq --     )  [[ dup bi*                                  ]]
-
-word do-cond [[ <aqq-> ( f qT qF -- * )
-	$F <- swap $f <<- swap ?do   \ true branch
-	$f -> not $F ->        ?do   \ false branch
-]]
-
-word =     [[  (  ab -- c   )  cmp not ]]
-word <>    [[  (  ab -- c   )  = not ]]
-word <     [[  (  ab -- c   )  cmp -1 = ]]
-word >     [[  (  ab -- c   )  cmp 1 = ]]
-word <=    [[  (  ab -- c   )  > not ]]
-word >=    [[  (  ab -- c   )  < not ]]
-word 0=    [[  (   a -- c   )  0 = ]]
-word 0<>   [[  (   a -- c   )  0 <> ]]
-word 0<    [[  (   a -- c   )  0 < ]]
-word 0>    [[  (   a -- c   )  0 > ]]
-word 0>=   [[  (   a -- c   )  0 >= ]]
-word 0<=   [[  (   a -- c   )  0 <= ]]
-word ><    [[  ( nlh -- c   )  2 pick >  rot> >  and ]]
-word =><=  [[  ( nlh -- c   )  2 pick >= rot> >= and ]]
-
-word 1+    [[  (   a -- c   )  1 + ]]
-word 1-    [[  (   a -- c   )  1 - ]]
-word 2+    [[  (   a -- c   )  2 + ]]
-word 2-    [[  (   a -- c   )  2 - ]]
-
-word do-until [[ <q-*> until [[ dup dip swap ]] drop ]]
-
-word do-times [[ <nq-*>
-	$f <- $i <-
-
-	$i ->> 0= if [[
-		$f >-
-		drop ret
-	]]
-
-	until [[
-		sw: $i [[ 1- ]]
-		$f ->> do
-		$i ->> 0=
-	]]
-
-	$i >- $f >-
-]]
-
-word /      [[  (  ab -- c   )  /mod swap drop ]]
-word mod    [[  (  ab -- d   )  /mod drop ]]
-word fact   [[  (   n -- n   )  dup 1 <= ?ret dup 1- fact * ]]
-word even?  [[  (   n -- f   )  2 mod 0= ]]
-word odd?   [[  (   n -- f   )  even? not ]]
-word trunc  [[  (   f -- n   )  0 xor ]]
-word fract  [[  (   f -- n   )  dup trunc - ]]
-word negate [[  (  ab -- d   )  -1  * ]]
-word abs    [[  (   a -- c   )  dup 0< if [[ negate ]] ]]
-word square [[  (  ab -- d   )  dup * ]]
-word min    [[  (  am -- c   )  2dup < if [[ nip ]] orelse [[ drop ]] ]]
-word max    [[  (  aM -- c   )  2dup > if [[ nip ]] orelse [[ drop ]] ]]
-word clamp  [[  ( amM -- c   )  2 pick swap max swap min swap drop ]]
-word gcd    [[  (  ab -- n   )  until [[ tuck mod dup 0= ]] drop ]]
-
-word reset  [[  ( xya --     )  until [[ drop depth 0=  ]] ]]
+word reset   ( xya --     )  [[ until [[ drop depth 0=  ]]               ]]
 
 word rev [[ <n-*> (...n -- ... )
 	( keep rolling higher and higher amounts to reverse
@@ -93,6 +26,52 @@ word rev [[ <n-*> (...n -- ... )
 	2drop
 ]]
 
+word ?do     (   q --     )  [[ swap if [[ do ]] orelse [[ drop ]]       ]]
+word dip     (  vq -- v   )  [[ swap $v <- do $v ->                      ]]
+word sip     (  vq -- v   )  [[ $f <- dup $f -> swap [ do ] dip          ]]
+word bi      ( xqq --     )  [[ [ sip ] dip do                           ]]
+word bi*     (xyqq --     )  [[ [ dip ] dip do                           ]]
+word bi@     ( xyq --     )  [[ dup bi*                                  ]]
+
+word =       (  ab -- c   )  [[ cmp not                                  ]]
+word <>      (  ab -- c   )  [[ = not                                    ]]
+word <       (  ab -- c   )  [[ cmp -1 =                                 ]]
+word >       (  ab -- c   )  [[ cmp 1 =                                  ]]
+word <=      (  ab -- c   )  [[ > not                                    ]]
+word >=      (  ab -- c   )  [[ < not                                    ]]
+word 0=      (   a -- c   )  [[ 0 =                                      ]]
+word 0<>     (   a -- c   )  [[ 0 <>                                     ]]
+word 0<      (   a -- c   )  [[ 0 <                                      ]]
+word 0>      (   a -- c   )  [[ 0 >                                      ]]
+word 0>=     (   a -- c   )  [[ 0 >=                                     ]]
+word 0<=     (   a -- c   )  [[ 0 <=                                     ]]
+word ><      ( nlh -- c   )  [[ 2 pick >  rot> >  and                    ]]
+word =><=    ( nlh -- c   )  [[ 2 pick >= rot> >= and                    ]]
+
+word 1+      (   a -- c   )  [[ 1 +                                      ]]
+word 1-      (   a -- c   )  [[ 1 -                                      ]]
+word 2+      (   a -- c   )  [[ 2 +                                      ]]
+word 2-      (   a -- c   )  [[ 2 -                                      ]]
+
+word /       (  ab -- c   )  [[ /mod nip                                 ]]
+word mod     (  ab -- d   )  [[ /mod drop                                ]]
+word fact    (   n -- n   )  [[ dup 1 <= ?ret dup 1- fact *              ]]
+word even?   (   n -- f   )  [[ 2 mod 0=                                 ]]
+word odd?    (   n -- f   )  [[ even? not                                ]]
+word trunc   (   f -- n   )  [[ 0 xor                                    ]]
+word fract   (   f -- n   )  [[ dup trunc -                              ]]
+word negate  (  ab -- d   )  [[ -1  *                                    ]]
+word abs     (   a -- c   )  [[ dup 0< if [[ negate ]]                   ]]
+word square  (  ab -- d   )  [[ dup *                                    ]]
+word min     (  am -- c   )  [[ 2dup < if [[ nip ]] orelse [[ drop ]]    ]]
+word max     (  aM -- c   )  [[ 2dup > if [[ nip ]] orelse [[ drop ]]    ]]
+word clamp   ( amM -- c   )  [[ 2 pick swap max swap min nip             ]]
+word gcd     (  ab -- n   )  [[ until [[ tuck mod dup 0= ]] drop         ]]
+word ipow    (  bp -- n   )  [[ 1 swap [ over * ] do-times nip           ]]
+word lg      (   a -- c   )  [[ 10 logn                                  ]]
+word lb      (   a -- c   )  [[  2 logn                                  ]]
+word ln      (   a -- c   )  [[ @E logn                                  ]]
+
 (               ⎛           ⎞
                 ⎜    |a|    ⎟
    lcm(a, b) =  ⎜ ───────── ⎟ × |b|
@@ -105,8 +84,6 @@ word lcm [[ <nn-> ( ab -- n )
 	rot abs swap   (bag)
 	/ swap abs *
 ]]
-
-word ipow  [[  (  bp -- n   )  1 swap [ over * ] do-times nip ]]
 
 word sqrt [[ <n-n>
 	1
@@ -170,10 +147,6 @@ word e      [[ (     -- n   ) @E_ITERS 0 e_iter nip 1 + ]]
 
 pi !PI
 e  !E
-
-word lg     [[  (   a -- c   )  10 logn ]]
-word lb     [[  (   a -- c   )   2 logn ]]
-word ln     [[  (   a -- c   )  @E logn ]]
 
 3735928559 !_RAND
 word rand [[ <n->
@@ -242,3 +215,30 @@ word .n [[ <n->
 word identity [[ ]]
 
 
+( ----- loops and conditionals for quotes ----- )
+
+word do-cond [[ <aqq-> ( f qT qF -- * )
+	$F <- swap $f <<- swap ?do   \ true branch
+	$f -> not $F ->        ?do   \ false branch
+]]
+
+word do-until [[ <q-*>
+	until [[ dup dip swap ]] drop
+]]
+
+word do-times [[ <nq-*>
+	$f <- $i <-
+
+	$i ->> 0= if [[
+		$f >-
+		drop ret
+	]]
+
+	until [[
+		sw: $i [[ 1- ]]
+		$f ->> do
+		$i ->> 0=
+	]]
+
+	$i >- $f >-
+]]
