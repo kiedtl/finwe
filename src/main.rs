@@ -13,7 +13,6 @@ use std::io::{self, Read};
 mod utils;
 
 mod ratios;
-mod floats;
 mod parser;
 mod errors;
 mod stdlib;
