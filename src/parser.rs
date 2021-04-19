@@ -1,4 +1,7 @@
-use crate::*;
+use crate::vm::*;
+use crate::random;
+
+use std::collections::HashMap;
 use pest::error::Error;
 use pest::Parser;
 use pest::iterators::Pair;
@@ -34,7 +37,7 @@ pub enum Node {
     Break,
 }
 
-pub fn compile(env: &mut ZfEnv, mut source: Vec<Node>) -> Result<Vec<ZfToken>, ()> {
+pub fn compile(env: &mut VM, mut source: Vec<Node>) -> Result<Vec<Value>, ()> {
     let mut bytecode = vec![];
 
     // A bit of pre-processing.
@@ -51,7 +54,7 @@ pub fn compile(env: &mut ZfEnv, mut source: Vec<Node>) -> Result<Vec<ZfToken>, (
 // Add an empty definition for every word declaration. This allows for recursive
 // words, mutually-recursive words, and just forward-calling in general (calling
 // a word defined later on).
-fn set_empty_decls(env: &mut ZfEnv, ast: &mut Vec<Node>) {
+fn set_empty_decls(env: &mut VM, ast: &mut Vec<Node>) {
     for i in 0..ast.len() {
         if let Node::Decl((n, _)) = &ast[i] {
             env.addword(n.clone(), vec![]);
@@ -62,7 +65,7 @@ fn set_empty_decls(env: &mut ZfEnv, ast: &mut Vec<Node>) {
     }
 }
 
-fn compile_block(env: &mut ZfEnv, nodes: Vec<Node>) -> Result<Vec<ZfToken>, ()> {
+fn compile_block(env: &mut VM, nodes: Vec<Node>) -> Result<Vec<Value>, ()> {
     let mut bytecode = vec![];
     for node in nodes {
         bytecode.extend(compile_node(env, node)?);
@@ -70,7 +73,7 @@ fn compile_block(env: &mut ZfEnv, nodes: Vec<Node>) -> Result<Vec<ZfToken>, ()> 
     Ok(bytecode)
 }
 
-fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
+fn compile_node(env: &mut VM, node: Node) -> Result<Vec<Value>, ()> {
     match node {
         Node::Decl((name, uncompiled_body)) => {
             // Add the word with an empty body.
@@ -85,23 +88,23 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
         Node::Quote(quote) => {
             let compiled = compile_block(env, quote)?;
             let _ref = env.addword(random::phrase(), compiled);
-            Ok(vec![ZfToken::SymbRef(_ref)])
+            Ok(vec![Value::SymbRef(_ref)])
         },
-        Node::Str(s)    => Ok(vec![ZfToken::String(s)]),
-        Node::Number(f) => Ok(vec![ZfToken::Number(f)]),
-        Node::Char(f)   => Ok(vec![ZfToken::Number(f)]),
-        Node::Stack(f)  => Ok(vec![ZfToken::Stack(f)]),
-        Node::Fetch(f)  => Ok(vec![ZfToken::Fetch(f)]),
-        Node::Store(f)  => Ok(vec![ZfToken::Store(f)]),
+        Node::Str(s)    => Ok(vec![Value::String(s)]),
+        Node::Number(f) => Ok(vec![Value::Number(f)]),
+        Node::Char(f)   => Ok(vec![Value::Number(f)]),
+        Node::Stack(f)  => Ok(vec![Value::Stack(f)]),
+        Node::Fetch(f)  => Ok(vec![Value::Fetch(f)]),
+        Node::Store(f)  => Ok(vec![Value::Store(f)]),
         Node::Refer(r) => {
             match env.findword(&r) {
-                Some(i) => Ok(vec![ZfToken::SymbRef(i)]),
+                Some(i) => Ok(vec![Value::SymbRef(i)]),
                 None => panic!("unknown word {}", r),
             }
         },
         Node::Word(w) => {
             match env.findword(&w) {
-                Some(i) => Ok(vec![ZfToken::Symbol(i)]),
+                Some(i) => Ok(vec![Value::Symbol(i)]),
                 None => panic!("unknown word {}", w),
             }
         },
@@ -114,9 +117,9 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
                 assert!(val.len() == 1);
                 accm.insert(key.pop().unwrap(), val.pop().unwrap());
             }
-            Ok(vec![ZfToken::Table(accm)])
+            Ok(vec![Value::Table(accm)])
         },
-        Node::Guard((before, after)) => Ok(vec![ZfToken::Guard { before: before, after: after }]),
+        Node::Guard((before, after)) => Ok(vec![Value::Guard { before: before, after: after }]),
         Node::If((_if, _else)) => {
             let mut res = vec![];
             let ifblk = compile_block(env, _if)?;
@@ -124,12 +127,12 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
             if _else.is_some() {
                 let orelse = compile_block(env, _else.unwrap())?;
 
-                res.push(ZfToken::ZJump((ifblk.len() + 2) as isize));
+                res.push(Value::ZJump((ifblk.len() + 2) as isize));
                 res.extend(ifblk);
-                res.push(ZfToken::UJump((orelse.len() + 1) as isize));
+                res.push(Value::UJump((orelse.len() + 1) as isize));
                 res.extend(orelse);
             } else {
-                res.push(ZfToken::ZJump((ifblk.len() + 1) as isize));
+                res.push(Value::ZJump((ifblk.len() + 1) as isize));
                 res.extend(ifblk);
             }
 
@@ -139,19 +142,19 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
             let mut res = vec![];
             let body = compile_block(env, body)?;
 
-            res.push(ZfToken::Switch(name));
+            res.push(Value::Switch(name));
             res.extend(body);
-            res.push(ZfToken::Switch(DEFAULT_STACK.to_owned()));
+            res.push(Value::Switch(DEFAULT_STACK.to_owned()));
 
             Ok(res)
         },
-        Node::Continue => Ok(vec![ZfToken::Continue]),
-        Node::Break => Ok(vec![ZfToken::Break]),
+        Node::Continue => Ok(vec![Value::Continue]),
+        Node::Break => Ok(vec![Value::Break]),
         Node::Loop(body) => {
             let mut res = compile_block(env, body)?;
 
             let len = res.len() as isize;
-            res.push(ZfToken::UJump(-len));
+            res.push(Value::UJump(-len));
 
             // Convert breaks and continue's to jumps
             //
@@ -164,8 +167,8 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
             //
             for i in 0..res.len() {
                 match &res[i] {
-                    ZfToken::Continue => res[i] = ZfToken::UJump(-(i as isize)),
-                    ZfToken::Break => res[i] = ZfToken::UJump((res.len() - i) as isize),
+                    Value::Continue => res[i] = Value::UJump(-(i as isize)),
+                    Value::Break => res[i] = Value::UJump((res.len() - i) as isize),
                     _ => (),
                 }
             }
@@ -176,14 +179,14 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
             let mut res = compile_block(env, body)?;
 
             let len = res.len() as isize;
-            res.push(ZfToken::ZJump(-len));
+            res.push(Value::ZJump(-len));
 
             // Convert breaks and continue's to jumps
             // See also: Node::Loop(_)
             for i in 0..res.len() {
                 match &res[i] {
-                    ZfToken::Continue => res[i] = ZfToken::UJump(-(i as isize)),
-                    ZfToken::Break => res[i] = ZfToken::UJump((res.len() - i) as isize),
+                    Value::Continue => res[i] = Value::UJump(-(i as isize)),
+                    Value::Break => res[i] = Value::UJump((res.len() - i) as isize),
                     _ => (),
                 }
             }
@@ -219,9 +222,9 @@ fn compile_node(env: &mut ZfEnv, node: Node) -> Result<Vec<ZfToken>, ()> {
 
                         bodylen -= cond.len() + 1 + body.len() + 1;
                         res.extend(cond);
-                        res.push(ZfToken::ZJump((body.len() + 2) as isize));
+                        res.push(Value::ZJump((body.len() + 2) as isize));
                         res.extend(body);
-                        res.push(ZfToken::UJump(bodylen as isize + 1));
+                        res.push(Value::UJump(bodylen as isize + 1));
                     },
                 }
             }
