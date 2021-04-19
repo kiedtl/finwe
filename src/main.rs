@@ -251,10 +251,8 @@ impl ZfEnv {
     }
 }
 
-fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
-    let main = env.addword("main".to_owned(), code);
-
-    env.pushrs(main, 0);
+fn run(word: usize, env: &mut ZfEnv) -> Result<(), String> {
+    env.pushrs(word, 0);
 
     loop {
         if env.rs.len() == 0 { break }
@@ -337,7 +335,8 @@ fn main() {
 
     let parsed = parser::parse(include_str!("std/builtin.zf"));
     let compiled = parser::compile(&mut env, parsed.unwrap());
-    run(compiled.unwrap(), &mut env).unwrap();
+    let stdlib = env.addword("main".to_owned(), compiled.unwrap());
+    run(stdlib, &mut env).unwrap();
 
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).unwrap();
@@ -346,9 +345,10 @@ fn main() {
         Ok(tokens) => tokens,
         Err(error) => { eprintln!("{}", error); return; },
     };
-    let compiled = parser::compile(&mut env, parsed).unwrap();
+    let compiled = parser::compile(&mut env, parsed);
+    let main = env.addword("main".to_owned(), compiled.unwrap());
 
-    match run(compiled, &mut env) {
+    match run(main, &mut env) {
         Ok(()) => (),
         Err(e) => {
             eprintln!("error: {}", e);
