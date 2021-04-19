@@ -2,10 +2,52 @@
 
 use crate::*;
 
+pub const STDLIB_WORDS: [(&'static str, ZfProcFunc); 39] = [ // {{{
+    ("do",           &DO),
+    ("ret",         &RET),
+    ("?ret",       &CRET),
+    ("depth",     &DEPTH),
+    ("arrange", &ARRANGE),
+    ("pick",       &PICK),
+    ("roll",       &ROLL),
+    ("drop",       &DROP),
+    ("not",         &NOT),
+    ("cmp",         &CMP),
+    ("+",          &PLUS),
+    ("-",           &SUB),
+    ("*",           &MUL),
+    ("/mod",       &DMOD),
+    ("and",        &bAND),
+    ("or",          &bOR),
+    ("xor",        &bXOR),
+    ("bnot",       &bNOT),
+    ("shl",         &SHL),
+    ("shr",         &SHR),
+    ("emit",       &EMIT),
+    ("wait",       &WAIT),
+    ("push",       &PUSH),
+    ("pop",         &POP),
+    ("<-",       &S_PUSH),
+    ("<<-",   &S_DUPPUSH),
+    ("->",        &S_POP),
+    ("->>",    &S_DUPPOP),
+    (">-",       &S_DROP),
+    ("dbg",         &DBG),
+    ("ddbg",    &DICTDBG),
+    ("ceil",       &CEIL),
+    ("floor",     &FLOOR),
+    ("atan",       &ATAN),
+    ("logn",       &LOGN),
+    ("pow",         &POW),
+    ("_.f",        &FFMT),
+    ("#",         &TALLY),
+    ("&",            &AT),
+]; // }}}}
+
 pub fn RET(env: &mut ZfEnv) -> Result<bool, String> {
     env.rs.pop();
     if env.rs.len() > 0 {
-        let l = env.rs.len() - 1;
+        let l = env.rs.len() - 1;//}}}
         env.rs[l].ip += 1;
     }
     Ok(true)

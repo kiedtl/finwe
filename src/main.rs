@@ -8,7 +8,6 @@ extern crate pest;
 
 use std::collections::HashMap;
 use std::io::{self, Read};
-use std::rc::Rc;
 
 #[macro_use]
 mod utils;
@@ -139,11 +138,11 @@ impl Into<bool> for &ZfToken {
 // The returned bool tells calling code whether the instruction pointer or
 // return stack was modified. If it was not, the calling code will know
 // it's safe to increment the IP
-type ZfProcFunc = dyn Fn(&mut ZfEnv) -> Result<bool, String>;
+type ZfProcFunc = &'static dyn Fn(&mut ZfEnv) -> Result<bool, String>;
 
 #[derive(Clone)]
 pub enum ZfProc {
-    Builtin(Rc<Box<ZfProcFunc>>),
+    Builtin(ZfProcFunc),
     User(Vec<ZfToken>),
 }
 
@@ -332,51 +331,9 @@ fn run(code: Vec<ZfToken>, env: &mut ZfEnv) -> Result<(), String> {
 fn main() {
     let mut env = ZfEnv::new();
 
-    macro_rules! keyword {
-        ($s:expr, $x:ident) =>
-            (env.dict.push(($s.to_string(),
-                ZfProc::Builtin(Rc::new(Box::new(stdlib::$x))))))
+    for (word_name, word_ref) in &stdlib::STDLIB_WORDS {
+        env.dict.push((word_name.to_string(), ZfProc::Builtin(word_ref.clone())));
     }
-
-    keyword!("do",           DO);
-    keyword!("ret",         RET);
-    keyword!("?ret",       CRET);
-    keyword!("depth",     DEPTH);
-    keyword!("arrange", ARRANGE);
-    keyword!("pick",       PICK);
-    keyword!("roll",       ROLL);
-    keyword!("drop",       DROP);
-    keyword!("not",         NOT);
-    keyword!("cmp",         CMP);
-    keyword!("+",          PLUS);
-    keyword!("-",           SUB);
-    keyword!("*",           MUL);
-    keyword!("/mod",       DMOD);
-    keyword!("and",        bAND);
-    keyword!("or",          bOR);
-    keyword!("xor",        bXOR);
-    keyword!("bnot",       bNOT);
-    keyword!("shl",         SHL);
-    keyword!("shr",         SHR);
-    keyword!("emit",       EMIT);
-    keyword!("wait",       WAIT);
-    keyword!("push",       PUSH);
-    keyword!("pop",         POP);
-    keyword!("<-",       S_PUSH);
-    keyword!("<<-",   S_DUPPUSH);
-    keyword!("->",        S_POP);
-    keyword!("->>",    S_DUPPOP);
-    keyword!(">-",       S_DROP);
-    keyword!("dbg",         DBG);
-    keyword!("ddbg",    DICTDBG);
-    keyword!("ceil",       CEIL);
-    keyword!("floor",     FLOOR);
-    keyword!("atan",       ATAN);
-    keyword!("logn",       LOGN);
-    keyword!("pow",         POW);
-    keyword!("_.f",        FFMT);
-    keyword!("#",         TALLY);
-    keyword!("&",            AT);
 
     let parsed = parser::parse(include_str!("std/builtin.zf"));
     let compiled = parser::compile(&mut env, parsed.unwrap());
