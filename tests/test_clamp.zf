@@ -1,0 +1,9 @@
+\\ 0, 20, 1, 9, 2
+
+  1 2  4 clamp
+  3 9 10 clamp
+ -6 1  2 clamp
+ 23 0 20 clamp
+  0 0  1 clamp
+
+dbg
