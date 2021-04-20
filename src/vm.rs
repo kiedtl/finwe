@@ -29,6 +29,7 @@ pub enum Value {
     },
 
     // Only used during parsing.
+    // FIXME: remove
     Continue,
     Break,
 }
@@ -39,8 +40,8 @@ impl Value {
             Value::Nop        => format!("<nop>"),
             Value::Number(i)  => format!("{}", i),
             Value::String(s)  => format!("{:?}", s),
-            Value::Symbol(s)  => format!("<symb {}>", e.dict[*s].0),
-            Value::SymbRef(s) => format!("<ref {}>",  e.dict[*s].0),
+            Value::Symbol(s)  => format!("<symb {}>", e.dict[*s].name),
+            Value::SymbRef(s) => format!("<ref {}>",  e.dict[*s].name),
             Value::Stack(s)   => format!("<stack {}>", s),
             Value::Switch(s)  => format!("<sw {}>", s),
             Value::Fetch(s)   => format!("<fetch {}>", s),
@@ -122,9 +123,25 @@ impl Into<bool> for &Value {
 pub type NativeWord = &'static dyn Fn(&mut VM) -> Result<bool, String>;
 
 #[derive(Clone)]
-pub enum Word {
-    Builtin(NativeWord),
+pub enum Definition {
     User(Vec<Value>),
+    Builtin(NativeWord),
+}
+
+#[derive(Clone)]
+pub struct Word {
+    pub name: String,
+
+    // A function is pure if
+    //   a) it doesn't call a Word::Builtin that's marked as impure,
+    //   b) it isn't marked with the %[impure] attribute,
+    //   c) it doesn't call a Word::User that's impure.
+    pub is_pure: bool,
+
+    // Checks for direct and indirect recursion.
+    pub is_recursive: bool,
+
+    pub definition: Definition,
 }
 
 #[derive(Clone)]
@@ -138,7 +155,7 @@ pub struct VM {
     pub vars:  HashMap<String, Value>,
     pub piles: HashMap<String, Vec<Value>>,
     pub current: String,
-    pub dict:  Vec<(String, Word)>,
+    pub dict:  Vec<Word>,
     pub rs:    Vec<RSFrame>,
 }
 
@@ -204,7 +221,7 @@ impl VM {
 
     pub fn findword(&self, name: &str) -> Option<usize> {
         for i in 0..self.dict.len() {
-            if self.dict[i].0 == name {
+            if self.dict[i].name == name {
                 return Some(i);
             }
         }
@@ -213,8 +230,15 @@ impl VM {
 
     pub fn addword(&mut self, name: String, body: Vec<Value>) -> usize {
         match self.findword(&name) {
-            Some(i) => self.dict[i].1 = Word::User(body),
-            None => self.dict.push((name.clone(), Word::User(body))),
+            Some(i) => self.dict[i].definition = Definition::User(body),
+            None => {
+                self.dict.push(Word {
+                    name: name.clone(),
+                    is_pure: false,
+                    is_recursive: false,
+                    definition: Definition::User(body)
+                });
+            },
         }
         self.findword(&name).unwrap()
     }
@@ -241,9 +265,9 @@ impl VM {
             let (c_ib, ip) = (self.rs[crs].dictid, self.rs[crs].ip);
 
             let ib;
-            match self.dict[c_ib].1.clone() {
-                Word::User(u) => ib = u,
-                Word::Builtin(b) => {
+            match self.dict[c_ib].definition.clone() {
+                Definition::User(u) => ib = u,
+                Definition::Builtin(b) => {
                     // Pop a stack frame (builtin words assume that they're on the
                     // frame of their caller).
                     self.rs.pop();
@@ -275,7 +299,7 @@ impl VM {
                     continue; // don't increment IP below
                 },
                 Value::SymbRef(i) => self.push(Value::Symbol(*i)),
-                Value::Fetch(var) => if self.vars.contains_key(var) {
+                Value::Fetch(var) => if self.vars.contains_key(&*var) {
                     self.push(self.vars[var].clone());
                 } else {
                     return Err(format!("unknown variable {}", var))
@@ -306,4 +330,3 @@ impl VM {
         Ok(())
     }
 }
-

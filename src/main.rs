@@ -22,8 +22,13 @@ use crate::vm::*;
 fn main() {
     let mut env = vm::VM::new();
 
-    for (word_name, word_ref) in &stdlib::STDLIB_WORDS {
-        env.dict.push((word_name.to_string(), Word::Builtin(word_ref.clone())));
+    for (word_name, word_ref, is_pure) in &stdlib::STDLIB_WORDS {
+        env.dict.push(Word {
+            name: word_name.to_string(),
+            is_pure: *is_pure,
+            is_recursive: false,
+            definition: Definition::Builtin(word_ref.clone())
+        });
     }
 
     let parsed = parser::parse(include_str!("std/builtin.zf"));
