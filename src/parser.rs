@@ -26,7 +26,7 @@ pub enum Node {
     Word(String),
     Refer(String),
     Table(Vec<(Node, Node)>),
-    Guard((Vec<GuardItem>, Vec<GuardItem>)),
+    Guard(Guard),
     If((Vec<Node>, Option<Vec<Node>>)),
     StackBlock((String, Vec<Node>)),
     Until(Vec<Node>),
@@ -119,7 +119,7 @@ fn compile_node(env: &mut VM, node: Node) -> Result<Vec<Value>, ()> {
             }
             Ok(vec![Value::Table(accm)])
         },
-        Node::Guard((before, after)) => Ok(vec![Value::Guard { before: before, after: after }]),
+        Node::Guard(g) => Ok(vec![Value::Guard(g)]),
         Node::If((_if, _else)) => {
             let mut res = vec![];
             let ifblk = compile_block(env, _if)?;
@@ -369,6 +369,8 @@ fn parse_node(pair: Pair<Rule>) -> Option<Node> {
                         "n" => GuardItem::Number,
                         "s" => GuardItem::Str,
                         "q" => GuardItem::Quote,
+                        "t" => GuardItem::Table,
+                        "$" => GuardItem::Stack,
                         "*" => GuardItem::Unchecked,
                         _   => panic!("'{}' is not a valid guard item",
                             minion.as_str()),
@@ -377,7 +379,10 @@ fn parse_node(pair: Pair<Rule>) -> Option<Node> {
                 guardsets.push(guardset);
             }
 
-            Some(Node::Guard((guardsets[0].clone(), guardsets[1].clone())))
+            Some(Node::Guard(Guard {
+                before: guardsets[0].clone(),
+                after:  guardsets[1].clone(),
+            }))
         },
         Rule::ifblk => {
             let ifstmt;

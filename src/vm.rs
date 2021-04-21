@@ -4,8 +4,14 @@ pub const DEFAULT_STACK: &'static str = "_";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GuardItem {
-    Any, Number, Str, Quote,
+    Any, Number, Str, Quote, Table, Stack,
     Unchecked
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Guard {
+    pub before: Vec<GuardItem>,
+    pub after:  Vec<GuardItem>,
 }
 
 #[derive(Clone, Debug)]
@@ -23,15 +29,11 @@ pub enum Value {
     ZJump(isize),
     UJump(isize),
 
-    Guard {
-        before: Vec<GuardItem>,
-        after:  Vec<GuardItem>
-    },
+    Guard(Guard),
 
     // Only used during parsing.
-    // FIXME: remove
-    Continue,
-    Break,
+    // FIXME: remove this unclean business
+    Continue, Break,
 }
 
 impl Value {
@@ -51,9 +53,7 @@ impl Value {
             Value::UJump(i)   => format!("<ujmp {}>", i),
             Value::Continue   => format!("<continue>"),
             Value::Break      => format!("<break>"),
-
-            Value::Guard { before: _, after: _ }
-                => format!("<guard {:?}>", self),
+            Value::Guard(g)   => format!("<guard {:?}>", g),
         }
     }
 }
@@ -82,8 +82,7 @@ impl PartialEq for Value {
 
                 true
             },
-            (Guard{before: lb, after: la},
-                Guard{before: rb, after: ra}) => lb == rb && la == ra,
+            (Guard(l), Guard(r)) => l == r,
             _ => false,
         }
     }
@@ -320,7 +319,7 @@ impl VM {
                     continue;
                 }
                 Value::Switch(s) => self.current = s.clone(),
-                Value::Guard { before: _b, after: _a } => (), // TODO
+                Value::Guard(_) => (), // TODO
                 _ => self.push(ib[ip].clone()),
             }
 

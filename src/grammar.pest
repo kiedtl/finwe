@@ -3,14 +3,14 @@ program = _{ SOI ~ (word_decl|term)* ~ EOI}
 value = _{ float|string|character|table|quote }
 term = _{
 	  float | string | character
-	| quote | guard  | table
-	| stack | fetch  | store   | word
-	| ifblk | until  | cond    | loopblk
-	| breakstmt | continuestmt | stackblk
+	| quote | table  | word    | stackblk
+	| stack | fetch  | store   | loopblk
+	| ifblk | until  | cond
+	| breakstmt | continuestmt
 
 }
 
-word_decl = { "word" ~ ident ~ block }
+word_decl = { "word" ~ ident ~ guard? ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
 
 loopblk = { "loop" ~ block }
