@@ -28,7 +28,6 @@ pub enum Value {
     Table(HashMap<Value, Value>),
     ZJump(isize),
     UJump(isize),
-
     Guard(Guard),
 
     // Only used during parsing.

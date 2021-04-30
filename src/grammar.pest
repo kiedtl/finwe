@@ -3,9 +3,9 @@ program = _{ SOI ~ (word_decl|term)* ~ EOI}
 value = _{ float|string|character|table|quote }
 term = _{
 	  float | string | character
-	| quote | table  | word    | stackblk
+	| quote | table  | stackblk
 	| stack | fetch  | store   | loopblk
-	| ifblk | until  | cond
+	| ifblk | until  | cond    | word
 	| breakstmt | continuestmt
 
 }
