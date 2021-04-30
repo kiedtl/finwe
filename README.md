@@ -19,6 +19,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 
 ## TODO
 
+- Fix stack-name collisions.
 - A better name! `zF` isn't very creative.
 - Add:
   - `.t` (tables)
@@ -26,7 +27,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
   - `err` and `ok`
   - `key`
   - `import`
-  - `>>-`
+  - `>>-` (reset-stack)
 - Docs for functions
 - Escape sequences for characters and strings
 - zF equivalents for the following:
