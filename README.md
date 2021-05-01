@@ -3,11 +3,12 @@
 This is a toy concatenative stack-based language made to experiment with
 various ideas, syntaxes, and language features:
 
-- A cleaner syntax with less symbol soup.
+- A cleaner syntax with less symbol soup. (Yes, yes, I know, this goal is
+  nowhere near being reached.)
 - Infinite alternate stacks as global variables.
 - Aggressive word inlining, where possible.
-- Lua-like array-in-tables, with all the power and misery of APL.
-  - Table "templates" that can be used like `struct`ures.
+- Vectors, with all the power and misery of APL.
+- Table "templates" that can be used like `struct`ures.
 - Slightly more advanced control-flow.
 - Stack "guards" that act as a runtime `assert` on stack usage.
 - Parallel compilation.
@@ -48,7 +49,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Static analysis on stack usage to catch stack underflows
 - Tools:
   - A visualizer as a debugger!
-  - Stack guard generator
+  - Tool to check and generate stack guards for a word
 
 ### DONE
 
