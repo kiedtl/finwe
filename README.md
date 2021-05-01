@@ -46,7 +46,9 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Tail-call optimizations
 - Research other optimizations
 - Static analysis on stack usage to catch stack underflows
-- A visualizer as a debugger!
+- Tools:
+  - A visualizer as a debugger!
+  - Stack guard generator
 
 ### DONE
 
