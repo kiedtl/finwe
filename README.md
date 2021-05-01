@@ -10,7 +10,8 @@ various ideas, syntaxes, and language features:
 - Vectors, with all the power and misery of APL.
 - Table "templates" that can be used like `struct`ures.
 - Slightly more advanced control-flow.
-- Stack "guards" that act as a runtime `assert` on stack usage.
+- Stack "guards" tell the compiler what a word expects on the stack and
+  what it returns, enabling static analysis.
 - Parallel compilation.
 - A few others I've forgotten.
 
