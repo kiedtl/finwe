@@ -21,6 +21,7 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 
 ## TODO
 
+- New syntax based on S-expressions, with parser/VM rewrite in Zig
 - Fix stack-name collisions.
 - A better name! `zF` isn't very creative.
 - Add:
