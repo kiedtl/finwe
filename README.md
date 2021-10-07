@@ -21,9 +21,24 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 
 ## TODO
 
-- New syntax based on S-expressions, with parser/VM rewrite in Zig
+- New syntax based on S-expressions(?), with VM rewrite in Zig (parser
+  might still be in Rust *if* no S-expressions)
+  - Need to come up with executable format. Something like:
+    ```
+    #L main
+    #l 121
+    P 12
+    Z 28
+    ```
+    translated:
+    ```
+    (debug info) Label main, line 121:
+    push 12
+    zjump 28
+    ```
 - Fix stack-name collisions.
 - A better name! `zF` isn't very creative.
+  - "Beaurocrat" (get it, stack of papers)? "Clerk"?
 - Add:
   - `.t` (tables)
   - `panic`
