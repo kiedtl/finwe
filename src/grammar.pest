@@ -10,7 +10,7 @@ term = _{
 
 }
 
-word_decl = { "word" ~ ident ~ guard? ~ block }
+word_decl = { "word" ~ ident ~ forced_ws ~ guard? ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
 
 loopblk = { "loop" ~ block }

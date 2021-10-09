@@ -5,7 +5,7 @@ pub const DEFAULT_STACK: &'static str = "_";
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GuardItem {
     Any, Number, Str, Quote, Table, Stack,
-    Unchecked
+    Unchecked, // Should only appear in before
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

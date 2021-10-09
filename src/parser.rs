@@ -371,7 +371,6 @@ fn parse_node(pair: Pair<Rule>) -> Option<Node> {
                         "q" => GuardItem::Quote,
                         "t" => GuardItem::Table,
                         "$" => GuardItem::Stack,
-                        "*" => GuardItem::Unchecked,
                         _   => panic!("'{}' is not a valid guard item",
                             minion.as_str()),
                     });
