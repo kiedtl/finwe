@@ -10,7 +10,7 @@ term = _{
 
 }
 
-word_decl = { "word" ~ ident ~ forced_ws ~ guard? ~ block }
+word_decl = { "word" ~ ident ~ guard? ~ block }
 ifblk = { "if" ~ block ~ ("orelse" ~ block)? }
 
 loopblk = { "loop" ~ block }
@@ -49,9 +49,9 @@ table = { ("{{" ~ table_keyval* ~ "}}")|("{" ~ table_val* ~ "}")}
 table_keyval = { value ~ value }
 table_val = { value }
 
-guard = { "<" ~ guard_set ~ "-" ~ guard_set ~ ">" }
-guard_set  = { guard_item* }
-guard_item = { "a" | "s" | "n" | "q" | "*" }
+guard = _{ "<" ~ guard_set ~ "-" ~ guard_set ~ ">" }
+guard_set  = _{ guard_item* }
+guard_item = _{ "a" | "s" | "n" | "q" | "*" }
 
 word  = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }

@@ -1,0 +1,178 @@
+word lcm <nn-n> ( ab -- n )  [[ 2dup gcd rot abs swap / swap abs * ]]
+word gcd <nn-n> ( ab -- n )  [[ until [[ tuck mod dup 0= ]] drop   ]]
+word abs < n-n> (  a -- c )  [[ dup 0< if [[ negate ]]             ]]
+
+Demos
+-----
+- Mandelbrot
+- Translation of cel7ce demos:
+  - matrix.fe
+- Text adventure
+
+Accepted Ideas
+--------------
+- Enums
+  - `enum foo [[ variant1 variant2 variant3 ]]`
+  - Accesses with `foo::variant1`
+  - `builtin-enum` attribute that allows invocation of invariant without leading
+    `namespace:` identifier.
+  - Example:
+    - `attr(builtin-enum) enum bool [[ true false ]]`
+    - `true false`
+
+Ideas
+-----
+- Tuples
+- Coroutines
+  - If not coroutines: generators?
+- Implicit block passing, as in Ruby
+- Actual closures, not lambdas (how would that work??)
+- Append symbols to end of word invocation to modify behaviour
+  - '!' to immediately pop TOS
+    - "read-file!", which could normally push "data read-size", would now push
+      just "data"
+- More expressive stack guard syntax (see minlang)
+- Lexical scoping of variables
+- Matrices instead of vectors
+- "config" keyword that specifies a command-line argument
+- Native SIMD?
+- Builtin IPC?
+- String operators
+  - CSV/TOML/YAML/JSON processing
+    - j"{'test':'test'}" -> "{'test':'test'}" json:parse
+  - String interpolation (Python's f-strings)
+    - f"Hello {@1}{@2}{TEST}" -> "Hello {@1}{@2}{TEST}" format
+- > Something like a type system, except where you make statements about the code
+  > instead of about the values. For example, a possible statement might be "this
+  > never allocates memory" or "this is linear time and space on the size of the
+  > inputs."
+  - From https://old.reddit.com/r/ProgrammingLanguages/comments/b2a61l/what_are_some_niche_features_youd_like_to_see_in/eirhoef/
+- Something like CL's conditions and restarts
+- Unit annotations
+  - https://fsharpforfunandprofit.com/posts/units-of-measure/
+- Python-style decorators
+  - Maybe just a side-effect of using a non-builtin attribute?
+- Builtin function cacheing (like Python's functools.cache(fn))
+
+Builtins
+--------
+- val(<name>, <type?>)
+- var(<name>, <type?>)
+- set(<var>)
+- attr(<name>, <value?>)
+- register-attr(<name>, <value-type>)
+- has-attr?(<function>, <name>)
+- asm(<flags>, <stack>, <instruction>, <args>)
+- wrap(<word>)
+- perdition(<func>)
+  Causes <func> to be called when the TOS is destroyed. Only applicable for
+  non-scalar types.
+- reflection:function-name(<func>)
+  - Used in word `stacktrace`
+- reflection:function-source(<func>)
+  - Used in word `stacktrace`
+- type
+
+Optimizations
+-------------
+- `dup` with subsequent instruction that can take a non-stack argument
+  can be removed.
+- Remove `not not`.
+- Remove unused calls (i.e., they are pure and generate stack values that
+  are `drop`'d without being read or used in any way).
+- Tail call optimization (maybe a `recurse` keyword that guarantees tail
+  recursion?).
+- div/mul => shift+add
+- Redo user-done stack-shuffling to minimize picking/rolling values
+  deep within the stack.
+
+Metadata
+--------
+- `double-call-is-nop`
+- `verbatim`
+  Don't optimize in any way the following block. (May cause optimizations
+  to be dropped from preceding/following blocks as well?)
+- `deprecated`       (`<message>`)
+- `unavailable`      (`<message>`)
+  - Like `deprecated`, but emits an error.
+- `impure`/`pure`
+- `for`              (`linux`, `windows`, `macos`, `openbsd`, `freebsd`)
+- `alias`            (`<name>`)
+- `public`
+  The word will be exported and will be visible from an `import`'d table.
+  (Might not be added -- shouldn't all words be visible unless explicitely
+  marked so? "Trust the user"?)
+- `test`
+- `native-interface`
+  The following word declaration refers to a foreign library
+  imported over the FFI.
+- `impl-detail`
+  The following word is considered an "implementation detail" and its use should
+  be avoided. Will result in a warning if used outside of that namespace.
+  (Will be unnecessary if `public` is added as well)
+- `unchecked`
+  No compile-time or runtime stack analysis is to be done on the following block.
+- limit-stack-size   (<stack>, <size>)
+  - Only one per program.
+  - Limits stack to a maximum size.
+- suggest-stack-size (<stack>, <size>)
+  - Only one per program.
+  - Suggests stack size to allocate at first.
+- no-feature         (<feature>)
+  - Only one per program.
+  - Disables feature.
+  - Features: `floats`, `tables`, `vectors`, `coroutines`
+- float-size         (<size>)
+  - Only one per program.
+  - Sizes: 16, 32, 64, 128
+
+Assembly Syntax
+---------------
+
+# abs
+.	0	picmcmno	0,0,-1
+.?	0	mu______	-1
+.	1	ju______	@
+
+# gcd
+.	0	ropidmdr	1,1,@,0
+.	0	picmskju	0,@,0
+.	0	dr______
+.	1	ju______	@
+
+# lcm
+.	0	pipi____	1,1
+.	1	saju____	0 # call gcd
+.	0	ro______	2
+.	1	saju____	3 # call abs
+.	0	rodmrodr	1,@,1
+.	0	ro______	1
+.	1	saju____	3 # call abs
+.	0	mu______	@
+
+(alternative syntax)
+.	0	pick	1
+.	0	pick	1
+.	1	save
+.	1	jump	0
+.	0	roll	2
+.	1	save
+.	1	jump	3
+.	0	roll
+.	0	dmod	1
+.	0	roll	@
+.	0	drop	1
+.	0	roll	1
+.	1	save
+.	1	jump	3
+.	0	muls	@
+
+(another alternative syntax)
+.	0	pick·pick          	1,1
+.	1	save·jump          	0
+.	0	roll               	2
+.	1	save·jump          	3
+.	0	roll·dmod·roll·drop	1,@,1
+.	0	roll               	1
+.	1	save·jump          	3
+.	0	muls               	@

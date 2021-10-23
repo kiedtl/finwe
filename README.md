@@ -28,32 +28,24 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 
 ## TODO
 
-- New syntax based on S-expressions(?), with VM rewrite in Zig (parser
-  might still be in Rust *if* no S-expressions)
-  - Need to come up with executable format. Something like:
-    ```
-    #L main
-    #l 121
-    P 12
-    Z 28
-    ```
-    translated:
-    ```
-    (debug info) Label main, line 121:
-    push 12
-    zjump 28
-    ```
-- Fix stack-name collisions.
+- VM rewrite in Zig
+- Remove `()` syntax for comments
+- Add `table:key` and `:key` shorthand syntax.
+- Change variable syntax
+- Remove unnecessary `is?` and `any` keywords.
+- Add doc comments.
 - A better name! `zF` isn't very creative.
-  - "Beaurocrat" (get it, stack of papers)? "Clerk"?
+  - "Bureaucrat" (get it, stack of papers)? "Clerk"?
+- Fix stack-name collisions.
 - Add:
-  - `.t` (tables)
-  - `panic`
-  - `err` and `ok`
-  - `key`
-  - `import`
-  - `>>-` (reset-stack)
-- Docs for functions
+  - Misc stdlib functions
+  - `debug` block that only compiles code if in
+    debug mode.
+  - `while` loop.
+  - `iterate` loop.
+  - `defer`, `errdefer`(?) blocks that are run on
+    the function returning. (Would require making the
+    `return` word non-returning)
 - Escape sequences for characters and strings
 - zF equivalents for the following:
   - retro-describe (RETRO)
@@ -61,13 +53,9 @@ See `examples/*.zf` and `src/std/builtin.zf`.
 - Show code context on syntax/runtime error.
 - Flesh out stack guards.
 - Rust-like expression metadata.
-  - Something like `%[inline always] word blah [[ ]]`
-  - The following metadata:
-    - `impure` (none)
-    - `for` (`linux`, `windows`, `darwin`)
-    - `alias` (`<name>`)
-    - `export`
-    - `test`
+  - `%[inline always] word blah [[ ]]`
+  - `attr(inline always) word blah [[ ]]`
+  - `meta(inline always) word blah [[ ]]`
 - Tail-call optimizations
 - Research other optimizations
 - Static analysis on stack usage to catch stack underflows

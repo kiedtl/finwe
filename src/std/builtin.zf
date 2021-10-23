@@ -242,3 +242,56 @@ word do-times <nq-*> ( n q -- ) [[
 
 	$i >- $f >-
 ]]
+
+( TODO
+	Argument list may have to be reordered.
+
+	- T                                  Push true.
+	- nil                                Push nil.
+	- :           <table> <key>          Get child from table.
+	- :=          <table> <key> <val>    Set child from table to val.
+	- pack        <depth>                Pack <depth> stack items into vector.
+	- unpack      <vector>               Unpack vector into stack.
+	- asin
+	- acos
+	- atan
+	- acsc
+	- asec
+	- acot
+	- format      <str> <list>
+	- cons        <val> <val>
+	- concat      <vec1> <vec2>
+	- econcat     <vec1> <val> <vec2>
+	- null?       <val>
+	- contains?   <vec>
+	- nullary     <q>
+	- unary       <x> <q>
+	- binary      <x> <y> <q>
+	- ternary     <x> <y> <z> <q>
+	- cleave      <x> <q1> <q2>
+	- linrec      <p> <t> <r1> <r2>
+	- tailrec     <p> <t> <r1>
+	- binrec      <b> <t> <r1> <r2>
+	- primrec     <x> <qi> <qc>
+	- zip         <vec>                  Zip() high-order function.
+	- longzip     <vec>                  Like zip(), but continue until all are exhausted.
+	- foldl       <vec> <v0> <q>
+	- foldr       <vec> <v0> <q>
+	- map         <vec> <q>
+	- filter      <vec> <q>
+	- all         <vec> <q>              Push T if q(vec[i]) == T for all i.
+	- some        <vec> <q>              Push T if q(vec[i]) == T for any i.
+	- split       <vec> <q>
+	- arguments
+	- reverse-vec <vec>
+	- utf8-decode <string>
+	- utf8-encode <int>
+	- .t          <table>                Pretty-print table.
+	- panic       <msg>
+	- unwrap      <result>
+	- err         <val>
+	- ok          <val>
+	- import      <str>
+	- pairs       <table>                Create iterator over table key/val pairs.
+	- >>-         <stack>                Reset stack.
+)
