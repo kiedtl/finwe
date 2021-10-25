@@ -246,8 +246,7 @@ word do-times <nq-*> ( n q -- ) [[
 ( TODO
 	Argument list may have to be reordered.
 
-	- T                                  Push true.
-	- nil                                Push nil.
+	- type        <val>                  Get type of TOS.
 	- :           <table> <key>          Get child from table.
 	- :=          <table> <key> <val>    Set child from table to val.
 	- pack        <depth>                Pack <depth> stack items into vector.
