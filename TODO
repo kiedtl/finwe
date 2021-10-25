@@ -83,6 +83,7 @@ Optimizations
 - div/mul => shift+add
 - Redo user-done stack-shuffling to minimize picking/rolling values
   deep within the stack.
+- Aggressive word inlining, where possible.
 
 Metadata
 --------
@@ -108,7 +109,7 @@ Metadata
   The following word is considered an "implementation detail" and its use should
   be avoided. Will result in a warning if used outside of that namespace.
   (Will be unnecessary if `public` is added as well)
-- `unchecked`
+- `unchecked`/`wild`
   No compile-time or runtime stack analysis is to be done on the following block.
 - limit-stack-size   (<stack>, <size>)
   - Only one per program.
@@ -119,7 +120,7 @@ Metadata
 - no-feature         (<feature>)
   - Only one per program.
   - Disables feature.
-  - Features: `floats`, `tables`, `vectors`, `coroutines`
+  - Features: `floats`, `coroutines`
 - float-size         (<size>)
   - Only one per program.
   - Sizes: 16, 32, 64, 128
@@ -139,6 +140,8 @@ Ideas
 - Lexical scoping of variables
   - Would encourage using variables as "escape hatch"...
     - But we should trust the user amirite?
+- `match` block to match against TOS
+- Table templates
 - Coroutines
   - If not coroutines: generators?
 - Implicit block passing, as in Ruby
