@@ -28,8 +28,18 @@ Roadmap
   - Add location context to AST nodes.
 - Slowly change VM instructions to use new zf vm instructions.
 - Eventually, VM rewrite in Zig.
+  - Work out extended type system.
+    - vm_create_type(VMType {
+	name:            *str,
+        init_fn:          func,
+	index_fn:        ?func,
+	cast_fn:         ?func,
+	pretty_print_fn: ?func,
+	destroy_fn:      ?func,
+      })
 - Fix stack-name collisions.
 - Add misc stdlib functions
+- Fix stack guards
 - Static analysis on stack usage
 
 Demos
@@ -52,6 +62,13 @@ Language Features
 - `debug` block that only compiles code if in debug mode.
 - `while` and `iterate` loop.
 - Escape sequences for characters and strings
+- Tuples
+  - `<x> group` to create tuple.
+  - `(| 1 2 3 foo |)` tuple syntax.
+  - `(| 1 2 |) :0` or `(| 1 2 |) 0 :` to index.
+  - stack shuffling treats tuple as one item.
+  - arguments are evaluated immediately.
+    - `(| 1 2 3 [foo] |)` to not evaluate immediately.
 
 Builtins
 --------
@@ -63,12 +80,12 @@ Builtins
 - has-attr?(<function>, <name>)
 - asm(<flags>, <stack>, <instruction>, <args>)
 - wrap(<word>)
-- perdition(<func>)
+  - What was this for? …
   Causes <func> to be called when the TOS is destroyed. Only applicable for
   non-scalar types.
-- reflection:function-name(<func>)
+- reflection:function-name(<func>) -> string
   - Used in word `stacktrace`
-- reflection:function-source(<func>)
+- reflection:function-source(<func>) -> (| file line col |)
   - Used in word `stacktrace`
 
 Optimizations
@@ -124,36 +141,44 @@ Metadata
 - float-size         (<size>)
   - Only one per program.
   - Sizes: 16, 32, 64, 128
+- soft-symbol
+  - Marks the following symbol as being overwriteable by an external mod.
 
 Ideas
 -----
-- Tuples
-  - `<x> group` to create tuple.
-  - `(| 1 2 3 foo |)` tuple syntax.
-  - `(| 1 2 |) :0` to index.
-  - stack shuffling treats tuple as one item.
-  - arguments are evaluated immediately.
-    - `(| 1 2 3 [foo] |)` to not evaluate immediately.
+(~ == obsolete/rejected idea)
 - Python-style decorators
   - Maybe just a side-effect of using a non-builtin attribute?
   - Function cache'ing (Python's functools.cache(fn))
 - Lexical scoping of variables
   - Would encourage using variables as "escape hatch"...
     - But we should trust the user amirite?
-- `match` block to match against TOS
+  - Would reduce or destroy factorability if it was overused
 - Table templates
 - Coroutines
   - If not coroutines: generators?
+- Concurrency
+  - Would require linear logic -- that is, all values would have to be used
+    exactly once.
 - Implicit block passing, as in Ruby
 - Actual closures, not lambdas (how would that work??)
-- Append symbols to end of word invocation to modify behaviour
+- Append/prepend symbols to end of word invocation to modify behaviour
   - '!' to immediately pop TOS
-    - "read-file!", which could normally push "data read-size", would now push
+    - `read-file!`, which could normally push "data read-size", would now push
       just "data"
+      - Alternatively: `!read-file`
+  - 'λ' to pass implicit block
+    - `1 2 [foo bar baz] do-stuffλ`
+      - Alternatively: `1 2 [foo bar baz] λdo-stuff`
 - More expressive stack guard syntax (see minlang)
 - Matrices instead of vectors
-- "config" keyword that specifies a command-line argument
-- Native SIMD?
+- "argument" keyword that specifies a command-line argument
+  - `"foo" argument('f' "foo" true)`
+  - Parsed arguments are put in `arguments` global table.
+~ Native SIMD?
+  - Rejected:
+    - Would complicate the underlying VM quite a bit.
+    - Anyway, if you care about SIMD, you shouldn't be using a scripting lang.
 - Builtin IPC?
 - String operators
   - CSV/TOML/YAML/JSON processing
@@ -165,9 +190,13 @@ Ideas
   > never allocates memory" or "this is linear time and space on the size of the
   > inputs."
   - From https://old.reddit.com/r/ProgrammingLanguages/comments/b2a61l/what_are_some_niche_features_youd_like_to_see_in/eirhoef/
-- Something like CL's conditions and restarts
-- Unit annotations
-  - https://fsharpforfunandprofit.com/posts/units-of-measure/
+~ Something like CL's conditions and restarts
+  - Rejected: would require adding exceptions. Gross.
+~ Unit annotations
+  ~ https://fsharpforfunandprofit.com/posts/units-of-measure/
+~ `match` block to match against TOS
+  - Rejected: would require complex wildcard matching
+  - Could be added later
 
 Assembly Syntax
 ---------------
