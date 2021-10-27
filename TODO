@@ -9,11 +9,13 @@ Tooling
 Syntax changes
 --------------
 - Remove `()` syntax for comments
-- Add `table:key` and `:key` shorthand syntax.
-- Use `stack{}` instead of `switch $foo [[ ]]`
+- Use `$stack<-` instead of `$stack <-`.
+- Use `$stack{}` instead of `switch $foo [[ ]]`
 - Use `[| a b c |]` for arrays
 - Change variable syntax to (see builtin list)
 - Remove unnecessary `is?` and `any` keywords.
+- Use new s-expressions syntax (see new-syntax.md)
+- Add `table:key` and `:key` shorthand syntax.
 - Add doc comments with `\\\ foo`.
 
 Roadmap
@@ -27,6 +29,7 @@ Roadmap
   - Remove phony `break`/`continue` instructions.
   - Add location context to AST nodes.
 - Slowly change VM instructions to use new zf vm instructions.
+- Make syntax changes.
 - Eventually, VM rewrite in Zig.
   - Work out extended type system.
     - vm_create_type(VMType {
