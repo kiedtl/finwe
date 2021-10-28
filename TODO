@@ -22,13 +22,14 @@ Roadmap
 -------
 - A better name! `zF` isn't very creative.
   - "Bureaucrat" (get it, stack of papers)? "Clerk"?
-- Add infra for builtin macros.
-- Add `asm` builtin macro.
+- Add `asm` statements.
 - Remove builtin words, changing them to asm() words in builtin.zf.
 - Refactor parsing code.
   - Remove phony `break`/`continue` instructions.
   - Add location context to AST nodes.
 - Slowly change VM instructions to use new zf vm instructions.
+- Add infra for builtin macros.
+  - Convert `asm` to a builtin macro.
 - Make syntax changes.
 - Eventually, VM rewrite in Zig.
   - Work out extended type system.
@@ -84,8 +85,6 @@ Builtins
 - asm(<flags>, <stack>, <instruction>, <args>)
 - wrap(<word>)
   - What was this for? …
-  Causes <func> to be called when the TOS is destroyed. Only applicable for
-  non-scalar types.
 - reflection:function-name(<func>) -> string
   - Used in word `stacktrace`
 - reflection:function-source(<func>) -> (| file line col |)
@@ -178,6 +177,11 @@ Ideas
 - "argument" keyword that specifies a command-line argument
   - `"foo" argument('f' "foo" true)`
   - Parsed arguments are put in `arguments` global table.
+- Auto-pushing named parameters to named stacks
+- Auto-cleanup of named stacks when a function exits
+  - Would require some pretty strong static analysis to determine what stacks
+    are used, whether they're being used by the parent caller, how many items
+    to remove, etc.
 ~ Native SIMD?
   - Rejected:
     - Would complicate the underlying VM quite a bit.
