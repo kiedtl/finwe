@@ -30,6 +30,8 @@ Roadmap
 - Slowly change VM instructions to use new zf vm instructions.
 - Add infra for builtin macros.
   - Convert `asm` to a builtin macro.
+- Create scopes.
+  - Allow nested word definitions.
 - Make syntax changes.
 - Eventually, VM rewrite in Zig.
   - Work out extended type system.
