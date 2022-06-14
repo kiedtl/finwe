@@ -108,6 +108,11 @@ Optimizations
 
 Metadata
 --------
+- `domain <domain>`
+- `range <range>`
+- `only-from-recurse`
+  - Emit error if previous caller wasn't current function. Useful for marking
+    single blocks of code within a function.
 - `double-call-is-nop`
 - `verbatim`
   Don't optimize in any way the following block. (May cause optimizations
