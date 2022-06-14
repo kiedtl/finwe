@@ -6,7 +6,7 @@ term = _{
 	| quote | table  | stackblk
 	| stack | fetch  | store   | loopblk
 	| ifblk | until  | cond    | word
-	| breakstmt | continuestmt
+	| breakstmt | continuestmt | asmstmt
 
 }
 
@@ -21,6 +21,8 @@ breakstmt = { "break" }
 cond = { "cond" ~ "[[" ~ condarm+ ~ condany? ~ "]]" }
 condarm = { "is?" ~ block ~ block }
 condany = { "any" ~ block }
+
+asmstmt = { "asm" ~ stack ~ ident ~ ident* ~ ";;" }
 
 stack = { "$" ~ ident }
 stackblk = { "sw:" ~ stack ~ block }
@@ -59,7 +61,7 @@ ident = @{ !RESERVED ~ (!WHITESPACE ~ ANY)+ }
 forced_ws = _{ WHITESPACE+ | EOI }
 RESERVED  = _{
 	"if" | "orelse" | "until" | "word" | "cond" | "is?" | "any" |
-	"continue" | "break" | "loop" | "sw:" |
+	"continue" | "break" | "loop" | "sw:" | "asm" | ";;" |
 	"[[" | "]]" | "[" | "]" | "{" | "}"
 }
 

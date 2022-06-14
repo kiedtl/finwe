@@ -14,6 +14,13 @@ pub struct ZfParser;
 pub enum CondArm { Is(Vec<Node>), Any }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum AsmStmt {
+    stack: String,
+    inst: String,
+    args: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Node {
     Decl((String, Vec<Node>)),
     Quote(Vec<Node>),
@@ -33,6 +40,7 @@ pub enum Node {
     Loop(Vec<Node>),
     Cond(Vec<(CondArm, Vec<Node>)>),
     Ident(String),
+    Asm(AsmStmt),
     Continue,
     Break,
 }

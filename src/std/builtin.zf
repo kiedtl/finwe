@@ -1,6 +1,8 @@
 1 !TRUE
 0 !FALSE
 
+word mypick [[ asm $_ pick ;; ]]
+
 word dup     <   a-aa  > ( abc -- bca )  [[ 0 pick                           ]]
 word over    <   a-aaa > (  ab -- aba )  [[ 1 pick                           ]]
 word uncover < aaa-aaaa> ( abc -- abca)  [[ 2 pick                           ]]
