@@ -22,6 +22,8 @@ Roadmap
 -------
 - A better name! `zF` isn't very creative.
   - "Bureaucrat" (get it, stack of papers)? "Clerk"?
+  - core technologies can be named after paper measurements
+    - quire, ream, bundle, bale
 - Add `asm` statements.
 - Remove builtin words, changing them to asm() words in builtin.zf.
 - Refactor parsing code.
