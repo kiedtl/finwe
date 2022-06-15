@@ -78,7 +78,7 @@ pub const Parser = struct {
                     const name = try expectNode(.Keyword, &ast[1]);
 
                     var body = ASTNodeList.init(self.alloc);
-                    for (ast[1..]) |node|
+                    for (ast[2..]) |node|
                         try body.append(try self.parseStatement(&node));
 
                     break :b ASTNode{
@@ -94,6 +94,7 @@ pub const Parser = struct {
         };
     }
 
+    // Extract definitions
     pub fn extractDefs(self: *Parser) ParserError!void {
         for (self.program.ast.items) |*node| if (node.node == .Decl) {
             try self.program.defs.append(node);
@@ -101,10 +102,23 @@ pub const Parser = struct {
     }
 
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
+        // Setup the entry function
+        // TODO: this should be in codegen
+        try self.program.ast.append(ASTNode{ .node = .{
+            .Decl = .{ .name = "_start", .body = ASTNodeList.init(self.alloc) },
+        }, .srcloc = 0 });
+        const main_func = &self.program.ast.items[0].node.Decl.body;
+
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
-            else => try self.program.ast.append(try self.parseStatement(node)),
+            else => try main_func.append(try self.parseStatement(node)),
         };
+
+        // Exit the program
+        // TODO: this should be in codegen
+        try main_func.append(ASTNode{ .node = .{
+            .Asm = .{ .stack = 0, .op = .Ohalt },
+        }, .srcloc = 0 });
 
         try self.extractDefs();
 

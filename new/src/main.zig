@@ -3,7 +3,7 @@ const mem = std.mem;
 
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
-const vm = @import("vm.zig");
+const vmm = @import("vm.zig");
 const codegen = @import("codegen.zig");
 
 const gpa = &@import("common.zig").gpa;
@@ -25,7 +25,8 @@ pub fn main() anyerror!void {
 
     var assembled = try codegen.generate(&parsed);
 
-    std.log.info("program:\n{any}", .{assembled.items});
+    var vm = vmm.VM.init(assembled.items);
+    try vm.execute();
 
     //try codegen.generate(&program, &emitted, gpa.allocator());
 

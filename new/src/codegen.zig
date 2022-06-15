@@ -6,14 +6,14 @@ const vm = @import("vm.zig");
 
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
-const Ins = @import("vm.zig").Ins;
-const Op = @import("vm.zig").Op;
-
 const ASTNode = @import("common.zig").ASTNode;
 const Value = @import("common.zig").Node.Value;
 const ValueList = @import("common.zig").ValueList;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Program = @import("common.zig").Program;
+const Ins = @import("common.zig").Ins;
+const Op = @import("common.zig").Op;
+
 const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
 
@@ -83,7 +83,9 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
                 try genNode(buf, bodynode, ual);
+            try emit(buf, node, RT_STACK, .{ .Oj = null });
         },
+        .Asm => |a| try emit(buf, node, a.stack, a.op),
         .Call => |i| try emitUA(buf, ual, i, node),
         .Child => @panic("unimplemented"),
     }
@@ -101,7 +103,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         for (program.defs.items) |def| {
             if (mem.eql(u8, def.node.Decl.name, ua.ident)) {
                 buf.items[ua.loc + 0] = .{ .stack = RT_STACK, .op = .Osave };
-                buf.items[ua.loc + 1] = .{ .stack = RT_STACK, .op = .{ .Oj = def.romloc } };
+                buf.items[ua.loc + 1] = .{ .stack = WK_STACK, .op = .{ .Oj = def.romloc } };
 
                 continue :ual_search;
             }
