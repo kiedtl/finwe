@@ -56,14 +56,18 @@ pub const ASTNode = struct {
     pub const Type = union(enum) {
         Decl: Decl, // word declaraction
         Call: []const u8,
+        Loop: Loop,
         Asm: Ins,
         Value: Value,
-        Child: Child,
     };
 
-    pub const Child = union(enum) {
-        Number: f64,
-        String: String,
+    pub const Loop = struct {
+        loop: Loop.Type,
+        body: ASTNodeList,
+
+        pub const Type = enum {
+            Until,
+        };
     };
 
     pub const Decl = struct {
@@ -82,7 +86,9 @@ pub const Op = union(enum) {
     Olit: Value,
     Osave,
     Oj: ?usize,
+    Ozj: ?usize,
     Ohalt,
+    Onac: []const u8,
 
     pub const Tag = meta.Tag(Op);
 
@@ -103,6 +109,8 @@ pub const Op = union(enum) {
         switch (value) {
             .Olit => |l| try fmt.format(writer, "{}", .{l}),
             .Oj => |j| try fmt.format(writer, "{}", .{j}),
+            .Ozj => |j| try fmt.format(writer, "{}", .{j}),
+            .Onac => |f| try fmt.format(writer, "'{s}'", .{f}),
             else => try fmt.format(writer, "@", .{}),
         }
     }

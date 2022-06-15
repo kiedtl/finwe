@@ -64,6 +64,7 @@ pub const Parser = struct {
         return switch (node.node) {
             .List => |l| try self.parseList(l.items),
             .Keyword => |i| ASTNode{ .node = .{ .Call = i }, .srcloc = node.location },
+            .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
         };
     }
@@ -83,6 +84,15 @@ pub const Parser = struct {
 
                     break :b ASTNode{
                         .node = .{ .Decl = .{ .name = name, .body = body } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "until")) {
+                    var body = ASTNodeList.init(self.alloc);
+                    for (ast[1..]) |node|
+                        try body.append(try self.parseStatement(&node));
+
+                    break :b ASTNode{
+                        .node = .{ .Loop = .{ .loop = .Until, .body = body } },
                         .srcloc = ast[0].location,
                     };
                 } else {

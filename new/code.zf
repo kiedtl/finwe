@@ -1,3 +1,13 @@
-(word main
-    0 1 2 3 4 'ë)
-main
+(word tuck)
+(word mod)
+(word dup)
+(word =)
+(word 0=)
+
+(word gcd
+    (until
+        tuck mod dup 0=)
+    drop)
+
+54 45 gcd
+print-stack

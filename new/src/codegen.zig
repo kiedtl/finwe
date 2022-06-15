@@ -79,15 +79,27 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v }),
         .Decl => |d| {
-            // Create a new scope
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
                 try genNode(buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
         },
+        .Loop => |l| {
+            const loop_begin = buf.items.len;
+            for (l.body.items) |*bodynode|
+                try genNode(buf, bodynode, ual);
+            switch (l.loop) {
+                .Until => try emit(buf, node, WK_STACK, .{ .Ozj = loop_begin }),
+            }
+        },
         .Asm => |a| try emit(buf, node, a.stack, a.op),
-        .Call => |i| try emitUA(buf, ual, i, node),
-        .Child => @panic("unimplemented"),
+        .Call => |f| {
+            if (vm.findBuiltin(f)) |_| {
+                try emit(buf, node, WK_STACK, .{ .Onac = f });
+            } else {
+                try emitUA(buf, ual, f, node);
+            }
+        },
     }
 }
 

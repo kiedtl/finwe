@@ -45,42 +45,93 @@ pub const VM = struct {
         switch (ins.op) {
             .O => {},
             .Olit => |v| try self.push(ins.stack, v),
-            .Oj => |j| self.pc = j orelse @floatToInt(
-                usize,
-                (try self.pop(ins.stack, .Number)).Number,
-            ),
+            .Oj => |j| self.pc = j orelse try self.popUsize(ins.stack),
+            .Ozj => |j| {
+                const addr = j orelse try self.popUsize(ins.stack);
+                if ((try self.pop(ins.stack, .Number)).Number == 0) {
+                    self.pc = addr;
+                }
+            },
             .Osave => try self.pushInt(ins.stack, self.pc + 1),
             .Ohalt => self.stopped = true,
+            .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
         }
     }
 
-    pub fn pop(self: *VM, stack: usize, expect: Value.Tag) VMError!Value {
-        const v = try self.popAny(stack);
+    pub fn stack(self: *VM, s: usize) VMError!*ValueList {
+        while (self.stacks.items.len <= s) {
+            try self.stacks.append(ValueList.init(gpa.allocator()));
+        }
+        return &self.stacks.items[s];
+    }
+
+    pub fn popUsize(self: *VM, stk: usize) VMError!usize {
+        return @floatToInt(
+            usize,
+            (try self.pop(stk, .Number)).Number,
+        );
+    }
+
+    pub fn pop(self: *VM, stk: usize, expect: Value.Tag) VMError!Value {
+        const v = try self.popAny(stk);
         if (expect != v) {
             return error.InvalidType;
         }
         return v;
     }
 
-    pub fn popAny(self: *VM, stack: usize) VMError!Value {
-        if (self.stacks.items.len < stack or self.stacks.items[stack].items.len == 0) {
+    pub fn popAny(self: *VM, stk: usize) VMError!Value {
+        if (self.stacks.items.len < stk or self.stacks.items[stk].items.len == 0) {
             return error.StackUnderflow;
         }
-        return self.stacks.items[stack].pop();
+        return self.stacks.items[stk].pop();
     }
 
-    pub fn push(self: *VM, stack: usize, value: Value) VMError!void {
-        while (self.stacks.items.len <= stack) {
+    pub fn push(self: *VM, stk: usize, value: Value) VMError!void {
+        while (self.stacks.items.len <= stk) {
             try self.stacks.append(ValueList.init(gpa.allocator()));
         }
-        try self.stacks.items[stack].append(value);
+        try self.stacks.items[stk].append(value);
     }
 
-    pub fn pushInt(self: *VM, stack: usize, value: anytype) VMError!void {
-        try self.push(stack, .{ .Number = @intToFloat(f64, value) });
+    pub fn pushInt(self: *VM, stk: usize, value: anytype) VMError!void {
+        try self.push(stk, .{ .Number = @intToFloat(f64, value) });
     }
 
-    pub fn pushNum(self: *VM, stack: usize, value: f64) VMError!void {
-        try self.push(stack, .{ .Number = value });
+    pub fn pushNum(self: *VM, stk: usize, value: f64) VMError!void {
+        try self.push(stk, .{ .Number = value });
     }
 };
+
+// Builtins
+//
+// (This is temporary)
+//
+// {{{
+
+pub const Builtin = struct {
+    name: []const u8,
+    func: fn (vm: *VM, stack: usize) VMError!void,
+};
+
+pub const BUILTINS = [_]Builtin{
+    Builtin{
+        .name = "print-stack",
+        .func = struct {
+            pub fn f(vm: *VM, stk: usize) VMError!void {
+                for ((try vm.stack(stk)).items) |item, i| {
+                    std.log.info("{}\t{}", .{ i, item });
+                }
+            }
+        }.f,
+    },
+};
+
+pub fn findBuiltin(name: []const u8) ?Builtin {
+    return for (&BUILTINS) |builtin| {
+        if (mem.eql(u8, builtin.name, name))
+            break builtin;
+    } else null;
+}
+
+// }}}
