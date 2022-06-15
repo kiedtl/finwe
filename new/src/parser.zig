@@ -9,8 +9,11 @@ const Value = @import("common.zig").Value;
 const ASTNode = @import("common.zig").ASTNode;
 const ValueList = @import("common.zig").ValueList;
 const ASTNodeList = @import("common.zig").ASTNodeList;
+const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
+const Program = @import("common.zig").Program;
 
 pub const Parser = struct {
+    program: Program,
     alloc: mem.Allocator,
 
     const ParserError = error{
@@ -27,7 +30,10 @@ pub const Parser = struct {
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
-        return .{ .alloc = alloc };
+        return .{ .program = Program{
+            .ast = ASTNodeList.init(alloc),
+            .defs = ASTNodePtrList.init(alloc),
+        }, .alloc = alloc };
     }
 
     fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
@@ -88,12 +94,20 @@ pub const Parser = struct {
         };
     }
 
-    pub fn parse(self: *Parser, ast: *const lexer.NodeList) ParserError!ASTNodeList {
-        var program = ASTNodeList.init(self.alloc);
-        for (ast.items) |*node| switch (node.node) {
-            .List => |l| try program.append(try self.parseList(l.items)),
-            else => try program.append(try self.parseStatement(node)),
+    pub fn extractDefs(self: *Parser) ParserError!void {
+        for (self.program.ast.items) |*node| if (node.node == .Decl) {
+            try self.program.defs.append(node);
         };
-        return program;
+    }
+
+    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
+        for (lexed.items) |*node| switch (node.node) {
+            .List => |l| try self.program.ast.append(try self.parseList(l.items)),
+            else => try self.program.ast.append(try self.parseStatement(node)),
+        };
+
+        try self.extractDefs();
+
+        return self.program;
     }
 };

@@ -7,11 +7,29 @@ const LinkedList = @import("list.zig").LinkedList;
 const StackBuffer = @import("buffer.zig").StackBuffer;
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
+// ----------------------------------------------------------------------------
+
+pub const WK_STACK = 1;
+pub const RT_STACK = 1;
+
+pub var gpa = std.heap.GeneralPurposeAllocator(.{
+    // Probably should enable this later on to track memory usage, if
+    // allocations become too much
+    .enable_memory_limit = false,
+
+    .safety = true,
+
+    // Probably would enable this later?
+    .thread_safe = false,
+
+    .never_unmap = false,
+}){};
+
 pub const ValueList = std.ArrayList(Value);
 
 //pub const ASTNodeList = LinkedList(ASTNode);
 pub const ASTNodeList = std.ArrayList(ASTNode);
-pub const ASTNodePtrArrayList = std.ArrayList(*ASTNode);
+pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 
 pub const Value = union(enum) {
     Number: f64,
@@ -46,4 +64,9 @@ pub const ASTNode = struct {
         name: []const u8,
         body: ASTNodeList,
     };
+};
+
+pub const Program = struct {
+    ast: ASTNodeList,
+    defs: ASTNodePtrList,
 };

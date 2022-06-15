@@ -3,19 +3,10 @@ const mem = std.mem;
 
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
+const vm = @import("vm.zig");
+const codegen = @import("codegen.zig");
 
-pub var gpa = std.heap.GeneralPurposeAllocator(.{
-    // Probably should enable this later on to track memory usage, if
-    // allocations become too much
-    .enable_memory_limit = false,
-
-    .safety = true,
-
-    // Probably would enable this later?
-    .thread_safe = false,
-
-    .never_unmap = false,
-}){};
+const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const file = try std.fs.cwd().openFile("code.zf", .{});
@@ -28,12 +19,13 @@ pub fn main() anyerror!void {
 
     var lexer = lexerm.Lexer.init(buf, gpa.allocator());
     const lexed = try lexer.lex();
-    _ = lexed;
 
     var parser = parserm.Parser.init(gpa.allocator());
-    var program = try parser.parse(&lexed);
+    var parsed = try parser.parse(&lexed);
 
-    std.log.info("program:\n{any}", .{program.items});
+    var assembled = try codegen.generate(&parsed);
+
+    std.log.info("program:\n{any}", .{assembled.items});
 
     //try codegen.generate(&program, &emitted, gpa.allocator());
 
