@@ -24,12 +24,12 @@ pub fn main() anyerror!void {
     var parsed = try parser.parse(&lexed);
 
     var assembled = try codegen.generate(&parsed);
+    for (assembled.items) |asmstmt| {
+        _ = asmstmt;
+        //std.log.info("{}", .{asmstmt});
+    }
+    //std.log.info("--------------------------------------------------", .{});
 
     var vm = vmm.VM.init(assembled.items);
     try vm.execute();
-
-    //try codegen.generate(&program, &emitted, gpa.allocator());
-
-    //const outf = try std.fs.cwd().createFile("code.ch8", .{ .truncate = true });
-    //try outf.writeAll(emitted.constSlice());
 }

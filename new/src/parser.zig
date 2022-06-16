@@ -4,6 +4,7 @@ const meta = std.meta;
 const activeTag = std.meta.activeTag;
 
 const lexer = @import("lexer.zig");
+const utils = @import("utils.zig");
 
 const Value = @import("common.zig").Value;
 const ASTNode = @import("common.zig").ASTNode;
@@ -11,6 +12,10 @@ const ValueList = @import("common.zig").ValueList;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
+const Op = @import("common.zig").Op;
+
+const WK_STACK = @import("common.zig").WK_STACK;
+const RT_STACK = @import("common.zig").RT_STACK;
 
 pub const Parser = struct {
     program: Program,
@@ -20,6 +25,8 @@ pub const Parser = struct {
         StrayToken,
         EmptyList,
         ExpectedKeyword,
+        ExpectedEnumLit,
+        ExpectedOptionalNumber,
         ExpectedItems,
         ExpectedNode,
         UnexpectedItems,
@@ -27,6 +34,7 @@ pub const Parser = struct {
         ExpectedStatement,
         UnknownKeyword,
         UnexpectedLabelDefinition,
+        InvalidAsmOp,
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
@@ -53,9 +61,12 @@ pub const Parser = struct {
     fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
         _ = self;
         return switch (node.node) {
+            .T => .T,
+            .Nil => .Nil,
             .Number => |n| .{ .Number = n },
             .String => |s| .{ .String = s },
             .Codepoint => |c| .{ .Codepoint = c },
+            .EnumLit => |e| .{ .EnumLit = e },
             else => error.ExpectedValue,
         };
     }
@@ -95,6 +106,21 @@ pub const Parser = struct {
                         .node = .{ .Loop = .{ .loop = .Until, .body = body } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "asm")) {
+                    try validateListLength(ast, 3);
+                    const asm_stack = try self.parseValue(&ast[1]);
+                    if (asm_stack != .Nil and asm_stack != .Number)
+                        return error.ExpectedOptionalNumber;
+                    const asm_op_kwd = try self.parseValue(&ast[2]);
+                    if (asm_op_kwd != .EnumLit)
+                        return error.ExpectedEnumLit;
+                    const asm_op_e = meta.stringToEnum(Op.Tag, asm_op_kwd.EnumLit) orelse
+                        return error.InvalidAsmOp;
+                    const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
+                    break :b ASTNode{
+                        .node = .{ .Asm = .{ .stack = WK_STACK, .op = asm_op } },
+                        .srcloc = ast[0].location,
+                    };
                 } else {
                     break :b error.UnknownKeyword;
                 }
@@ -114,10 +140,16 @@ pub const Parser = struct {
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
         // Setup the entry function
         // TODO: this should be in codegen
+        //
+        // Add a dummy node that we'll replace later with the actual function.
+        // Do this since we can't just use a pointer to the node, as appending
+        // to program.ast will eventually invalidate the pointer.
+        //
         try self.program.ast.append(ASTNode{ .node = .{
-            .Decl = .{ .name = "_start", .body = ASTNodeList.init(self.alloc) },
+            .Value = .{ .Nil = {} },
         }, .srcloc = 0 });
-        const main_func = &self.program.ast.items[0].node.Decl.body;
+
+        var main_func = ASTNodeList.init(self.alloc);
 
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
@@ -129,6 +161,8 @@ pub const Parser = struct {
         try main_func.append(ASTNode{ .node = .{
             .Asm = .{ .stack = 0, .op = .Ohalt },
         }, .srcloc = 0 });
+        // Replace the dummy node
+        self.program.ast.items[0].node = .{ .Decl = .{ .name = "_start", .body = main_func } };
 
         try self.extractDefs();
 

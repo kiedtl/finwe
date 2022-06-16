@@ -67,10 +67,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
         .node = node,
     });
     switch (node.node) {
-        .Call => {
-            try emit(buf, null, 0, .O);
-            try emit(buf, null, 0, .O);
-        },
+        .Call => try emit(buf, null, 0, .O),
         else => unreachable,
     }
 }
@@ -114,8 +111,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     ual_search: for (ual.items) |ua| {
         for (program.defs.items) |def| {
             if (mem.eql(u8, def.node.Decl.name, ua.ident)) {
-                buf.items[ua.loc + 0] = .{ .stack = RT_STACK, .op = .Osave };
-                buf.items[ua.loc + 1] = .{ .stack = WK_STACK, .op = .{ .Oj = def.romloc } };
+                buf.items[ua.loc] = .{ .stack = RT_STACK, .op = .{ .Osr = def.romloc } };
 
                 continue :ual_search;
             }

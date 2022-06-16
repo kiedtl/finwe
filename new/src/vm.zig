@@ -42,19 +42,64 @@ pub const VM = struct {
     }
 
     pub fn executeIns(self: *VM, ins: Ins) VMError!void {
+        std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
             .O => {},
             .Olit => |v| try self.push(ins.stack, v),
-            .Oj => |j| self.pc = j orelse try self.popUsize(ins.stack),
+            .Osr => |f| {
+                try self.pushInt(ins.stack, self.pc + 1);
+                self.pc = f orelse try self.popUsize(ins.stack);
+                self.pc -= 1; // Compensate for the pc+1 later on
+            },
+            .Oj => |j| {
+                self.pc = j orelse try self.popUsize(ins.stack);
+                self.pc -= 1; // Compensate for the pc+1 later on
+            },
             .Ozj => |j| {
                 const addr = j orelse try self.popUsize(ins.stack);
-                if ((try self.pop(ins.stack, .Number)).Number == 0) {
+                if ((try self.popAny(ins.stack)).asBool()) {
                     self.pc = addr;
+                    self.pc -= 1; // Compensate for the pc+1 later on
                 }
             },
-            .Osave => try self.pushInt(ins.stack, self.pc + 1),
             .Ohalt => self.stopped = true,
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
+            .Opick => |i| {
+                const len = (try self.stack(ins.stack)).items.len;
+                const ind = i orelse (try self.popUsize(ins.stack));
+                if (ind >= (try self.stack(ins.stack)).items.len) {
+                    return error.StackUnderflow;
+                }
+                const new = try (try self.stack(ins.stack)).items[len - ind - 2].clone();
+                try self.push(ins.stack, new);
+            },
+            .Oroll => |i| {
+                const len = (try self.stack(ins.stack)).items.len;
+                const ind = i orelse (try self.popUsize(ins.stack));
+                if (ind >= (try self.stack(ins.stack)).items.len) {
+                    return error.StackUnderflow;
+                }
+                const item = (try self.stack(ins.stack)).orderedRemove(len - ind - 2);
+                try self.push(ins.stack, item);
+            },
+            .Odrop => |i| {
+                const count = i orelse (try self.popUsize(ins.stack));
+                const len = (try self.stack(ins.stack)).items.len;
+                (try self.stack(ins.stack)).shrinkAndFree(len - (count - 1));
+            },
+            .Ocmp => {
+                const b = (try self.pop(ins.stack, .Number)).Number;
+                const a = (try self.pop(ins.stack, .Number)).Number;
+                const r = if (a == b) @as(f64, 0.0) else if (a > b) @as(f64, 1.0) else @as(f64, -1.0);
+                try self.pushNum(ins.stack, r);
+            },
+            .Onot => try self.pushBool(ins.stack, !(try self.popAny(ins.stack)).asBool()),
+            .Odmod => |d| {
+                const dvs = d orelse (try self.pop(ins.stack, .Number)).Number;
+                const dvd = (try self.pop(ins.stack, .Number)).Number;
+                try self.pushNum(ins.stack, @mod(dvd, dvs));
+                try self.pushNum(ins.stack, dvd / dvs);
+            },
         }
     }
 
@@ -92,6 +137,10 @@ pub const VM = struct {
             try self.stacks.append(ValueList.init(gpa.allocator()));
         }
         try self.stacks.items[stk].append(value);
+    }
+
+    pub fn pushBool(self: *VM, stk: usize, value: bool) VMError!void {
+        try self.push(stk, if (value) .{ .T = {} } else .{ .Nil = {} });
     }
 
     pub fn pushInt(self: *VM, stk: usize, value: anytype) VMError!void {

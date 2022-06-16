@@ -12,9 +12,12 @@ pub const Node = struct {
     location: usize,
 
     pub const NodeType = union(enum) {
+        T,
+        Nil,
         Number: f64,
         Codepoint: u21,
         String: String,
+        EnumLit: []const u8,
         Keyword: []const u8,
         Child: []const u8,
         ChildNum: f64,
@@ -50,6 +53,7 @@ pub const Lexer = struct {
     const LexerError = error{
         NoMatchingParen,
         UnexpectedClosingParen,
+        InvalidEnumLiteral,
         InvalidCharLiteral,
         InvalidUtf8,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
@@ -60,21 +64,29 @@ pub const Lexer = struct {
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
-            'k', ':' => blk: {
+            'k', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
                         'k' => node,
+                        '.' => error.InvalidEnumLiteral, // Cannot be numeric
                         ':' => Node.NodeType{ .ChildNum = node.Number },
                         else => unreachable,
                     };
                 } else |_| {
-                    const s = try self.alloc.alloc(u8, word.len);
-                    mem.copy(u8, s, word);
-                    break :blk switch (vtype) {
-                        'k' => Node.NodeType{ .Keyword = s },
-                        ':' => Node.NodeType{ .Child = s },
-                        else => unreachable,
-                    };
+                    if (mem.eql(u8, word, "nil")) {
+                        break :blk Node.NodeType{ .Nil = {} };
+                    } else if (mem.eql(u8, word, "t")) {
+                        break :blk Node.NodeType{ .T = {} };
+                    } else {
+                        const s = try self.alloc.alloc(u8, word.len);
+                        mem.copy(u8, s, word);
+                        break :blk switch (vtype) {
+                            'k' => Node.NodeType{ .Keyword = s },
+                            '.' => Node.NodeType{ .EnumLit = s },
+                            ':' => Node.NodeType{ .Child = s },
+                            else => unreachable,
+                        };
+                    }
                 }
             },
             // Never called by lexValue, only by lexWord to check if something
@@ -155,7 +167,7 @@ pub const Lexer = struct {
             var v: Node.NodeType = switch (ch) {
                 0x09...0x0d, 0x20 => continue,
                 //'0'...'9' => try self.lexValue('#'),
-                ':', '\'' => try self.lexValue(ch),
+                '.', ':', '\'' => try self.lexValue(ch),
                 '(' => Node.NodeType{ .List = try self.lex() },
                 ')' => {
                     if (self.stack <= 1) {

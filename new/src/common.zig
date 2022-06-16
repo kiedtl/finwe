@@ -34,13 +34,36 @@ pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 
 pub const Value = union(enum) {
+    T,
+    Nil,
     Number: f64,
     Codepoint: u21,
+    EnumLit: []const u8,
     // TODO: remove strings in favor of a struct{ vec } or something
     String: String,
     // TODO: refs, stacks, vec lits, table lits, struct lits
 
     pub const Tag = std.meta.Tag(Value);
+
+    pub fn asBool(self: Value) bool {
+        return switch (self) {
+            .Nil => false,
+            .Number => |n| n == 0,
+            .Codepoint => |c| c == 0,
+            .T, .EnumLit, .String => true,
+        };
+    }
+
+    pub fn clone(self: Value) !Value {
+        return switch (self) {
+            .T, .Nil, .Number, .Codepoint, .EnumLit => return self,
+            .String => |s| b: {
+                var new = String.init(gpa.allocator());
+                try new.appendSlice(s.items);
+                break :b Value{ .String = new };
+            },
+        };
+    }
 };
 
 pub const ASTNode = struct {
@@ -84,13 +107,36 @@ pub const Program = struct {
 pub const Op = union(enum) {
     O, // nop
     Olit: Value,
-    Osave,
+    Osr: ?usize,
     Oj: ?usize,
     Ozj: ?usize,
     Ohalt,
     Onac: []const u8,
+    Opick: ?usize,
+    Oroll: ?usize,
+    Odrop: ?usize,
+    Ocmp,
+    Onot,
+    Odmod: ?f64,
 
     pub const Tag = meta.Tag(Op);
+
+    pub fn fromTag(tag: Tag) !Op {
+        return switch (tag) {
+            .O => .O,
+            .Onac, .Olit => error.NeedsArg,
+            .Osr => .{ .Oj = null },
+            .Oj => .{ .Oj = null },
+            .Ozj => .{ .Ozj = null },
+            .Ohalt => .Ohalt,
+            .Opick => .{ .Opick = null },
+            .Oroll => .{ .Oroll = null },
+            .Odrop => .{ .Odrop = null },
+            .Ocmp => .Ocmp,
+            .Onot => .Onot,
+            .Odmod => .{ .Odmod = null },
+        };
+    }
 
     pub fn format(
         value: @This(),
@@ -110,7 +156,10 @@ pub const Op = union(enum) {
             .Olit => |l| try fmt.format(writer, "{}", .{l}),
             .Oj => |j| try fmt.format(writer, "{}", .{j}),
             .Ozj => |j| try fmt.format(writer, "{}", .{j}),
-            .Onac => |f| try fmt.format(writer, "'{s}'", .{f}),
+            .Onac => |n| try fmt.format(writer, "'{s}'", .{n}),
+            .Opick => |i| try fmt.format(writer, "{}", .{i}),
+            .Oroll => |i| try fmt.format(writer, "{}", .{i}),
+            .Odmod => |d| try fmt.format(writer, "{}", .{d}),
             else => try fmt.format(writer, "@", .{}),
         }
     }
