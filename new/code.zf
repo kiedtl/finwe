@@ -15,7 +15,7 @@
 
 (word gcd
     (until
-        print-stack tuck mod dup 0=)
+        tuck mod dup 0=)
     drop)
 
 54 45 gcd

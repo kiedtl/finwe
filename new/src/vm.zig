@@ -42,7 +42,6 @@ pub const VM = struct {
     }
 
     pub fn executeIns(self: *VM, ins: Ins) VMError!void {
-        std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
             .O => {},
             .Olit => |v| try self.push(ins.stack, v),
@@ -85,7 +84,7 @@ pub const VM = struct {
             .Odrop => |i| {
                 const count = i orelse (try self.popUsize(ins.stack));
                 const len = (try self.stack(ins.stack)).items.len;
-                (try self.stack(ins.stack)).shrinkAndFree(len - (count - 1));
+                (try self.stack(ins.stack)).shrinkAndFree(len - count);
             },
             .Ocmp => {
                 const b = (try self.pop(ins.stack, .Number)).Number;
