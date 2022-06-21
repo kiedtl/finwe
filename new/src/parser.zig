@@ -74,6 +74,13 @@ pub const Parser = struct {
     fn parseStatement(self: *Parser, node: *const lexer.Node) ParserError!ASTNode {
         return switch (node.node) {
             .List => |l| try self.parseList(l.items),
+            .Quote => |q| blk: {
+                const body = try self.parseStatements(q.items);
+                break :blk ASTNode{
+                    .node = .{ .Quote = .{ .body = body } },
+                    .srcloc = node.location,
+                };
+            },
             .Keyword => |i| ASTNode{ .node = .{ .Call = i }, .srcloc = node.location },
             .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
@@ -135,6 +142,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else {
+                    //std.log.info("Unknown keyword: {s}", .{k});
                     break :b error.UnknownKeyword;
                 }
             },

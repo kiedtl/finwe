@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const math = std.math;
 const fmt = std.fmt;
 const meta = std.meta;
 const assert = std.debug.assert;
@@ -10,6 +11,9 @@ const ValueList = @import("common.zig").ValueList;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Ins = @import("common.zig").Ins;
 const Op = @import("common.zig").Op;
+
+const WK_STACK = @import("common.zig").WK_STACK;
+const RT_STACK = @import("common.zig").RT_STACK;
 
 const gpa = &@import("common.zig").gpa;
 
@@ -42,6 +46,7 @@ pub const VM = struct {
     }
 
     pub fn executeIns(self: *VM, ins: Ins) VMError!void {
+        //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
             .O => {},
             .Olit => |v| try self.push(ins.stack, v),
@@ -98,6 +103,11 @@ pub const VM = struct {
                 const dvd = (try self.pop(ins.stack, .Number)).Number;
                 try self.pushNum(ins.stack, @mod(dvd, dvs));
                 try self.pushNum(ins.stack, dvd / dvs);
+            },
+            .Omul => |ma| {
+                const a = ma orelse (try self.pop(ins.stack, .Number)).Number;
+                const b = (try self.pop(ins.stack, .Number)).Number;
+                try self.pushNum(ins.stack, a * b);
             },
         }
     }
@@ -170,6 +180,24 @@ pub const BUILTINS = [_]Builtin{
                 for ((try vm.stack(stk)).items) |item, i| {
                     std.log.info("{}\t{}", .{ i, item });
                 }
+            }
+        }.f,
+    },
+    Builtin{
+        .name = "sqrt",
+        .func = struct {
+            pub fn f(vm: *VM, stk: usize) VMError!void {
+                const n = (try vm.pop(stk, .Number)).Number;
+                try vm.pushNum(stk, math.sqrt(n));
+            }
+        }.f,
+    },
+    Builtin{
+        .name = "do",
+        .func = struct {
+            pub fn f(vm: *VM, stk: usize) VMError!void {
+                const addr = @floatToInt(usize, (try vm.pop(stk, .Number)).Number);
+                try vm.executeIns(Ins{ .stack = RT_STACK, .op = .{ .Osr = addr } });
             }
         }.f,
     },

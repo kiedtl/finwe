@@ -81,6 +81,17 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
                 try genNode(buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
         },
+        .Quote => |q| {
+            const quote_jump_addr = buf.items.len;
+            try emit(buf, node, WK_STACK, .{ .Oj = 0 }); // Dummy value, replaced later
+            const quote_begin_addr = buf.items.len;
+            for (q.body.items) |*bodynode|
+                try genNode(buf, bodynode, ual);
+            try emit(buf, node, RT_STACK, .{ .Oj = null });
+            const quote_end_addr = buf.items.len;
+            try emit(buf, node, WK_STACK, .{ .Olit = .{ .Number = @intToFloat(f64, quote_begin_addr) } });
+            buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
+        },
         .Loop => |l| {
             const loop_begin = buf.items.len;
             for (l.body.items) |*bodynode|

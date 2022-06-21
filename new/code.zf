@@ -6,6 +6,7 @@
 
 (word not     [ (asm nil .Onot) ])
 (word /mod    [ (asm nil .Odmod) ])
+(word *       [ (asm nil .Omul) ])
 
 (word tuck    [ swap over ])
 
@@ -13,15 +14,14 @@
 (word =       [ (asm nil .Ocmp) not ])
 (word 0=      [ 0 = ])
 
-# (word do
-# (word ?do     [ swap (cond [ do ] [ drop ] ])
+# (word ?do     [ swap (cond [ do ] [ drop ] ) ])
 # (word dip     [ swap $v<- do $v ])
 # (word sip     [ $f<- dup $f swap [ do ] dip ])
 # (word bi      [ [ sip ] dip do ])
 # (word bi*     [ [ dip ] dip do ])
 # (word bi@     [ dup bi* ])
 
-# (word square  [ dup * ])
+(word square  [ dup * ])
 
 (word gcd [
     (until [ 0= ]
@@ -34,5 +34,6 @@
 #     [ square ] bi@ + sqrt
 # ])
 
-54 45 gcd
+#54 45 gcd
+81 [ sqrt ] do
 print-stack

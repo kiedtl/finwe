@@ -82,6 +82,7 @@ pub const ASTNode = struct {
         Loop: Loop,
         Asm: Ins,
         Value: Value,
+        Quote: Quote,
     };
 
     pub const Loop = struct {
@@ -95,6 +96,10 @@ pub const ASTNode = struct {
 
     pub const Decl = struct {
         name: []const u8,
+        body: ASTNodeList,
+    };
+
+    pub const Quote = struct {
         body: ASTNodeList,
     };
 };
@@ -118,6 +123,7 @@ pub const Op = union(enum) {
     Ocmp,
     Onot,
     Odmod: ?f64,
+    Omul: ?f64,
 
     pub const Tag = meta.Tag(Op);
 
@@ -125,7 +131,7 @@ pub const Op = union(enum) {
         return switch (tag) {
             .O => .O,
             .Onac, .Olit => error.NeedsArg,
-            .Osr => .{ .Oj = null },
+            .Osr => .{ .Osr = null },
             .Oj => .{ .Oj = null },
             .Ozj => .{ .Ozj = null },
             .Ohalt => .Ohalt,
@@ -135,6 +141,7 @@ pub const Op = union(enum) {
             .Ocmp => .Ocmp,
             .Onot => .Onot,
             .Odmod => .{ .Odmod = null },
+            .Omul => .{ .Omul = null },
         };
     }
 
@@ -161,6 +168,7 @@ pub const Op = union(enum) {
             .Opick => |i| try fmt.format(writer, "{}", .{i}),
             .Oroll => |i| try fmt.format(writer, "{}", .{i}),
             .Odmod => |d| try fmt.format(writer, "{}", .{d}),
+            .Omul => |a| try fmt.format(writer, "{}", .{a}),
             else => try fmt.format(writer, "@", .{}),
         }
     }
@@ -197,3 +205,14 @@ pub const Ins = struct {
         try fmt.format(writer, "<[{}] {s} {}>", .{ value.stack, str, value.op });
     }
 };
+
+// ----------------------------------------------------------------------------
+
+test "Op.fromTag" {
+    inline for (@typeInfo(Op.Tag).Enum.fields) |variant| {
+        const e = @field(Op.Tag, variant.name);
+        if (Op.fromTag(e)) |v| {
+            try std.testing.expectEqual(e, v);
+        } else |_| {}
+    }
+}
