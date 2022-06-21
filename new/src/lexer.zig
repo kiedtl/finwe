@@ -22,6 +22,7 @@ pub const Node = struct {
         Child: []const u8,
         ChildNum: f64,
         List: NodeList,
+        Quote: NodeList,
     };
 
     pub fn deinitMain(list: NodeList, alloc: mem.Allocator) void {
@@ -33,7 +34,7 @@ pub const Node = struct {
             .String => |str| str.deinit(),
             .Keyword => |data| alloc.free(data),
             .Child => |data| alloc.free(data),
-            .List => |list| {
+            .Quote, .List => |list| {
                 for (list.items) |*li| li.deinit(alloc);
                 list.deinit();
             },
@@ -45,8 +46,16 @@ pub const Node = struct {
 pub const Lexer = struct {
     input: []const u8,
     alloc: mem.Allocator,
-    stack: usize = 0,
     index: usize = 0,
+    stack: Stack.List,
+
+    pub const Stack = struct {
+        type: Type,
+
+        pub const Type = enum { Root, Paren, Bracket };
+
+        pub const List = std.ArrayList(Stack);
+    };
 
     const Self = @This();
 
@@ -59,7 +68,15 @@ pub const Lexer = struct {
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
     pub fn init(input: []const u8, alloc: mem.Allocator) Self {
-        return .{ .input = input, .alloc = alloc };
+        return .{
+            .input = input,
+            .alloc = alloc,
+            .stack = Stack.List.init(alloc),
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.stack.deinit();
     }
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
@@ -136,7 +153,7 @@ pub const Lexer = struct {
 
         while (self.index < self.input.len) : (self.index += 1) {
             switch (self.input[self.index]) {
-                0x09...0x0d, 0x20, '(', ')' => break,
+                0x09...0x0d, 0x20, '(', ')', '[', ']', '#' => break,
                 else => {},
             }
         }
@@ -150,13 +167,17 @@ pub const Lexer = struct {
         return self.lexWord(vtype, word);
     }
 
-    pub fn lex(self: *Self) LexerError!NodeList {
-        self.stack += 1;
+    pub fn lex(self: *Self, mode: Stack.Type) LexerError!NodeList {
+        try self.stack.append(.{ .type = mode });
         var res = NodeList.init(self.alloc);
 
-        // Move past the first ( if we're parsing a list
-        if (self.stack > 1) {
-            assert(self.input[self.index] == '(');
+        // Move past the first (/[ if we're parsing a list
+        if (self.stack.items.len > 1) {
+            switch (mode) {
+                .Root => unreachable,
+                .Paren => assert(self.input[self.index] == '('),
+                .Bracket => assert(self.input[self.index] == '['),
+            }
             self.index += 1;
         }
 
@@ -165,16 +186,24 @@ pub const Lexer = struct {
 
             var vch = self.index;
             var v: Node.NodeType = switch (ch) {
+                '#' => {
+                    while (self.index < self.input.len and self.input[self.index] != 0x0a)
+                        self.index += 1;
+                    continue;
+                },
                 0x09...0x0d, 0x20 => continue,
-                //'0'...'9' => try self.lexValue('#'),
                 '.', ':', '\'' => try self.lexValue(ch),
-                '(' => Node.NodeType{ .List = try self.lex() },
-                ')' => {
-                    if (self.stack <= 1) {
+                '[' => Node.NodeType{ .Quote = try self.lex(.Bracket) },
+                '(' => Node.NodeType{ .List = try self.lex(.Paren) },
+                ']', ')' => {
+                    const expect: Stack.Type = if (ch == ']') .Bracket else .Paren;
+                    if (self.stack.items.len <= 1 or
+                        self.stack.items[self.stack.items.len - 1].type != expect)
+                    {
                         return error.UnexpectedClosingParen;
                     }
 
-                    self.stack -= 1;
+                    _ = self.stack.pop();
                     return res;
                 },
                 else => try self.lexValue('k'),
@@ -193,9 +222,10 @@ pub const Lexer = struct {
 const testing = std.testing;
 
 test "basic lexing" {
-    const input = "0xfe 0xf1 0xf0 fum (test :foo bar 0xBEEF) (12 ('ë) :0)";
+    const input = "0xfe 0xf1 0xf0 fum (test :foo bar 0xBEEF) (12 ['ë] :0)";
     var lexer = Lexer.init(input, std.testing.allocator);
-    var result = try lexer.lex();
+    var result = try lexer.lex(.Root);
+    defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
     try testing.expectEqual(@as(usize, 6), result.items.len);
@@ -236,9 +266,9 @@ test "basic lexing" {
         try testing.expectEqual(activeTag(list[0].node), .Number);
         try testing.expectEqual(@as(f64, 12), list[0].node.Number);
 
-        try testing.expectEqual(activeTag(list[1].node), .List);
+        try testing.expectEqual(activeTag(list[1].node), .Quote);
         {
-            const list2 = list[1].node.List.items;
+            const list2 = list[1].node.Quote.items;
 
             try testing.expectEqual(activeTag(list2[0].node), .Codepoint);
             try testing.expectEqual(@as(u21, 'ë'), list2[0].node.Codepoint);

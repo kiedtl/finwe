@@ -88,8 +88,8 @@ pub const ASTNode = struct {
         loop: Loop.Type,
         body: ASTNodeList,
 
-        pub const Type = enum {
-            Until,
+        pub const Type = union(enum) {
+            Until: struct { cond: ASTNodeList },
         };
     };
 
@@ -156,6 +156,7 @@ pub const Op = union(enum) {
             .Olit => |l| try fmt.format(writer, "{}", .{l}),
             .Oj => |j| try fmt.format(writer, "{}", .{j}),
             .Ozj => |j| try fmt.format(writer, "{}", .{j}),
+            .Osr => |j| try fmt.format(writer, "{}", .{j}),
             .Onac => |n| try fmt.format(writer, "'{s}'", .{n}),
             .Opick => |i| try fmt.format(writer, "{}", .{i}),
             .Oroll => |i| try fmt.format(writer, "{}", .{i}),

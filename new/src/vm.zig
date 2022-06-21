@@ -64,21 +64,21 @@ pub const VM = struct {
             .Ohalt => self.stopped = true,
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
             .Opick => |i| {
-                const len = (try self.stack(ins.stack)).items.len;
                 const ind = i orelse (try self.popUsize(ins.stack));
+                const len = (try self.stack(ins.stack)).items.len;
                 if (ind >= (try self.stack(ins.stack)).items.len) {
                     return error.StackUnderflow;
                 }
-                const new = try (try self.stack(ins.stack)).items[len - ind - 2].clone();
+                const new = try (try self.stack(ins.stack)).items[len - ind - 1].clone();
                 try self.push(ins.stack, new);
             },
             .Oroll => |i| {
-                const len = (try self.stack(ins.stack)).items.len;
                 const ind = i orelse (try self.popUsize(ins.stack));
+                const len = (try self.stack(ins.stack)).items.len;
                 if (ind >= (try self.stack(ins.stack)).items.len) {
                     return error.StackUnderflow;
                 }
-                const item = (try self.stack(ins.stack)).orderedRemove(len - ind - 2);
+                const item = (try self.stack(ins.stack)).orderedRemove(len - ind - 1);
                 try self.push(ins.stack, item);
             },
             .Odrop => |i| {

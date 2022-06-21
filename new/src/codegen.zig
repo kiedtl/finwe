@@ -86,7 +86,12 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
             for (l.body.items) |*bodynode|
                 try genNode(buf, bodynode, ual);
             switch (l.loop) {
-                .Until => try emit(buf, node, WK_STACK, .{ .Ozj = loop_begin }),
+                .Until => |u| {
+                    try emit(buf, node, WK_STACK, .{ .Opick = 0 }); // DUP
+                    for (u.cond.items) |*bodynode|
+                        try genNode(buf, bodynode, ual);
+                    try emit(buf, node, WK_STACK, .{ .Ozj = loop_begin });
+                },
             }
         },
         .Asm => |a| try emit(buf, node, a.stack, a.op),

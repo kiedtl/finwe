@@ -52,7 +52,7 @@ pub const Parser = struct {
     fn expectNode(comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) b: {
         break :b ParserError!@TypeOf(@field(node.node, @tagName(nodetype)));
     } {
-        if (activeTag(node.node) != nodetype) {
+        if (node.node != nodetype) {
             return error.ExpectedNode;
         }
         return @field(node.node, @tagName(nodetype));
@@ -80,6 +80,13 @@ pub const Parser = struct {
         };
     }
 
+    fn parseStatements(self: *Parser, nodes: []const lexer.Node) ParserError!ASTNodeList {
+        var ast = ASTNodeList.init(self.alloc);
+        for (nodes) |node|
+            try ast.append(try self.parseStatement(&node));
+        return ast;
+    }
+
     fn parseList(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
         if (ast.len == 0)
             return error.EmptyList;
@@ -89,21 +96,27 @@ pub const Parser = struct {
                 if (mem.eql(u8, k, "word")) {
                     const name = try expectNode(.Keyword, &ast[1]);
 
-                    var body = ASTNodeList.init(self.alloc);
-                    for (ast[2..]) |node|
-                        try body.append(try self.parseStatement(&node));
+                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const body = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{
                         .node = .{ .Decl = .{ .name = name, .body = body } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "until")) {
-                    var body = ASTNodeList.init(self.alloc);
-                    for (ast[1..]) |node|
-                        try body.append(try self.parseStatement(&node));
+                    try validateListLength(ast, 3);
+
+                    const ast_cond = try expectNode(.Quote, &ast[1]);
+                    const cond = try self.parseStatements(ast_cond.items);
+
+                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const body = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{
-                        .node = .{ .Loop = .{ .loop = .Until, .body = body } },
+                        .node = .{ .Loop = .{
+                            .loop = .{ .Until = .{ .cond = cond } },
+                            .body = body,
+                        } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "asm")) {

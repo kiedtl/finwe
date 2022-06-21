@@ -18,15 +18,17 @@ pub fn main() anyerror!void {
     _ = try file.readAll(buf);
 
     var lexer = lexerm.Lexer.init(buf, gpa.allocator());
-    const lexed = try lexer.lex();
+    const lexed = try lexer.lex(.Root);
+    defer lexer.deinit();
 
     var parser = parserm.Parser.init(gpa.allocator());
     var parsed = try parser.parse(&lexed);
 
     var assembled = try codegen.generate(&parsed);
-    for (assembled.items) |asmstmt| {
+    for (assembled.items) |asmstmt, i| {
         _ = asmstmt;
-        //std.log.info("{}", .{asmstmt});
+        _ = i;
+        //std.log.info("{} -\t{}", .{ i, asmstmt });
     }
     //std.log.info("--------------------------------------------------", .{});
 
