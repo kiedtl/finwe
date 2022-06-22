@@ -55,9 +55,19 @@ const UA = struct {
 //
 //
 
-fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!void {
+// "emit returning index"
+fn emitRI(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!usize {
     _ = node;
     try buf.append(Ins{ .stack = stack, .op = op });
+    return buf.items.len - 1;
+}
+
+fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!void {
+    _ = try emitRI(buf, node, stack, op);
+}
+
+fn emitDUP(buf: *Ins.List, stack: usize) CodegenError!void {
+    try emit(buf, null, stack, .{ .Opick = 0 });
 }
 
 fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
@@ -72,13 +82,13 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
     }
 }
 
-fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
+fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v }),
         .Decl => |d| {
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
-                try genNode(buf, bodynode, ual);
+                try genNode(program, buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
         },
         .Quote => |q| {
@@ -86,7 +96,7 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
             try emit(buf, node, WK_STACK, .{ .Oj = 0 }); // Dummy value, replaced later
             const quote_begin_addr = buf.items.len;
             for (q.body.items) |*bodynode|
-                try genNode(buf, bodynode, ual);
+                try genNode(program, buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
             const quote_end_addr = buf.items.len;
             try emit(buf, node, WK_STACK, .{ .Olit = .{ .Number = @intToFloat(f64, quote_begin_addr) } });
@@ -95,12 +105,13 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
         .Loop => |l| {
             const loop_begin = buf.items.len;
             for (l.body.items) |*bodynode|
-                try genNode(buf, bodynode, ual);
+                try genNode(program, buf, bodynode, ual);
             switch (l.loop) {
                 .Until => |u| {
                     try emit(buf, node, WK_STACK, .{ .Opick = 0 }); // DUP
                     for (u.cond.items) |*bodynode|
-                        try genNode(buf, bodynode, ual);
+                        try genNode(program, buf, bodynode, ual);
+                    try emit(buf, node, WK_STACK, .Onot);
                     try emit(buf, node, WK_STACK, .{ .Ozj = loop_begin });
                 },
             }
@@ -113,7 +124,50 @@ fn genNode(buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
                 try emitUA(buf, ual, f, node);
             }
         },
+        .StackOp => |sop| {
+            const s_id = program.stackId(sop.stack);
+            if (sop.op == .PushK or sop.op == .PopK) {
+                try emitDUP(buf, s_id);
+            }
+            if (sop.op == .PushK or sop.op == .Push) {
+                try emit(buf, node, WK_STACK, .{ .Omov = s_id });
+            } else if (sop.op == .PopK or sop.op == .Pop) {
+                try emit(buf, node, s_id, .{ .Omov = WK_STACK });
+            } else unreachable;
+        },
+        .Cond => |cond| {
+            var end_jumps = std.ArrayList(usize).init(gpa.allocator()); // Dummy jumps to fix
+            defer end_jumps.deinit();
+
+            for (cond.branches.items) |branch| {
+                //try emitDUP(buf, WK_STACK);
+                try genNodeList(program, buf, branch.cond.items, ual);
+                try emit(buf, node, WK_STACK, .Onot);
+                const body_jmp = try emitRI(buf, node, WK_STACK, .{ .Ozj = 0 });
+                try genNodeList(program, buf, branch.body.items, ual);
+                const end_jmp = try emitRI(buf, node, WK_STACK, .{ .Oj = 0 });
+                try end_jumps.append(end_jmp);
+                buf.items[body_jmp].op.Ozj = buf.items.len;
+            }
+
+            if (cond.else_branch) |branch| {
+                try genNodeList(program, buf, branch.items, ual);
+            }
+
+            // TODO: remove the very last end jump if there's no else_branch,
+            // since it's completely unnecessary
+
+            const cond_end_addr = buf.items.len;
+            for (end_jumps.items) |end_jump| {
+                buf.items[end_jump].op.Oj = cond_end_addr;
+            }
+        },
     }
+}
+
+pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: []ASTNode, ual: *UA.List) CodegenError!void {
+    for (nodes) |*node|
+        try genNode(program, buf, node, ual);
 }
 
 pub fn generate(program: *Program) CodegenError!Ins.List {
@@ -121,7 +175,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     var ual = UA.List.init(gpa.allocator());
 
     for (program.ast.items) |*node| {
-        try genNode(&buf, node, &ual);
+        try genNode(program, &buf, node, &ual);
     }
 
     ual_search: for (ual.items) |ua| {
@@ -135,6 +189,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
         // If we haven't matched a UA with a label by now, it's an invalid
         // identifier
+        std.log.info("Unknown ident {s}", .{ua.ident});
         return error.UnknownIdent;
     }
 

@@ -39,6 +39,7 @@ pub const Parser = struct {
 
     pub fn init(alloc: mem.Allocator) Parser {
         return .{ .program = Program{
+            .stacks = Program.StackInfo.List.init(alloc),
             .ast = ASTNodeList.init(alloc),
             .defs = ASTNodePtrList.init(alloc),
         }, .alloc = alloc };
@@ -67,6 +68,7 @@ pub const Parser = struct {
             .String => |s| .{ .String = s },
             .Codepoint => |c| .{ .Codepoint = c },
             .EnumLit => |e| .{ .EnumLit = e },
+            .Stack => |e| .{ .Stack = e },
             else => error.ExpectedValue,
         };
     }
@@ -81,6 +83,7 @@ pub const Parser = struct {
                     .srcloc = node.location,
                 };
             },
+            .StackOp => |s| ASTNode{ .node = .{ .StackOp = s }, .srcloc = node.location },
             .Keyword => |i| ASTNode{ .node = .{ .Call = i }, .srcloc = node.location },
             .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
@@ -126,6 +129,41 @@ pub const Parser = struct {
                         } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "cond")) {
+                    var cond_node = ASTNode.Cond{
+                        .branches = ASTNode.Cond.Branch.List.init(self.alloc),
+                        .else_branch = null,
+                    };
+
+                    var all_branches = std.ArrayList(ASTNodeList).init(self.alloc);
+                    defer all_branches.deinit();
+
+                    for (ast[1..]) |*node| {
+                        const q = try expectNode(.Quote, node);
+                        try all_branches.append(try self.parseStatements(q.items));
+                    }
+
+                    // FIXME: make it an error for a cond statement with only
+                    // one argument
+
+                    var i: usize = 0;
+                    while (i < all_branches.items.len) : (i += 2) {
+                        if (i == all_branches.items.len - 1) {
+                            cond_node.else_branch = all_branches.items[i];
+                        } else {
+                            const cond = all_branches.items[i + 0];
+                            const body = all_branches.items[i + 1];
+                            try cond_node.branches.append(ASTNode.Cond.Branch{
+                                .cond = cond,
+                                .body = body,
+                            });
+                        }
+                    }
+
+                    break :b ASTNode{
+                        .node = .{ .Cond = cond_node },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "asm")) {
                     try validateListLength(ast, 3);
                     const asm_stack = try self.parseValue(&ast[1]);
@@ -162,28 +200,12 @@ pub const Parser = struct {
         // Setup the entry function
         // TODO: this should be in codegen
         //
-        // Add a dummy node that we'll replace later with the actual function.
-        // Do this since we can't just use a pointer to the node, as appending
-        // to program.ast will eventually invalidate the pointer.
-        //
-        try self.program.ast.append(ASTNode{ .node = .{
-            .Value = .{ .Nil = {} },
-        }, .srcloc = 0 });
-
-        var main_func = ASTNodeList.init(self.alloc);
+        try self.program.ast.append(ASTNode{ .node = .{ .Call = "main" }, .srcloc = 0 });
 
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
-            else => try main_func.append(try self.parseStatement(node)),
+            else => try self.program.ast.append(try self.parseStatement(node)),
         };
-
-        // Exit the program
-        // TODO: this should be in codegen
-        try main_func.append(ASTNode{ .node = .{
-            .Asm = .{ .stack = 0, .op = .Ohalt },
-        }, .srcloc = 0 });
-        // Replace the dummy node
-        self.program.ast.items[0].node = .{ .Decl = .{ .name = "_start", .body = main_func } };
 
         try self.extractDefs();
 

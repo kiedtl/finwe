@@ -109,6 +109,15 @@ pub const VM = struct {
                 const b = (try self.pop(ins.stack, .Number)).Number;
                 try self.pushNum(ins.stack, a * b);
             },
+            .Oadd => |ad| {
+                const a = ad orelse (try self.pop(ins.stack, .Number)).Number;
+                const b = (try self.pop(ins.stack, .Number)).Number;
+                try self.pushNum(ins.stack, a + b);
+            },
+            .Omov => |dest_stk| {
+                const v = try self.popAny(ins.stack);
+                try self.push(dest_stk, v);
+            },
         }
     }
 

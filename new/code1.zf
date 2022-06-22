@@ -40,13 +40,14 @@
     [ square ] bi@ + sqrt
 ])
 
-(word main [
-    #54 45 gcd
-    #324324 12463 gcd
+#54 45 gcd
+#4 5 hypot
 
-    3 4 hypot
+123 $i<-
+(cond
+    [ $i->> 123 = ] [ 1 ]
+    [ $i->> 124 = ] [ 2 ]
+    [ 3 ]
+)
 
-    print-stack
-
-    (asm nil .Ohalt)
-])
+print-stack

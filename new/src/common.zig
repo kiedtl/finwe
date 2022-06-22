@@ -39,6 +39,7 @@ pub const Value = union(enum) {
     Number: f64,
     Codepoint: u21,
     EnumLit: []const u8,
+    Stack: []const u8,
     // TODO: remove strings in favor of a struct{ vec } or something
     String: String,
     // TODO: refs, stacks, vec lits, table lits, struct lits
@@ -48,15 +49,15 @@ pub const Value = union(enum) {
     pub fn asBool(self: Value) bool {
         return switch (self) {
             .Nil => false,
-            .Number => |n| n == 0,
-            .Codepoint => |c| c == 0,
-            .T, .EnumLit, .String => true,
+            .Number => |n| n != 0,
+            .Codepoint => |c| c != 0,
+            .T, .Stack, .EnumLit, .String => true,
         };
     }
 
     pub fn clone(self: Value) !Value {
         return switch (self) {
-            .T, .Nil, .Number, .Codepoint, .EnumLit => return self,
+            .T, .Nil, .Number, .Codepoint, .EnumLit, .Stack => return self,
             .String => |s| b: {
                 var new = String.init(gpa.allocator());
                 try new.appendSlice(s.items);
@@ -80,9 +81,23 @@ pub const ASTNode = struct {
         Decl: Decl, // word declaraction
         Call: []const u8,
         Loop: Loop,
+        Cond: Cond,
         Asm: Ins,
         Value: Value,
         Quote: Quote,
+        StackOp: StackOp,
+    };
+
+    pub const Cond = struct {
+        branches: Branch.List,
+        else_branch: ?ASTNodeList,
+
+        pub const Branch = struct {
+            cond: ASTNodeList,
+            body: ASTNodeList,
+
+            pub const List = std.ArrayList(Branch);
+        };
     };
 
     pub const Loop = struct {
@@ -102,11 +117,39 @@ pub const ASTNode = struct {
     pub const Quote = struct {
         body: ASTNodeList,
     };
+
+    pub const StackOp = struct {
+        stack: []const u8,
+        op: StackOp.Type,
+
+        pub const Type = enum { Push, Pop, PushK, PopK };
+    };
 };
 
 pub const Program = struct {
+    stacks: StackInfo.List,
     ast: ASTNodeList,
     defs: ASTNodePtrList,
+
+    pub const StackInfo = struct {
+        stack: []const u8,
+        pub const List = std.ArrayList(StackInfo);
+    };
+
+    pub fn stackId(self: *Program, stack: []const u8) usize {
+        if (self.stacks.items.len == 0) {
+            self.stacks.append(.{ .stack = "_" }) catch unreachable;
+            self.stacks.append(.{ .stack = "_Return" }) catch unreachable;
+        }
+        return for (self.stacks.items) |item, i| {
+            if (mem.eql(u8, item.stack, stack)) {
+                break i;
+            }
+        } else b: {
+            self.stacks.append(.{ .stack = stack }) catch unreachable;
+            break :b self.stacks.items.len - 1;
+        };
+    }
 };
 
 pub const Op = union(enum) {
@@ -124,13 +167,15 @@ pub const Op = union(enum) {
     Onot,
     Odmod: ?f64,
     Omul: ?f64,
+    Oadd: ?f64,
+    Omov: usize,
 
     pub const Tag = meta.Tag(Op);
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
             .O => .O,
-            .Onac, .Olit => error.NeedsArg,
+            .Omov, .Onac, .Olit => error.NeedsArg,
             .Osr => .{ .Osr = null },
             .Oj => .{ .Oj = null },
             .Ozj => .{ .Ozj = null },
@@ -142,6 +187,7 @@ pub const Op = union(enum) {
             .Onot => .Onot,
             .Odmod => .{ .Odmod = null },
             .Omul => .{ .Omul = null },
+            .Oadd => .{ .Oadd = null },
         };
     }
 
@@ -169,6 +215,8 @@ pub const Op = union(enum) {
             .Oroll => |i| try fmt.format(writer, "{}", .{i}),
             .Odmod => |d| try fmt.format(writer, "{}", .{d}),
             .Omul => |a| try fmt.format(writer, "{}", .{a}),
+            .Oadd => |a| try fmt.format(writer, "{}", .{a}),
+            .Omov => |s| try fmt.format(writer, "{}", .{s}),
             else => try fmt.format(writer, "@", .{}),
         }
     }
