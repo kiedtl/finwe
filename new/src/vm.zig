@@ -40,12 +40,13 @@ pub const VM = struct {
     pub fn execute(self: *VM) VMError!void {
         assert(!self.stopped);
         while (!self.stopped and self.pc < self.program.len) {
-            try self.executeIns(self.program[self.pc]);
-            self.pc += 1;
+            const ins = self.program[self.pc];
+            if (try self.executeIns(ins))
+                self.pc += 1;
         }
     }
 
-    pub fn executeIns(self: *VM, ins: Ins) VMError!void {
+    pub fn executeIns(self: *VM, ins: Ins) VMError!bool {
         //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
             .O => {},
@@ -53,17 +54,17 @@ pub const VM = struct {
             .Osr => |f| {
                 try self.pushInt(ins.stack, self.pc + 1);
                 self.pc = f orelse try self.popUsize(ins.stack);
-                self.pc -= 1; // Compensate for the pc+1 later on
+                return false;
             },
             .Oj => |j| {
                 self.pc = j orelse try self.popUsize(ins.stack);
-                self.pc -= 1; // Compensate for the pc+1 later on
+                return false;
             },
             .Ozj => |j| {
                 const addr = j orelse try self.popUsize(ins.stack);
                 if ((try self.popAny(ins.stack)).asBool()) {
                     self.pc = addr;
-                    self.pc -= 1; // Compensate for the pc+1 later on
+                    return false;
                 }
             },
             .Ohalt => self.stopped = true,
@@ -114,11 +115,17 @@ pub const VM = struct {
                 const b = (try self.pop(ins.stack, .Number)).Number;
                 try self.pushNum(ins.stack, a + b);
             },
+            .Osub => |su| {
+                const a = su orelse (try self.pop(ins.stack, .Number)).Number;
+                const b = (try self.pop(ins.stack, .Number)).Number;
+                try self.pushNum(ins.stack, b - a);
+            },
             .Omov => |dest_stk| {
                 const v = try self.popAny(ins.stack);
                 try self.push(dest_stk, v);
             },
         }
+        return true;
     }
 
     pub fn stack(self: *VM, s: usize) VMError!*ValueList {
@@ -202,11 +209,11 @@ pub const BUILTINS = [_]Builtin{
         }.f,
     },
     Builtin{
-        .name = "do",
+        .name = "do-builtin",
         .func = struct {
             pub fn f(vm: *VM, stk: usize) VMError!void {
                 const addr = @floatToInt(usize, (try vm.pop(stk, .Number)).Number);
-                try vm.executeIns(Ins{ .stack = RT_STACK, .op = .{ .Osr = addr } });
+                _ = try vm.executeIns(Ins{ .stack = RT_STACK, .op = .{ .Osr = addr } });
             }
         }.f,
     },

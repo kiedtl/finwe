@@ -38,11 +38,15 @@ pub const Parser = struct {
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
-        return .{ .program = Program{
-            .stacks = Program.StackInfo.List.init(alloc),
-            .ast = ASTNodeList.init(alloc),
-            .defs = ASTNodePtrList.init(alloc),
-        }, .alloc = alloc };
+        return .{
+            .program = Program{
+                .stacks = Program.StackInfo.List.init(alloc),
+                .ast = ASTNodeList.init(alloc),
+                .defs = ASTNodePtrList.init(alloc),
+                //.defs = ASTNodeList.init(alloc),
+            },
+            .alloc = alloc,
+        };
     }
 
     fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
@@ -196,17 +200,35 @@ pub const Parser = struct {
         };
     }
 
-    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
-        // Setup the entry function
-        // TODO: this should be in codegen
-        //
-        try self.program.ast.append(ASTNode{ .node = .{ .Call = "main" }, .srcloc = 0 });
+    // Setup the entry function
+    // TODO: this should be in codegen
+    //
+    pub fn setupMainFunc(self: *Parser) ParserError!void {
+        var body = ASTNodeList.init(self.alloc);
+        for (self.program.ast.items) |ast_item, i| {
+            if (ast_item.node != .Decl) {
+                try body.append(ast_item);
+                self.program.ast.items[i] = ASTNode{ .node = .None, .srcloc = 0 };
+            }
+        }
+        try body.append(ASTNode{ .node = .{
+            .Asm = .{ .stack = 0, .op = .Ohalt },
+        }, .srcloc = 0 });
 
+        try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = "_Start" }, .srcloc = 0 });
+        try self.program.ast.append(ASTNode{
+            .node = .{ .Decl = .{ .name = "_Start", .body = body } },
+            .srcloc = 0,
+        });
+    }
+
+    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
             else => try self.program.ast.append(try self.parseStatement(node)),
         };
 
+        try self.setupMainFunc();
         try self.extractDefs();
 
         return self.program;

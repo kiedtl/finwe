@@ -84,6 +84,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
+        .None => {},
         .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v }),
         .Decl => |d| {
             node.romloc = buf.items.len;

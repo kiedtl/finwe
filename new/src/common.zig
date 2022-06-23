@@ -78,6 +78,7 @@ pub const ASTNode = struct {
     pub const Tag = std.meta.Tag(ASTNode.Type);
 
     pub const Type = union(enum) {
+        None, // Placeholder for removed ast values
         Decl: Decl, // word declaraction
         Call: []const u8,
         Loop: Loop,
@@ -168,6 +169,7 @@ pub const Op = union(enum) {
     Odmod: ?f64,
     Omul: ?f64,
     Oadd: ?f64,
+    Osub: ?f64,
     Omov: usize,
 
     pub const Tag = meta.Tag(Op);
@@ -188,6 +190,7 @@ pub const Op = union(enum) {
             .Odmod => .{ .Odmod = null },
             .Omul => .{ .Omul = null },
             .Oadd => .{ .Oadd = null },
+            .Osub => .{ .Osub = null },
         };
     }
 
@@ -216,6 +219,7 @@ pub const Op = union(enum) {
             .Odmod => |d| try fmt.format(writer, "{}", .{d}),
             .Omul => |a| try fmt.format(writer, "{}", .{a}),
             .Oadd => |a| try fmt.format(writer, "{}", .{a}),
+            .Osub => |a| try fmt.format(writer, "{}", .{a}),
             .Omov => |s| try fmt.format(writer, "{}", .{s}),
             else => try fmt.format(writer, "@", .{}),
         }

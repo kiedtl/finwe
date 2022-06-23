@@ -92,7 +92,8 @@ pub const Lexer = struct {
                 while (stack_end < word.len and
                     ((word[stack_end] >= 'a' and word[stack_end] <= 'z') or
                     (word[stack_end] >= 'A' and word[stack_end] <= 'Z') or
-                    (word[stack_end] >= '0' and word[stack_end] <= '9')))
+                    (word[stack_end] >= '0' and word[stack_end] <= '9') or
+                    (word[stack_end] == '_')))
                 {
                     stack_end += 1;
                 }

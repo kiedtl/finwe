@@ -1,3 +1,6 @@
+#!/home/kiedtl/src/zf/new/zig-out/bin/zf
+# vim: ts=4 sts=4 sw=4 expandtab
+
 (word dup     [ 0 (asm nil .Opick) ])
 (word over    [ 1 (asm nil .Opick) ])
 (word swap    [ 1 (asm nil .Oroll) ])
@@ -8,18 +11,24 @@
 (word /mod    [ (asm nil .Odmod) ])
 (word *       [ (asm nil .Omul) ])
 (word +       [ (asm nil .Oadd) ])
+(word -       [ (asm nil .Osub) ])
+
+(word /       [ /mod nip ])
+(word mod     [ /mod drop ])
 
 (word tuck    [ swap over ])
 
-(word mod     [ /mod drop ])
-
-(word =       [ (asm nil .Ocmp) not ])
+(word cmp     [ (asm nil .Ocmp) ])
+(word =       [ cmp not ])
+(word <       [ cmp -1 = ])
+(word >       [ cmp 1 = ])
 (word <>      [ = not ])
 (word 0=      [ 0 = ])
 (word T=      [ T = ])             # FIXME: cmp cannot compare non-numerical value!
 (word T<>     [ T <> ])
 (word nil?    [ nil = ])
 
+(word do      [ $_Return<- (asm nil .Osr) ])
 (word ?do     [ swap (cond [ T= ] [ do ] [ drop ]) ])
 (word dip     [ swap $v<- do $v-> ])
 (word sip     [ $f<- dup $f-> swap [ do ] dip ])
@@ -40,13 +49,31 @@
     [ square ] bi@ + sqrt
 ])
 
-(word main [
-    #54 45 gcd
-    #324324 12463 gcd
-
-    3 4 hypot
-
-    print-stack
-
-    (asm nil .Ohalt)
+# if (n < 2) return n
+# return fib(n - 1) + fib(n - 2)
+(word bad-fib [
+    $n<-
+    (cond
+        [ $n->> 2 < ] [ $n-> ]
+        [
+            $n->> 1 - bad-fib
+            $n->  2 - bad-fib +
+        ]
+    )
 ])
+
+#54 45 gcd
+#324324 12463 gcd
+#3 4 hypot
+
+40 bad-fib
+
+print-stack
+
+# todo: -|, +|, *|, -%, +%, *%
+
+# "An 'and' expression" [
+#     [
+#         0 (and 0 nil) .should-be
+#     ] "return the first arg if it is false." $it->> .should
+# ] test
