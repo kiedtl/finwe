@@ -3,16 +3,13 @@ const mem = std.mem;
 const meta = std.meta;
 const fmt = std.fmt;
 
-pub const String = std.ArrayList(u8);
-
 const LinkedList = @import("list.zig").LinkedList;
-const StackBuffer = @import("buffer.zig").StackBuffer;
-const StackBufferError = @import("buffer.zig").StackBufferError;
 
 // ----------------------------------------------------------------------------
 
 pub const WK_STACK = 0;
 pub const RT_STACK = 1;
+pub const STACK_SZ = 255;
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{
     // Probably should enable this later on to track memory usage, if
@@ -27,8 +24,6 @@ pub var gpa = std.heap.GeneralPurposeAllocator(.{
     .never_unmap = false,
 }){};
 
-pub const ValueList = std.ArrayList(Value);
-
 //pub const ASTNodeList = LinkedList(ASTNode);
 pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
@@ -39,10 +34,6 @@ pub const Value = union(enum) {
     Number: f64,
     Codepoint: u21,
     EnumLit: []const u8,
-    Stack: []const u8,
-    // TODO: remove strings in favor of a struct{ vec } or something
-    String: String,
-    // TODO: refs, stacks, vec lits, table lits, struct lits
 
     pub const Tag = std.meta.Tag(Value);
 
@@ -51,18 +42,13 @@ pub const Value = union(enum) {
             .Nil => false,
             .Number => |n| n != 0,
             .Codepoint => |c| c != 0,
-            .T, .Stack, .EnumLit, .String => true,
+            .T, .EnumLit => true,
         };
     }
 
     pub fn clone(self: Value) !Value {
         return switch (self) {
-            .T, .Nil, .Number, .Codepoint, .EnumLit, .Stack => return self,
-            .String => |s| b: {
-                var new = String.init(gpa.allocator());
-                try new.appendSlice(s.items);
-                break :b Value{ .String = new };
-            },
+            .T, .Nil, .Number, .Codepoint, .EnumLit => return self,
         };
     }
 };
@@ -86,7 +72,6 @@ pub const ASTNode = struct {
         Asm: Ins,
         Value: Value,
         Quote: Quote,
-        StackOp: StackOp,
     };
 
     pub const Cond = struct {
@@ -118,39 +103,11 @@ pub const ASTNode = struct {
     pub const Quote = struct {
         body: ASTNodeList,
     };
-
-    pub const StackOp = struct {
-        stack: []const u8,
-        op: StackOp.Type,
-
-        pub const Type = enum { Push, Pop, PushK, PopK };
-    };
 };
 
 pub const Program = struct {
-    stacks: StackInfo.List,
     ast: ASTNodeList,
     defs: ASTNodePtrList,
-
-    pub const StackInfo = struct {
-        stack: []const u8,
-        pub const List = std.ArrayList(StackInfo);
-    };
-
-    pub fn stackId(self: *Program, stack: []const u8) usize {
-        if (self.stacks.items.len == 0) {
-            self.stacks.append(.{ .stack = "_" }) catch unreachable;
-            self.stacks.append(.{ .stack = "_Return" }) catch unreachable;
-        }
-        return for (self.stacks.items) |item, i| {
-            if (mem.eql(u8, item.stack, stack)) {
-                break i;
-            }
-        } else b: {
-            self.stacks.append(.{ .stack = stack }) catch unreachable;
-            break :b self.stacks.items.len - 1;
-        };
-    }
 };
 
 pub const Op = union(enum) {

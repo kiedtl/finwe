@@ -125,17 +125,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try emitUA(buf, ual, f, node);
             }
         },
-        .StackOp => |sop| {
-            const s_id = program.stackId(sop.stack);
-            if (sop.op == .PushK or sop.op == .PopK) {
-                try emitDUP(buf, s_id);
-            }
-            if (sop.op == .PushK or sop.op == .Push) {
-                try emit(buf, node, WK_STACK, .{ .Omov = s_id });
-            } else if (sop.op == .PopK or sop.op == .Pop) {
-                try emit(buf, node, s_id, .{ .Omov = WK_STACK });
-            } else unreachable;
-        },
         .Cond => |cond| {
             var end_jumps = std.ArrayList(usize).init(gpa.allocator()); // Dummy jumps to fix
             defer end_jumps.deinit();

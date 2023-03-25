@@ -40,7 +40,6 @@ pub const Parser = struct {
     pub fn init(alloc: mem.Allocator) Parser {
         return .{
             .program = Program{
-                .stacks = Program.StackInfo.List.init(alloc),
                 .ast = ASTNodeList.init(alloc),
                 .defs = ASTNodePtrList.init(alloc),
                 //.defs = ASTNodeList.init(alloc),
@@ -69,10 +68,8 @@ pub const Parser = struct {
             .T => .T,
             .Nil => .Nil,
             .Number => |n| .{ .Number = n },
-            .String => |s| .{ .String = s },
             .Codepoint => |c| .{ .Codepoint = c },
             .EnumLit => |e| .{ .EnumLit = e },
-            .Stack => |e| .{ .Stack = e },
             else => error.ExpectedValue,
         };
     }
@@ -87,7 +84,6 @@ pub const Parser = struct {
                     .srcloc = node.location,
                 };
             },
-            .StackOp => |s| ASTNode{ .node = .{ .StackOp = s }, .srcloc = node.location },
             .Keyword => |i| ASTNode{ .node = .{ .Call = i }, .srcloc = node.location },
             .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
@@ -169,10 +165,10 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "asm")) {
-                    try validateListLength(ast, 3);
-                    const asm_stack = try self.parseValue(&ast[1]);
-                    if (asm_stack != .Nil and asm_stack != .Number)
-                        return error.ExpectedOptionalNumber;
+                    try validateListLength(ast, 2);
+                    // const asm_stack = try self.parseValue(&ast[1]);
+                    // if (asm_stack != .Nil and asm_stack != .Number)
+                    //     return error.ExpectedOptionalNumber;
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd != .EnumLit)
                         return error.ExpectedEnumLit;
@@ -212,7 +208,7 @@ pub const Parser = struct {
             }
         }
         try body.append(ASTNode{ .node = .{
-            .Asm = .{ .stack = 0, .op = .Ohalt },
+            .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = 0 });
 
         try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = "_Start" }, .srcloc = 0 });

@@ -7,31 +7,34 @@ const assert = std.debug.assert;
 
 const Value = @import("common.zig").Value;
 const ASTNode = @import("common.zig").ASTNode;
-const ValueList = @import("common.zig").ValueList;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Ins = @import("common.zig").Ins;
 const Op = @import("common.zig").Op;
+const StackBuffer = @import("buffer.zig").StackBuffer;
 
 const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
+const STACK_SZ = @import("common.zig").STACK_SZ;
 
 const gpa = &@import("common.zig").gpa;
 
 const VMError = error{
     StackUnderflow,
+    StackOverflow,
     InvalidType,
-    OutOfMemory,
 };
 
 pub const VM = struct {
-    stacks: std.ArrayList(ValueList),
+    stacks: [2]StackType,
     program: []const Ins,
     pc: usize,
     stopped: bool = false,
 
+    pub const StackType = StackBuffer(Value, STACK_SZ);
+
     pub fn init(program: []const Ins) VM {
         return .{
-            .stacks = std.ArrayList(ValueList).init(gpa.allocator()),
+            .stacks = [1]StackType{StackType.init(null)} ** 2,
             .program = program,
             .pc = 0,
         };
@@ -71,26 +74,26 @@ pub const VM = struct {
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
             .Opick => |i| {
                 const ind = i orelse (try self.popUsize(ins.stack));
-                const len = (try self.stack(ins.stack)).items.len;
-                if (ind >= (try self.stack(ins.stack)).items.len) {
+                const len = self.stacks[ins.stack].len;
+                if (ind >= len) {
                     return error.StackUnderflow;
                 }
-                const new = try (try self.stack(ins.stack)).items[len - ind - 1].clone();
+                const new = try self.stacks[ins.stack].data[len - ind - 1].clone();
                 try self.push(ins.stack, new);
             },
             .Oroll => |i| {
                 const ind = i orelse (try self.popUsize(ins.stack));
-                const len = (try self.stack(ins.stack)).items.len;
-                if (ind >= (try self.stack(ins.stack)).items.len) {
+                const len = self.stacks[ins.stack].len;
+                if (ind >= len) {
                     return error.StackUnderflow;
                 }
-                const item = (try self.stack(ins.stack)).orderedRemove(len - ind - 1);
+                const item = self.stacks[ins.stack].orderedRemove(len - ind - 1) catch unreachable;
                 try self.push(ins.stack, item);
             },
             .Odrop => |i| {
                 const count = i orelse (try self.popUsize(ins.stack));
-                const len = (try self.stack(ins.stack)).items.len;
-                (try self.stack(ins.stack)).shrinkAndFree(len - count);
+                const len = self.stacks[ins.stack].len;
+                self.stacks[ins.stack].resizeTo(len - count);
             },
             .Ocmp => {
                 const b = (try self.pop(ins.stack, .Number)).Number;
@@ -128,13 +131,6 @@ pub const VM = struct {
         return true;
     }
 
-    pub fn stack(self: *VM, s: usize) VMError!*ValueList {
-        while (self.stacks.items.len <= s) {
-            try self.stacks.append(ValueList.init(gpa.allocator()));
-        }
-        return &self.stacks.items[s];
-    }
-
     pub fn popUsize(self: *VM, stk: usize) VMError!usize {
         return @floatToInt(
             usize,
@@ -151,17 +147,15 @@ pub const VM = struct {
     }
 
     pub fn popAny(self: *VM, stk: usize) VMError!Value {
-        if (self.stacks.items.len < stk or self.stacks.items[stk].items.len == 0) {
+        if (self.stacks[stk].len == 0) {
             return error.StackUnderflow;
         }
-        return self.stacks.items[stk].pop();
+        return self.stacks[stk].pop() catch unreachable;
     }
 
     pub fn push(self: *VM, stk: usize, value: Value) VMError!void {
-        while (self.stacks.items.len <= stk) {
-            try self.stacks.append(ValueList.init(gpa.allocator()));
-        }
-        try self.stacks.items[stk].append(value);
+        // XXX: not bothering matching on error since it can only return .NoSpaceLeft
+        self.stacks[stk].append(value) catch return error.StackOverflow;
     }
 
     pub fn pushBool(self: *VM, stk: usize, value: bool) VMError!void {
@@ -193,7 +187,7 @@ pub const BUILTINS = [_]Builtin{
         .name = "print-stack",
         .func = struct {
             pub fn f(vm: *VM, stk: usize) VMError!void {
-                for ((try vm.stack(stk)).items) |item, i| {
+                for (vm.stacks[stk].constSlice()) |item, i| {
                     std.log.info("{}\t{}", .{ i, item });
                 }
             }

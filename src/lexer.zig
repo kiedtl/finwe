@@ -3,9 +3,6 @@ const mem = std.mem;
 const activeTag = std.meta.activeTag;
 const assert = std.debug.assert;
 
-const String = @import("common.zig").String;
-const StackOp = @import("common.zig").ASTNode.StackOp;
-
 pub const NodeList = std.ArrayList(Node);
 
 pub const Node = struct {
@@ -17,15 +14,12 @@ pub const Node = struct {
         Nil,
         Number: f64,
         Codepoint: u21,
-        String: String,
         EnumLit: []const u8,
         Keyword: []const u8,
         Child: []const u8,
         ChildNum: f64,
         List: NodeList,
         Quote: NodeList,
-        Stack: []const u8,
-        StackOp: StackOp,
     };
 
     pub fn deinitMain(list: NodeList, alloc: mem.Allocator) void {
@@ -37,8 +31,6 @@ pub const Node = struct {
             .String => |str| str.deinit(),
             .Keyword => |data| alloc.free(data),
             .Child => |data| alloc.free(data),
-            .Stack => |data| alloc.free(data),
-            .StackOp => |sop| alloc.free(sop.stack),
             .Quote, .List => |list| {
                 for (list.items) |*li| li.deinit(alloc);
                 list.deinit();
@@ -52,7 +44,7 @@ pub const Lexer = struct {
     input: []const u8,
     alloc: mem.Allocator,
     index: usize = 0,
-    stack: Stack.List,
+    stack: Stack.List, // Lexing stack, not program one
 
     pub const Stack = struct {
         type: Type,
@@ -70,7 +62,6 @@ pub const Lexer = struct {
         InvalidEnumLiteral,
         InvalidCharLiteral,
         InvalidUtf8,
-        UnknownStackOp,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
     pub fn init(input: []const u8, alloc: mem.Allocator) Self {
@@ -87,44 +78,6 @@ pub const Lexer = struct {
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
-            '$' => blk: {
-                var stack_end: usize = 0;
-                while (stack_end < word.len and
-                    ((word[stack_end] >= 'a' and word[stack_end] <= 'z') or
-                    (word[stack_end] >= 'A' and word[stack_end] <= 'Z') or
-                    (word[stack_end] >= '0' and word[stack_end] <= '9') or
-                    (word[stack_end] == '_')))
-                {
-                    stack_end += 1;
-                }
-                const stack_name = word[0..stack_end];
-                const stack_op = word[stack_end..];
-
-                if (stack_op.len == 0) {
-                    const s = try self.alloc.alloc(u8, word.len);
-                    mem.copy(u8, s, word);
-                    break :blk Node.NodeType{ .Stack = s };
-                } else {
-                    var op: StackOp.Type = undefined;
-                    if (mem.eql(u8, stack_op, "->")) {
-                        op = .Pop;
-                    } else if (mem.eql(u8, stack_op, "->>")) {
-                        op = .PopK;
-                    } else if (mem.eql(u8, stack_op, "<-")) {
-                        op = .Push;
-                    } else if (mem.eql(u8, stack_op, "<<-")) {
-                        op = .PushK;
-                    } else {
-                        return error.UnknownStackOp;
-                    }
-                    const s = try self.alloc.alloc(u8, stack_name.len);
-                    mem.copy(u8, s, stack_name);
-                    break :blk Node.NodeType{ .StackOp = .{
-                        .stack = s,
-                        .op = op,
-                    } };
-                }
-            },
             'k', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
@@ -321,33 +274,4 @@ test "basic lexing" {
         try testing.expectEqual(activeTag(list[2].node), .ChildNum);
         try testing.expectEqual(@as(f64, 0), list[2].node.ChildNum);
     }
-}
-
-test "stack expression lexing" {
-    const input = "$foo $bar<- $bar-> $baz->> $baz<<-";
-    var lexer = Lexer.init(input, std.testing.allocator);
-    var result = try lexer.lex(.Root);
-    defer lexer.deinit();
-    defer Node.deinitMain(result, std.testing.allocator);
-
-    try testing.expectEqual(@as(usize, 5), result.items.len);
-
-    try testing.expectEqual(activeTag(result.items[0].node), .Stack);
-    try testing.expectEqualSlices(u8, "foo", result.items[0].node.Stack);
-
-    try testing.expectEqual(activeTag(result.items[1].node), .StackOp);
-    try testing.expectEqualSlices(u8, "bar", result.items[1].node.StackOp.stack);
-    try testing.expectEqual(StackOp.Type.Push, result.items[1].node.StackOp.op);
-
-    try testing.expectEqual(activeTag(result.items[2].node), .StackOp);
-    try testing.expectEqualSlices(u8, "bar", result.items[2].node.StackOp.stack);
-    try testing.expectEqual(StackOp.Type.Pop, result.items[2].node.StackOp.op);
-
-    try testing.expectEqual(activeTag(result.items[3].node), .StackOp);
-    try testing.expectEqualSlices(u8, "baz", result.items[3].node.StackOp.stack);
-    try testing.expectEqual(StackOp.Type.PopK, result.items[3].node.StackOp.op);
-
-    try testing.expectEqual(activeTag(result.items[4].node), .StackOp);
-    try testing.expectEqualSlices(u8, "baz", result.items[4].node.StackOp.stack);
-    try testing.expectEqual(StackOp.Type.PushK, result.items[4].node.StackOp.op);
 }
