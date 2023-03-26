@@ -52,7 +52,6 @@ pub const VM = struct {
     pub fn executeIns(self: *VM, ins: Ins) VMError!bool {
         //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
-            .O => {},
             .Olit => |v| try self.push(ins.stack, v),
             .Osr => |f| {
                 try self.pushInt(ins.stack, self.pc + 1);

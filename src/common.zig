@@ -118,7 +118,6 @@ pub const Program = struct {
 };
 
 pub const Op = union(enum) {
-    O, // nop
     Olit: Value,
     Osr: ?usize,
     Oj: ?usize,
@@ -140,7 +139,6 @@ pub const Op = union(enum) {
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
-            .O => .O,
             .Onac, .Olit => error.NeedsArg,
             .Osr => .{ .Osr = null },
             .Oj => .{ .Oj = null },

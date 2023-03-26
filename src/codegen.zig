@@ -77,7 +77,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
         .node = node,
     });
     switch (node.node) {
-        .Call => try emit(buf, null, 0, .O),
+        .Call => try emit(buf, null, 0, .{ .Oj = null }),
         else => unreachable,
     }
 }
