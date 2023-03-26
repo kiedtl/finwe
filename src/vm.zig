@@ -123,9 +123,11 @@ pub const VM = struct {
                 const b = (try self.pop(ins.stack, .Number)).Number;
                 try self.pushNum(ins.stack, b - a);
             },
-            .Omov => |dest_stk| {
-                const v = try self.popAny(ins.stack);
-                try self.push(dest_stk, v);
+            .Ostash => {
+                const src = ins.stack;
+                const dst = (ins.stack + 1) % 2;
+                const v = try self.popAny(src);
+                try self.push(dst, v);
             },
         }
         return true;

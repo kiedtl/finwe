@@ -42,6 +42,7 @@ pub const Parser = struct {
             .program = Program{
                 .ast = ASTNodeList.init(alloc),
                 .defs = ASTNodePtrList.init(alloc),
+                .macs = ASTNodePtrList.init(alloc),
                 //.defs = ASTNodeList.init(alloc),
             },
             .alloc = alloc,
@@ -113,6 +114,16 @@ pub const Parser = struct {
                         .node = .{ .Decl = .{ .name = name, .body = body } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "mac")) {
+                    const name = try expectNode(.Keyword, &ast[1]);
+
+                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const body = try self.parseStatements(ast_body.items);
+
+                    break :b ASTNode{
+                        .node = .{ .Mac = .{ .name = name, .body = body } },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "until")) {
                     try validateListLength(ast, 3);
 
@@ -165,10 +176,11 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "asm")) {
-                    try validateListLength(ast, 2);
-                    // const asm_stack = try self.parseValue(&ast[1]);
-                    // if (asm_stack != .Nil and asm_stack != .Number)
-                    //     return error.ExpectedOptionalNumber;
+                    try validateListLength(ast, 3);
+                    const asm_stack = try self.parseValue(&ast[1]);
+                    if (asm_stack != .Nil and asm_stack != .Number)
+                        return error.ExpectedOptionalNumber;
+                    const asm_stack_e = if (asm_stack == .Nil) WK_STACK else @floatToInt(usize, asm_stack.Number);
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd != .EnumLit)
                         return error.ExpectedEnumLit;
@@ -176,7 +188,7 @@ pub const Parser = struct {
                         return error.InvalidAsmOp;
                     const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
                     break :b ASTNode{
-                        .node = .{ .Asm = .{ .stack = WK_STACK, .op = asm_op } },
+                        .node = .{ .Asm = .{ .stack = asm_stack_e, .op = asm_op } },
                         .srcloc = ast[0].location,
                     };
                 } else {
@@ -191,9 +203,12 @@ pub const Parser = struct {
 
     // Extract definitions
     pub fn extractDefs(self: *Parser) ParserError!void {
-        for (self.program.ast.items) |*node| if (node.node == .Decl) {
-            try self.program.defs.append(node);
-        };
+        for (self.program.ast.items) |*node|
+            if (node.node == .Decl) {
+                try self.program.defs.append(node);
+            } else if (node.node == .Mac) {
+                try self.program.macs.append(node);
+            };
     }
 
     // Setup the entry function
@@ -202,7 +217,7 @@ pub const Parser = struct {
     pub fn setupMainFunc(self: *Parser) ParserError!void {
         var body = ASTNodeList.init(self.alloc);
         for (self.program.ast.items) |ast_item, i| {
-            if (ast_item.node != .Decl) {
+            if (ast_item.node != .Decl and ast_item.node != .Mac) {
                 try body.append(ast_item);
                 self.program.ast.items[i] = ASTNode{ .node = .None, .srcloc = 0 };
             }

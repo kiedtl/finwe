@@ -86,6 +86,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
     switch (node.node) {
         .None => {},
         .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v }),
+        .Mac => {},
         .Decl => |d| {
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
@@ -117,10 +118,18 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 },
             }
         },
-        .Asm => |a| try emit(buf, node, a.stack, a.op),
+        .Asm => |a| {
+            try emit(buf, node, a.stack, a.op);
+        },
         .Call => |f| {
             if (vm.findBuiltin(f)) |_| {
                 try emit(buf, node, WK_STACK, .{ .Onac = f });
+            } else if (for (program.macs.items) |mac| {
+                if (mem.eql(u8, mac.node.Mac.name, f))
+                    break mac;
+            } else null) |mac| {
+                for (mac.node.Mac.body.items) |*item|
+                    try genNode(program, buf, item, ual);
             } else {
                 try emitUA(buf, ual, f, node);
             }

@@ -1,6 +1,9 @@
 #!/home/kiedtl/src/zf/new/zig-out/bin/zf
 # vim: ts=4 sts=4 sw=4 expandtab
 
+(mac stash    [ (asm nil .Ostash) ])
+(mac grab     [ (asm 1 .Ostash) ])
+
 (word dup     [ 0 (asm nil .Opick) ])
 (word over    [ 1 (asm nil .Opick) ])
 (word swap    [ 1 (asm nil .Oroll) ])
@@ -28,10 +31,10 @@
 (word T<>     [ T <> ])
 (word nil?    [ nil = ])
 
-(word do      [ $_Return<- (asm nil .Osr) ])
+(word do      [ stash (asm nil .Osr) ])
 (word ?do     [ swap (cond [ T= ] [ do ] [ drop ]) ])
-(word dip     [ swap $v<- do $v-> ])
-(word sip     [ $f<- dup $f-> swap [ do ] dip ])
+(word dip     [ swap stash do grab ])
+(word sip     [ stash dup grab swap [ do ] dip ])
 (word bi      [ [ sip ] dip do ])
 (word bi*     [ [ dip ] dip do ])
 (word bi@     [ dup bi* ])
@@ -51,24 +54,25 @@
 
 # if (n < 2) return n
 # return fib(n - 1) + fib(n - 2)
-(word bad-fib [
-    $n<-
-    (cond
-        [ $n->> 2 < ] [ $n-> ]
-        [
-            $n->> 1 - bad-fib
-            $n->  2 - bad-fib +
-        ]
-    )
-])
+#(word bad-fib [
+#    $n<-
+#    (cond
+#        [ $n->> 2 < ] [ $n-> ]
+#        [
+#            $n->> 1 - bad-fib
+#            $n->  2 - bad-fib +
+#        ]
+#    )
+#])
 
 #54 45 gcd
 #324324 12463 gcd
-#3 4 hypot
-
-40 bad-fib
-
+3 4 hypot
 print-stack
+
+#40 bad-fib
+
+#print-stack
 
 # todo: -|, +|, *|, -%, +%, *%
 

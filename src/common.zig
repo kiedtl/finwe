@@ -66,6 +66,7 @@ pub const ASTNode = struct {
     pub const Type = union(enum) {
         None, // Placeholder for removed ast values
         Decl: Decl, // word declaraction
+        Mac: Mac, // macro declaraction
         Call: []const u8,
         Loop: Loop,
         Cond: Cond,
@@ -100,6 +101,11 @@ pub const ASTNode = struct {
         body: ASTNodeList,
     };
 
+    pub const Mac = struct {
+        name: []const u8,
+        body: ASTNodeList,
+    };
+
     pub const Quote = struct {
         body: ASTNodeList,
     };
@@ -108,6 +114,7 @@ pub const ASTNode = struct {
 pub const Program = struct {
     ast: ASTNodeList,
     defs: ASTNodePtrList,
+    macs: ASTNodePtrList,
 };
 
 pub const Op = union(enum) {
@@ -127,14 +134,14 @@ pub const Op = union(enum) {
     Omul: ?f64,
     Oadd: ?f64,
     Osub: ?f64,
-    Omov: usize,
+    Ostash,
 
     pub const Tag = meta.Tag(Op);
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
             .O => .O,
-            .Omov, .Onac, .Olit => error.NeedsArg,
+            .Onac, .Olit => error.NeedsArg,
             .Osr => .{ .Osr = null },
             .Oj => .{ .Oj = null },
             .Ozj => .{ .Ozj = null },
@@ -148,6 +155,7 @@ pub const Op = union(enum) {
             .Omul => .{ .Omul = null },
             .Oadd => .{ .Oadd = null },
             .Osub => .{ .Osub = null },
+            .Ostash => .Ostash,
         };
     }
 
@@ -177,7 +185,6 @@ pub const Op = union(enum) {
             .Omul => |a| try fmt.format(writer, "{}", .{a}),
             .Oadd => |a| try fmt.format(writer, "{}", .{a}),
             .Osub => |a| try fmt.format(writer, "{}", .{a}),
-            .Omov => |s| try fmt.format(writer, "{}", .{s}),
             else => try fmt.format(writer, "@", .{}),
         }
     }
