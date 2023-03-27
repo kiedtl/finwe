@@ -17,12 +17,17 @@ pub const Node = struct {
         Number: u8,
         Codepoint: u8,
         String: String,
-        EnumLit: []const u8,
+        EnumLit: EnumLit,
         Keyword: []const u8,
         Child: []const u8,
         ChildNum: u8,
         List: NodeList,
         Quote: NodeList,
+    };
+
+    pub const EnumLit = struct {
+        of: ?[]const u8,
+        v: []const u8,
     };
 
     pub fn deinitMain(list: NodeList, alloc: mem.Allocator) void {
@@ -34,6 +39,11 @@ pub const Node = struct {
             .String => |str| str.deinit(),
             .Keyword => |data| alloc.free(data),
             .Child => |data| alloc.free(data),
+            .EnumLit => |data| {
+                alloc.free(data.v);
+                if (data.of) |d|
+                    alloc.free(d);
+            },
             .Quote, .List => |list| {
                 for (list.items) |*li| li.deinit(alloc);
                 list.deinit();
@@ -96,14 +106,26 @@ pub const Lexer = struct {
                     } else if (mem.eql(u8, word, "t") or mem.eql(u8, word, "T")) {
                         break :blk Node.NodeType{ .T = {} };
                     } else {
-                        const s = try self.alloc.alloc(u8, word.len);
-                        mem.copy(u8, s, word);
-                        break :blk switch (vtype) {
-                            'k' => Node.NodeType{ .Keyword = s },
-                            '.' => Node.NodeType{ .EnumLit = s },
-                            ':' => Node.NodeType{ .Child = s },
-                            else => unreachable,
-                        };
+                        const enum_clarifier = mem.indexOfScalar(u8, word, '/');
+                        if (vtype == '.' and enum_clarifier != null) {
+                            if (enum_clarifier.? == 0) {
+                                return error.InvalidEnumLiteral;
+                            }
+                            const a = try self.alloc.alloc(u8, word.len - (word.len - enum_clarifier.?));
+                            const b = try self.alloc.alloc(u8, word.len - enum_clarifier.? - 1);
+                            mem.copy(u8, a, word[enum_clarifier.? + 1 ..]);
+                            mem.copy(u8, b, word[0..enum_clarifier.?]);
+                            break :blk Node.NodeType{ .EnumLit = .{ .v = a, .of = b } };
+                        } else {
+                            const s = try self.alloc.alloc(u8, word.len);
+                            mem.copy(u8, s, word);
+                            break :blk switch (vtype) {
+                                'k' => Node.NodeType{ .Keyword = s },
+                                '.' => Node.NodeType{ .EnumLit = .{ .v = s, .of = null } },
+                                ':' => Node.NodeType{ .Child = s },
+                                else => unreachable,
+                            };
+                        }
                     }
                 }
             },
@@ -258,7 +280,7 @@ pub const Lexer = struct {
 const testing = std.testing;
 
 test "basic lexing" {
-    const input = "0xfe 0xf1 0xf0 fum (test :foo bar 0xBEEF) (12 ['ë] :0)";
+    const input = "0xfe 0xf1 0xf0 fum (test :foo bar 0xAB) (12 ['ë] :0)";
     var lexer = Lexer.init(input, std.testing.allocator);
     var result = try lexer.lex(.Root);
     defer lexer.deinit();
@@ -267,13 +289,13 @@ test "basic lexing" {
     try testing.expectEqual(@as(usize, 6), result.items.len);
 
     try testing.expectEqual(activeTag(result.items[0].node), .Number);
-    try testing.expectEqual(@as(f64, 0xfe), result.items[0].node.Number);
+    try testing.expectEqual(@as(u8, 0xfe), result.items[0].node.Number);
 
     try testing.expectEqual(activeTag(result.items[1].node), .Number);
-    try testing.expectEqual(@as(f64, 0xf1), result.items[1].node.Number);
+    try testing.expectEqual(@as(u8, 0xf1), result.items[1].node.Number);
 
     try testing.expectEqual(activeTag(result.items[2].node), .Number);
-    try testing.expectEqual(@as(f64, 0xf0), result.items[2].node.Number);
+    try testing.expectEqual(@as(u8, 0xf0), result.items[2].node.Number);
 
     try testing.expectEqual(activeTag(result.items[3].node), .Keyword);
     try testing.expectEqualSlices(u8, "fum", result.items[3].node.Keyword);
@@ -292,7 +314,7 @@ test "basic lexing" {
         try testing.expectEqualSlices(u8, "bar", list[2].node.Keyword);
 
         try testing.expectEqual(activeTag(list[3].node), .Number);
-        try testing.expectEqual(@as(f64, 0xBEEF), list[3].node.Number);
+        try testing.expectEqual(@as(u8, 0xAB), list[3].node.Number);
     }
 
     try testing.expectEqual(activeTag(result.items[5].node), .List);
@@ -300,7 +322,7 @@ test "basic lexing" {
         const list = result.items[5].node.List.items;
 
         try testing.expectEqual(activeTag(list[0].node), .Number);
-        try testing.expectEqual(@as(f64, 12), list[0].node.Number);
+        try testing.expectEqual(@as(u8, 12), list[0].node.Number);
 
         try testing.expectEqual(activeTag(list[1].node), .Quote);
         {
@@ -311,6 +333,24 @@ test "basic lexing" {
         }
 
         try testing.expectEqual(activeTag(list[2].node), .ChildNum);
-        try testing.expectEqual(@as(f64, 0), list[2].node.ChildNum);
+        try testing.expectEqual(@as(u8, 0), list[2].node.ChildNum);
     }
+}
+
+test "enum literals" {
+    const input = ".foo .bar/baz";
+    var lexer = Lexer.init(input, std.testing.allocator);
+    var result = try lexer.lex(.Root);
+    defer lexer.deinit();
+    defer Node.deinitMain(result, std.testing.allocator);
+
+    try testing.expectEqual(@as(usize, 2), result.items.len);
+
+    try testing.expectEqual(activeTag(result.items[0].node), .EnumLit);
+    try testing.expect(mem.eql(u8, result.items[0].node.EnumLit.v, "foo"));
+    try testing.expectEqual(result.items[0].node.EnumLit.of, null);
+
+    try testing.expectEqual(activeTag(result.items[1].node), .EnumLit);
+    try testing.expect(mem.eql(u8, result.items[1].node.EnumLit.v, "baz"));
+    try testing.expect(mem.eql(u8, result.items[1].node.EnumLit.of.?, "bar"));
 }
