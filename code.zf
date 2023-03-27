@@ -10,24 +10,24 @@
 (word drop    [ 1 (asm nil .Odrop) ])
 (word nip     [ swap drop ])
 
-(word not     [ (asm nil .Onot) ])
+(word not     [ 0xff (asm nil .Oeor) ])
 (word /mod    [ (asm nil .Odmod) ])
 (word *       [ (asm nil .Omul) ])
 (word +       [ (asm nil .Oadd) ])
 (word -       [ (asm nil .Osub) ])
+(word 1-      [ 1 (asm nil .Osub) ])
 
 (word /       [ /mod nip ])
 (word mod     [ /mod drop ])
 
 (word tuck    [ swap over ])
 
-(word cmp     [ (asm nil .Ocmp) ])
-(word =       [ cmp not ])
-(word <       [ cmp -1 = ])
-(word >       [ cmp 1 = ])
-(word <>      [ = not ])
+(word =       [ (asm nil .Oeq) ])
+(word <       [ (asm nil .Olt) ])
+(word >       [ (asm nil .Ogt) ])
+(word <>      [ (asm nil .Oneq) ])
 (word 0=      [ 0 = ])
-(word T=      [ T = ])             # FIXME: cmp cannot compare non-numerical value!
+(word T=      [ T = ])
 (word T<>     [ T <> ])
 (word nil?    [ nil = ])
 
@@ -48,10 +48,6 @@
     drop
 ])
 
-(word hypot [
-    [ square ] bi@ + sqrt
-])
-
 # if (n < 2) return n
 # return fib(n - 1) + fib(n - 2)
 #(word bad-fib [
@@ -67,11 +63,10 @@
 
 #54 45 gcd
 #324324 12463 gcd
-3 4 hypot
+198 234 gcd
 print-stack
 
 #40 bad-fib
-
 #print-stack
 
 # todo: -|, +|, *|, -%, +%, *%

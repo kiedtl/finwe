@@ -12,12 +12,12 @@ pub const Node = struct {
     pub const NodeType = union(enum) {
         T,
         Nil,
-        Number: f64,
-        Codepoint: u21,
+        Number: u8,
+        Codepoint: u8,
         EnumLit: []const u8,
         Keyword: []const u8,
         Child: []const u8,
-        ChildNum: f64,
+        ChildNum: u8,
         List: NodeList,
         Quote: NodeList,
     };
@@ -120,24 +120,15 @@ pub const Lexer = struct {
                     offset = 2;
                 }
 
-                if (base != 10) {
-                    const num = try std.fmt.parseInt(usize, word[offset..], base);
-                    break :blk Node.NodeType{
-                        .Number = @intToFloat(f64, num),
-                    };
-                } else {
-                    assert(offset == 0);
-                    break :blk Node.NodeType{
-                        .Number = try std.fmt.parseFloat(f64, word),
-                    };
-                }
+                const num = try std.fmt.parseInt(u8, word[offset..], base);
+                break :blk Node.NodeType{ .Number = num };
             },
             '\'' => blk: {
                 var utf8 = (std.unicode.Utf8View.init(word) catch return error.InvalidUtf8).iterator();
                 const encoded_codepoint = utf8.nextCodepointSlice() orelse return error.InvalidCharLiteral;
                 if (utf8.nextCodepointSlice()) |_| return error.InvalidCharLiteral;
                 const codepoint = std.unicode.utf8Decode(encoded_codepoint) catch return error.InvalidUtf8;
-                break :blk Node.NodeType{ .Codepoint = codepoint };
+                break :blk Node.NodeType{ .Codepoint = @intCast(u8, codepoint % 255) };
             },
             else => @panic("what were you trying to do anyway"),
         };

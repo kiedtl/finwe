@@ -7,8 +7,7 @@ const vm = @import("vm.zig");
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
 const ASTNode = @import("common.zig").ASTNode;
-const Value = @import("common.zig").Node.Value;
-const ValueList = @import("common.zig").ValueList;
+const Value = @import("common.zig").Value;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Program = @import("common.zig").Program;
 const Ins = @import("common.zig").Ins;
@@ -85,7 +84,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .None => {},
-        .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v }),
+        .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = Value.from(v) }),
         .Mac => {},
         .Decl => |d| {
             node.romloc = buf.items.len;
@@ -101,7 +100,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try genNode(program, buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
             const quote_end_addr = buf.items.len;
-            try emit(buf, node, WK_STACK, .{ .Olit = .{ .Number = @intToFloat(f64, quote_begin_addr) } });
+            try emit(buf, node, WK_STACK, .{ .Olit = .{ .U8 = @intCast(u8, quote_begin_addr) } });
             buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
@@ -113,7 +112,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emit(buf, node, WK_STACK, .{ .Opick = 0 }); // DUP
                     for (u.cond.items) |*bodynode|
                         try genNode(program, buf, bodynode, ual);
-                    try emit(buf, node, WK_STACK, .Onot);
+                    try emit(buf, node, WK_STACK, .{ .Olit = .{ .U8 = 0 } });
+                    try emit(buf, node, WK_STACK, .Oeq);
                     try emit(buf, node, WK_STACK, .{ .Ozj = loop_begin });
                 },
             }
@@ -141,7 +141,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             for (cond.branches.items) |branch| {
                 //try emitDUP(buf, WK_STACK);
                 try genNodeList(program, buf, branch.cond.items, ual);
-                try emit(buf, node, WK_STACK, .Onot);
+                try emit(buf, node, WK_STACK, .{ .Olit = .{ .U8 = 0 } });
+                try emit(buf, node, WK_STACK, .Oeq);
                 const body_jmp = try emitRI(buf, node, WK_STACK, .{ .Ozj = 0 });
                 try genNodeList(program, buf, branch.body.items, ual);
                 const end_jmp = try emitRI(buf, node, WK_STACK, .{ .Oj = 0 });

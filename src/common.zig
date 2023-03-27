@@ -29,26 +29,25 @@ pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 
 pub const Value = union(enum) {
-    T,
-    Nil,
-    Number: f64,
-    Codepoint: u21,
+    U8: u8,
     EnumLit: []const u8,
 
     pub const Tag = std.meta.Tag(Value);
 
-    pub fn asBool(self: Value) bool {
-        return switch (self) {
-            .Nil => false,
-            .Number => |n| n != 0,
-            .Codepoint => |c| c != 0,
-            .T, .EnumLit => true,
+    pub fn from(astval: ASTNode.ASTValue) Value {
+        return switch (astval) {
+            .T => .{ .U8 = 1 },
+            .Nil => .{ .U8 = 0 },
+            .U8 => |v| .{ .U8 = v },
+            .Codepoint => |v| .{ .U8 = v },
+            .EnumLit => |e| .{ .EnumLit = e },
         };
     }
 
-    pub fn clone(self: Value) !Value {
+    pub fn asBool(self: Value) bool {
         return switch (self) {
-            .T, .Nil, .Number, .Codepoint, .EnumLit => return self,
+            .U8 => |n| n != 0,
+            .EnumLit => true,
         };
     }
 };
@@ -71,8 +70,18 @@ pub const ASTNode = struct {
         Loop: Loop,
         Cond: Cond,
         Asm: Ins,
-        Value: Value,
+        Value: ASTValue,
         Quote: Quote,
+    };
+
+    pub const ASTValue = union(enum) {
+        T,
+        Nil,
+        U8: u8,
+        Codepoint: u8,
+        EnumLit: []const u8,
+
+        pub const Tag = std.meta.Tag(ASTValue);
     };
 
     pub const Cond = struct {
@@ -127,12 +136,15 @@ pub const Op = union(enum) {
     Opick: ?usize,
     Oroll: ?usize,
     Odrop: ?usize,
-    Ocmp,
-    Onot,
-    Odmod: ?f64,
-    Omul: ?f64,
-    Oadd: ?f64,
-    Osub: ?f64,
+    Oeq,
+    Oneq,
+    Olt,
+    Ogt,
+    Oeor,
+    Odmod,
+    Omul,
+    Oadd,
+    Osub,
     Ostash,
 
     pub const Tag = meta.Tag(Op);
@@ -147,12 +159,15 @@ pub const Op = union(enum) {
             .Opick => .{ .Opick = null },
             .Oroll => .{ .Oroll = null },
             .Odrop => .{ .Odrop = null },
-            .Ocmp => .Ocmp,
-            .Onot => .Onot,
-            .Odmod => .{ .Odmod = null },
-            .Omul => .{ .Omul = null },
-            .Oadd => .{ .Oadd = null },
-            .Osub => .{ .Osub = null },
+            .Oeq => .Oeq,
+            .Oneq => .Oneq,
+            .Olt => .Olt,
+            .Ogt => .Ogt,
+            .Oeor => .Oeor,
+            .Odmod => .Odmod,
+            .Omul => .Omul,
+            .Oadd => .Oadd,
+            .Osub => .Osub,
             .Ostash => .Ostash,
         };
     }
@@ -179,7 +194,6 @@ pub const Op = union(enum) {
             .Onac => |n| try fmt.format(writer, "'{s}'", .{n}),
             .Opick => |i| try fmt.format(writer, "{}", .{i}),
             .Oroll => |i| try fmt.format(writer, "{}", .{i}),
-            .Odmod => |d| try fmt.format(writer, "{}", .{d}),
             .Omul => |a| try fmt.format(writer, "{}", .{a}),
             .Oadd => |a| try fmt.format(writer, "{}", .{a}),
             .Osub => |a| try fmt.format(writer, "{}", .{a}),

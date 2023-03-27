@@ -55,15 +55,15 @@ pub const VM = struct {
             .Olit => |v| try self.push(ins.stack, v),
             .Osr => |f| {
                 try self.pushInt(ins.stack, self.pc + 1);
-                self.pc = f orelse try self.popUsize(ins.stack);
+                self.pc = f orelse (try self.pop(ins.stack, .U8)).U8;
                 return false;
             },
             .Oj => |j| {
-                self.pc = j orelse try self.popUsize(ins.stack);
+                self.pc = j orelse (try self.pop(ins.stack, .U8)).U8;
                 return false;
             },
             .Ozj => |j| {
-                const addr = j orelse try self.popUsize(ins.stack);
+                const addr = j orelse (try self.pop(ins.stack, .U8)).U8;
                 if ((try self.popAny(ins.stack)).asBool()) {
                     self.pc = addr;
                     return false;
@@ -72,16 +72,15 @@ pub const VM = struct {
             .Ohalt => self.stopped = true,
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
             .Opick => |i| {
-                const ind = i orelse (try self.popUsize(ins.stack));
+                const ind = i orelse (try self.pop(ins.stack, .U8)).U8;
                 const len = self.stacks[ins.stack].len;
                 if (ind >= len) {
                     return error.StackUnderflow;
                 }
-                const new = try self.stacks[ins.stack].data[len - ind - 1].clone();
-                try self.push(ins.stack, new);
+                try self.push(ins.stack, self.stacks[ins.stack].data[len - ind - 1]);
             },
             .Oroll => |i| {
-                const ind = i orelse (try self.popUsize(ins.stack));
+                const ind = i orelse (try self.pop(ins.stack, .U8)).U8;
                 const len = self.stacks[ins.stack].len;
                 if (ind >= len) {
                     return error.StackUnderflow;
@@ -90,37 +89,55 @@ pub const VM = struct {
                 try self.push(ins.stack, item);
             },
             .Odrop => |i| {
-                const count = i orelse (try self.popUsize(ins.stack));
+                const count = i orelse (try self.pop(ins.stack, .U8)).U8;
                 const len = self.stacks[ins.stack].len;
                 self.stacks[ins.stack].resizeTo(len - count);
             },
-            .Ocmp => {
-                const b = (try self.pop(ins.stack, .Number)).Number;
-                const a = (try self.pop(ins.stack, .Number)).Number;
-                const r = if (a == b) @as(f64, 0.0) else if (a > b) @as(f64, 1.0) else @as(f64, -1.0);
-                try self.pushNum(ins.stack, r);
+            .Oeq => {
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, if (a == b) @as(u8, 1) else 0);
             },
-            .Onot => try self.pushBool(ins.stack, !(try self.popAny(ins.stack)).asBool()),
-            .Odmod => |d| {
-                const dvs = d orelse (try self.pop(ins.stack, .Number)).Number;
-                const dvd = (try self.pop(ins.stack, .Number)).Number;
-                try self.pushNum(ins.stack, @mod(dvd, dvs));
-                try self.pushNum(ins.stack, dvd / dvs);
+            .Oneq => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, if (a != b) @as(u8, 1) else 0);
             },
-            .Omul => |ma| {
-                const a = ma orelse (try self.pop(ins.stack, .Number)).Number;
-                const b = (try self.pop(ins.stack, .Number)).Number;
-                try self.pushNum(ins.stack, a * b);
+            .Olt => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, if (a < b) @as(u8, 1) else 0);
             },
-            .Oadd => |ad| {
-                const a = ad orelse (try self.pop(ins.stack, .Number)).Number;
-                const b = (try self.pop(ins.stack, .Number)).Number;
-                try self.pushNum(ins.stack, a + b);
+            .Ogt => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, if (a > b) @as(u8, 1) else 0);
             },
-            .Osub => |su| {
-                const a = su orelse (try self.pop(ins.stack, .Number)).Number;
-                const b = (try self.pop(ins.stack, .Number)).Number;
-                try self.pushNum(ins.stack, b - a);
+            .Odmod => {
+                const dvs = (try self.pop(ins.stack, .U8)).U8;
+                const dvd = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, dvd % dvs);
+                try self.pushInt(ins.stack, dvd / dvs);
+            },
+            .Omul => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, a * b);
+            },
+            .Oadd => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, a + b);
+            },
+            .Osub => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, b - a);
+            },
+            .Oeor => {
+                const a = (try self.pop(ins.stack, .U8)).U8;
+                const b = (try self.pop(ins.stack, .U8)).U8;
+                try self.pushInt(ins.stack, a ^ b);
             },
             .Ostash => {
                 const src = ins.stack;
@@ -130,13 +147,6 @@ pub const VM = struct {
             },
         }
         return true;
-    }
-
-    pub fn popUsize(self: *VM, stk: usize) VMError!usize {
-        return @floatToInt(
-            usize,
-            (try self.pop(stk, .Number)).Number,
-        );
     }
 
     pub fn pop(self: *VM, stk: usize, expect: Value.Tag) VMError!Value {
@@ -159,16 +169,8 @@ pub const VM = struct {
         self.stacks[stk].append(value) catch return error.StackOverflow;
     }
 
-    pub fn pushBool(self: *VM, stk: usize, value: bool) VMError!void {
-        try self.push(stk, if (value) .{ .T = {} } else .{ .Nil = {} });
-    }
-
     pub fn pushInt(self: *VM, stk: usize, value: anytype) VMError!void {
-        try self.push(stk, .{ .Number = @intToFloat(f64, value) });
-    }
-
-    pub fn pushNum(self: *VM, stk: usize, value: f64) VMError!void {
-        try self.push(stk, .{ .Number = value });
+        try self.push(stk, .{ .U8 = @intCast(u8, value) });
     }
 };
 
@@ -191,24 +193,6 @@ pub const BUILTINS = [_]Builtin{
                 for (vm.stacks[stk].constSlice()) |item, i| {
                     std.log.info("{}\t{}", .{ i, item });
                 }
-            }
-        }.f,
-    },
-    Builtin{
-        .name = "sqrt",
-        .func = struct {
-            pub fn f(vm: *VM, stk: usize) VMError!void {
-                const n = (try vm.pop(stk, .Number)).Number;
-                try vm.pushNum(stk, math.sqrt(n));
-            }
-        }.f,
-    },
-    Builtin{
-        .name = "do-builtin",
-        .func = struct {
-            pub fn f(vm: *VM, stk: usize) VMError!void {
-                const addr = @floatToInt(usize, (try vm.pop(stk, .Number)).Number);
-                _ = try vm.executeIns(Ins{ .stack = RT_STACK, .op = .{ .Osr = addr } });
             }
         }.f,
     },

@@ -6,9 +6,8 @@ const activeTag = std.meta.activeTag;
 const lexer = @import("lexer.zig");
 const utils = @import("utils.zig");
 
-const Value = @import("common.zig").Value;
 const ASTNode = @import("common.zig").ASTNode;
-const ValueList = @import("common.zig").ValueList;
+const ASTValue = ASTNode.ASTValue;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
@@ -63,12 +62,12 @@ pub const Parser = struct {
         return @field(node.node, @tagName(nodetype));
     }
 
-    fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
+    fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!ASTValue {
         _ = self;
         return switch (node.node) {
             .T => .T,
             .Nil => .Nil,
-            .Number => |n| .{ .Number = n },
+            .Number => |n| .{ .U8 = n },
             .Codepoint => |c| .{ .Codepoint = c },
             .EnumLit => |e| .{ .EnumLit = e },
             else => error.ExpectedValue,
@@ -178,9 +177,9 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "asm")) {
                     try validateListLength(ast, 3);
                     const asm_stack = try self.parseValue(&ast[1]);
-                    if (asm_stack != .Nil and asm_stack != .Number)
+                    if (asm_stack != .Nil and asm_stack != .U8)
                         return error.ExpectedOptionalNumber;
-                    const asm_stack_e = if (asm_stack == .Nil) WK_STACK else @floatToInt(usize, asm_stack.Number);
+                    const asm_stack_e = if (asm_stack == .Nil) WK_STACK else asm_stack.U8;
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd != .EnumLit)
                         return error.ExpectedEnumLit;
