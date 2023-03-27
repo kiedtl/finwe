@@ -3,6 +3,8 @@ const mem = std.mem;
 const activeTag = std.meta.activeTag;
 const assert = std.debug.assert;
 
+const common = @import("common.zig");
+const String = common.String;
 pub const NodeList = std.ArrayList(Node);
 
 pub const Node = struct {
@@ -14,6 +16,7 @@ pub const Node = struct {
         Nil,
         Number: u8,
         Codepoint: u8,
+        String: String,
         EnumLit: []const u8,
         Keyword: []const u8,
         Child: []const u8,
@@ -62,6 +65,7 @@ pub const Lexer = struct {
         InvalidEnumLiteral,
         InvalidCharLiteral,
         InvalidUtf8,
+        BadString,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
     pub fn init(input: []const u8, alloc: mem.Allocator) Self {
@@ -134,6 +138,50 @@ pub const Lexer = struct {
         };
     }
 
+    pub fn lexString(self: *Self) LexerError!Node.NodeType {
+        if (self.input[self.index] != '"') {
+            return error.BadString; // ERROR: Invalid string
+        }
+
+        var buf = String.init(common.gpa.allocator());
+        self.index += 1; // skip beginning quote
+
+        while (self.index < self.input.len) : (self.index += 1) {
+            switch (self.input[self.index]) {
+                '"' => {
+                    if (self.index != (self.input.len - 1)) {
+                        return error.BadString; // ERROR: trailing characters
+                    }
+
+                    return Node.NodeType{ .String = buf };
+                },
+                '\\' => {
+                    self.index += 1;
+                    if (self.index == self.input.len) {
+                        return error.BadString; // ERROR: incomplete escape sequence
+                    }
+
+                    // TODO: \xXX, \uXXXX, \UXXXXXXXX
+                    const esc: u8 = switch (self.input[self.index]) {
+                        '"' => '"',
+                        '\\' => '\\',
+                        'n' => '\n',
+                        'r' => '\r',
+                        'a' => '\x07',
+                        '0' => '\x00',
+                        't' => '\t',
+                        else => return error.BadString, // ERROR: invalid escape sequence
+                    };
+
+                    buf.append(esc) catch unreachable;
+                },
+                else => buf.append(self.input[self.index]) catch unreachable,
+            }
+        }
+
+        return error.BadString; // ERROR: unterminated string
+    }
+
     pub fn lexValue(self: *Self, vtype: u21) LexerError!Node.NodeType {
         if (vtype != 'k' and vtype != '#')
             self.index += 1;
@@ -180,7 +228,7 @@ pub const Lexer = struct {
                     continue;
                 },
                 0x09...0x0d, 0x20 => continue,
-                '$', '.', ':', '\'' => try self.lexValue(ch),
+                '"', '.', ':', '\'' => try self.lexValue(ch),
                 '[' => Node.NodeType{ .Quote = try self.lex(.Bracket) },
                 '(' => Node.NodeType{ .List = try self.lex(.Paren) },
                 ']', ')' => {

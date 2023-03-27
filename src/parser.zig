@@ -26,6 +26,7 @@ pub const Parser = struct {
         ExpectedKeyword,
         ExpectedEnumLit,
         ExpectedOptionalNumber,
+        ExpectedOptionalString,
         ExpectedItems,
         ExpectedNode,
         UnexpectedItems,
@@ -34,6 +35,7 @@ pub const Parser = struct {
         UnknownKeyword,
         UnexpectedLabelDefinition,
         InvalidAsmOp,
+        InvalidAsmFlag,
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
@@ -69,6 +71,7 @@ pub const Parser = struct {
             .Nil => .Nil,
             .Number => |n| .{ .U8 = n },
             .Codepoint => |c| .{ .Codepoint = c },
+            .String => |s| .{ .String = s },
             .EnumLit => |e| .{ .EnumLit = e },
             else => error.ExpectedValue,
         };
@@ -176,10 +179,19 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "asm")) {
                     try validateListLength(ast, 3);
-                    const asm_stack = try self.parseValue(&ast[1]);
-                    if (asm_stack != .Nil and asm_stack != .U8)
-                        return error.ExpectedOptionalNumber;
-                    const asm_stack_e = if (asm_stack == .Nil) WK_STACK else asm_stack.U8;
+
+                    const asm_flags = try self.parseValue(&ast[1]);
+                    if (asm_flags != .Nil and asm_flags != .String)
+                        return error.ExpectedOptionalString;
+
+                    var asm_stack: usize = WK_STACK;
+                    var asm_keep = false;
+                    for (asm_flags.String.items) |char| switch (char) {
+                        'k' => asm_keep = true,
+                        'r' => asm_stack = RT_STACK,
+                        else => return error.InvalidAsmFlag,
+                    };
+
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd != .EnumLit)
                         return error.ExpectedEnumLit;
@@ -187,7 +199,7 @@ pub const Parser = struct {
                         return error.InvalidAsmOp;
                     const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
                     break :b ASTNode{
-                        .node = .{ .Asm = .{ .stack = asm_stack_e, .op = asm_op } },
+                        .node = .{ .Asm = .{ .stack = asm_stack, .keep = asm_keep, .op = asm_op } },
                         .srcloc = ast[0].location,
                     };
                 } else {

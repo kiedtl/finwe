@@ -24,6 +24,8 @@ pub var gpa = std.heap.GeneralPurposeAllocator(.{
     .never_unmap = false,
 }){};
 
+pub const String = std.ArrayList(u8);
+
 //pub const ASTNodeList = LinkedList(ASTNode);
 pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
@@ -40,6 +42,7 @@ pub const Value = union(enum) {
             .Nil => .{ .U8 = 0 },
             .U8 => |v| .{ .U8 = v },
             .Codepoint => |v| .{ .U8 = v },
+            .String => @panic("Free-standing strings are unimplemented"),
             .EnumLit => |e| .{ .EnumLit = e },
         };
     }
@@ -79,6 +82,7 @@ pub const ASTNode = struct {
         Nil,
         U8: u8,
         Codepoint: u8,
+        String: String,
         EnumLit: []const u8,
 
         pub const Tag = std.meta.Tag(ASTValue);
@@ -204,6 +208,7 @@ pub const Op = union(enum) {
 
 pub const Ins = struct {
     stack: usize,
+    keep: bool = false,
     op: Op,
 
     pub const List = std.ArrayList(Ins);
