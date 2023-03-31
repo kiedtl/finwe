@@ -111,8 +111,8 @@ pub const Lexer = struct {
                             if (enum_clarifier.? == 0) {
                                 return error.InvalidEnumLiteral;
                             }
-                            const a = try self.alloc.alloc(u8, word.len - (word.len - enum_clarifier.?));
-                            const b = try self.alloc.alloc(u8, word.len - enum_clarifier.? - 1);
+                            const a = try self.alloc.alloc(u8, word.len - enum_clarifier.? - 1);
+                            const b = try self.alloc.alloc(u8, word.len - (word.len - enum_clarifier.?));
                             mem.copy(u8, a, word[enum_clarifier.? + 1 ..]);
                             mem.copy(u8, b, word[0..enum_clarifier.?]);
                             break :blk Node.NodeType{ .EnumLit = .{ .v = a, .of = b } };
@@ -171,10 +171,7 @@ pub const Lexer = struct {
         while (self.index < self.input.len) : (self.index += 1) {
             switch (self.input[self.index]) {
                 '"' => {
-                    if (self.index != (self.input.len - 1)) {
-                        return error.BadString; // ERROR: trailing characters
-                    }
-
+                    self.index += 1;
                     return Node.NodeType{ .String = buf };
                 },
                 '\\' => {
@@ -250,7 +247,8 @@ pub const Lexer = struct {
                     continue;
                 },
                 0x09...0x0d, 0x20 => continue,
-                '"', '.', ':', '\'' => try self.lexValue(ch),
+                '"' => try self.lexString(),
+                '.', ':', '\'' => try self.lexValue(ch),
                 '[' => Node.NodeType{ .Quote = try self.lex(.Bracket) },
                 '(' => Node.NodeType{ .List = try self.lex(.Paren) },
                 ']', ')' => {
@@ -353,4 +351,17 @@ test "enum literals" {
     try testing.expectEqual(activeTag(result.items[1].node), .EnumLit);
     try testing.expect(mem.eql(u8, result.items[1].node.EnumLit.v, "baz"));
     try testing.expect(mem.eql(u8, result.items[1].node.EnumLit.of.?, "bar"));
+}
+
+test "string literals" {
+    const input = "\"foo\"";
+    var lexer = Lexer.init(input, std.testing.allocator);
+    var result = try lexer.lex(.Root);
+    defer lexer.deinit();
+    defer Node.deinitMain(result, std.testing.allocator);
+
+    try testing.expectEqual(@as(usize, 1), result.items.len);
+
+    try testing.expectEqual(activeTag(result.items[0].node), .String);
+    try testing.expect(mem.eql(u8, result.items[0].node.String.items, "foo"));
 }

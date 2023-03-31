@@ -22,6 +22,7 @@ pub fn main() anyerror!void {
     defer lexer.deinit();
 
     var parser = parserm.Parser.init(gpa.allocator());
+    parser.initTypes();
     var parsed = try parser.parse(&lexed);
 
     var assembled = try codegen.generate(&parsed);

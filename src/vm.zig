@@ -5,7 +5,6 @@ const fmt = std.fmt;
 const meta = std.meta;
 const assert = std.debug.assert;
 
-const Value = @import("common.zig").Value;
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Ins = @import("common.zig").Ins;
@@ -27,10 +26,10 @@ const VMError = error{
 pub const VM = struct {
     stacks: [2]StackType,
     program: []const Ins,
-    pc: usize,
+    pc: u8,
     stopped: bool = false,
 
-    pub const StackType = StackBuffer(Value, STACK_SZ);
+    pub const StackType = StackBuffer(u8, STACK_SZ);
 
     pub fn init(program: []const Ins) VM {
         return .{
@@ -54,17 +53,17 @@ pub const VM = struct {
         switch (ins.op) {
             .Olit => |v| try self.push(ins.stack, v),
             .Osr => |f| {
-                try self.pushInt(ins.stack, self.pc + 1);
-                self.pc = f orelse (try self.pop(ins.stack, .U8)).U8;
+                try self.push(ins.stack, self.pc + 1);
+                self.pc = f orelse try self.pop(ins.stack);
                 return false;
             },
             .Oj => |j| {
-                self.pc = j orelse (try self.pop(ins.stack, .U8)).U8;
+                self.pc = j orelse try self.pop(ins.stack);
                 return false;
             },
             .Ozj => |j| {
-                const addr = j orelse (try self.pop(ins.stack, .U8)).U8;
-                if ((try self.popAny(ins.stack)).asBool()) {
+                const addr = j orelse try self.pop(ins.stack);
+                if ((try self.pop(ins.stack)) != 0) {
                     self.pc = addr;
                     return false;
                 }
@@ -72,7 +71,7 @@ pub const VM = struct {
             .Ohalt => self.stopped = true,
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
             .Opick => |i| {
-                const ind = i orelse (try self.pop(ins.stack, .U8)).U8;
+                const ind = i orelse try self.pop(ins.stack);
                 const len = self.stacks[ins.stack].len;
                 if (ind >= len) {
                     return error.StackUnderflow;
@@ -80,7 +79,7 @@ pub const VM = struct {
                 try self.push(ins.stack, self.stacks[ins.stack].data[len - ind - 1]);
             },
             .Oroll => |i| {
-                const ind = i orelse (try self.pop(ins.stack, .U8)).U8;
+                const ind = i orelse try self.pop(ins.stack);
                 const len = self.stacks[ins.stack].len;
                 if (ind >= len) {
                     return error.StackUnderflow;
@@ -89,88 +88,76 @@ pub const VM = struct {
                 try self.push(ins.stack, item);
             },
             .Odrop => |i| {
-                const count = i orelse (try self.pop(ins.stack, .U8)).U8;
+                const count = i orelse try self.pop(ins.stack);
                 const len = self.stacks[ins.stack].len;
                 self.stacks[ins.stack].resizeTo(len - count);
             },
             .Oeq => {
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, if (a == b) @as(u8, 1) else 0);
+                const b = try self.pop(ins.stack);
+                const a = try self.pop(ins.stack);
+                try self.push(ins.stack, if (a == b) @as(u8, 1) else 0);
             },
             .Oneq => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, if (a != b) @as(u8, 1) else 0);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, if (a != b) @as(u8, 1) else 0);
             },
             .Olt => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, if (a < b) @as(u8, 1) else 0);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, if (a < b) @as(u8, 1) else 0);
             },
             .Ogt => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, if (a > b) @as(u8, 1) else 0);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, if (a > b) @as(u8, 1) else 0);
             },
             .Odmod => {
-                const dvs = (try self.pop(ins.stack, .U8)).U8;
-                const dvd = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, dvd % dvs);
-                try self.pushInt(ins.stack, dvd / dvs);
+                const dvs = try self.pop(ins.stack);
+                const dvd = try self.pop(ins.stack);
+                try self.push(ins.stack, dvd % dvs);
+                try self.push(ins.stack, dvd / dvs);
             },
             .Omul => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, a * b);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, a * b);
             },
             .Oadd => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, a + b);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, a + b);
             },
             .Osub => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, b - a);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, b - a);
             },
             .Oeor => {
-                const a = (try self.pop(ins.stack, .U8)).U8;
-                const b = (try self.pop(ins.stack, .U8)).U8;
-                try self.pushInt(ins.stack, a ^ b);
+                const a = try self.pop(ins.stack);
+                const b = try self.pop(ins.stack);
+                try self.push(ins.stack, a ^ b);
             },
             .Ostash => {
                 const src = ins.stack;
                 const dst = (ins.stack + 1) % 2;
-                const v = try self.popAny(src);
+                const v = try self.pop(src);
                 try self.push(dst, v);
             },
         }
         return true;
     }
 
-    pub fn pop(self: *VM, stk: usize, expect: Value.Tag) VMError!Value {
-        const v = try self.popAny(stk);
-        if (expect != v) {
-            return error.InvalidType;
-        }
-        return v;
-    }
-
-    pub fn popAny(self: *VM, stk: usize) VMError!Value {
+    pub fn pop(self: *VM, stk: usize) VMError!u8 {
         if (self.stacks[stk].len == 0) {
             return error.StackUnderflow;
         }
         return self.stacks[stk].pop() catch unreachable;
     }
 
-    pub fn push(self: *VM, stk: usize, value: Value) VMError!void {
+    pub fn push(self: *VM, stk: usize, value: u8) VMError!void {
         // XXX: not bothering matching on error since it can only return .NoSpaceLeft
         self.stacks[stk].append(value) catch return error.StackOverflow;
-    }
-
-    pub fn pushInt(self: *VM, stk: usize, value: anytype) VMError!void {
-        try self.push(stk, .{ .U8 = @intCast(u8, value) });
     }
 };
 

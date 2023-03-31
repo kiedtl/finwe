@@ -3,6 +3,7 @@ const mem = std.mem;
 const meta = std.meta;
 const activeTag = std.meta.activeTag;
 
+const common = @import("common.zig");
 const lexer = @import("lexer.zig");
 const utils = @import("utils.zig");
 
@@ -36,6 +37,10 @@ pub const Parser = struct {
         UnexpectedLabelDefinition,
         InvalidAsmOp,
         InvalidAsmFlag,
+        MissingEnumType,
+        NotAnEnum,
+        InvalidEnumField,
+        NoSuchType,
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
@@ -44,10 +49,15 @@ pub const Parser = struct {
                 .ast = ASTNodeList.init(alloc),
                 .defs = ASTNodePtrList.init(alloc),
                 .macs = ASTNodePtrList.init(alloc),
+                .types = common.Type.AList.init(alloc),
                 //.defs = ASTNodeList.init(alloc),
             },
             .alloc = alloc,
         };
+    }
+
+    pub fn initTypes(self: *Parser) void {
+        self.program.addNativeType(common.Op.Tag, "Op");
     }
 
     fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
@@ -72,7 +82,7 @@ pub const Parser = struct {
             .Number => |n| .{ .U8 = n },
             .Codepoint => |c| .{ .Codepoint = c },
             .String => |s| .{ .String = s },
-            .EnumLit => |e| .{ .EnumLit = e },
+            .EnumLit => |e| .{ .AmbigEnumLit = e },
             else => error.ExpectedValue,
         };
     }
@@ -186,17 +196,22 @@ pub const Parser = struct {
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
-                    for (asm_flags.String.items) |char| switch (char) {
-                        'k' => asm_keep = true,
-                        'r' => asm_stack = RT_STACK,
-                        else => return error.InvalidAsmFlag,
-                    };
+                    if (asm_flags == .String) {
+                        for (asm_flags.String.items) |char| switch (char) {
+                            'k' => asm_keep = true,
+                            'r' => asm_stack = RT_STACK,
+                            else => return error.InvalidAsmFlag,
+                        };
+                    }
 
                     const asm_op_kwd = try self.parseValue(&ast[2]);
-                    if (asm_op_kwd != .EnumLit)
+                    if (asm_op_kwd != .AmbigEnumLit)
                         return error.ExpectedEnumLit;
-                    const asm_op_e = meta.stringToEnum(Op.Tag, asm_op_kwd.EnumLit) orelse
-                        return error.InvalidAsmOp;
+                    const asm_op_lowered = try self.lowerEnumValue(asm_op_kwd.AmbigEnumLit);
+                    const asm_op_e = meta.stringToEnum(
+                        Op.Tag,
+                        self.program.types.items[asm_op_lowered.type].def.Enum.fields.items[asm_op_lowered.field].name,
+                    ) orelse return error.InvalidAsmOp;
                     const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
                     break :b ASTNode{
                         .node = .{ .Asm = .{ .stack = asm_stack, .keep = asm_keep, .op = asm_op } },
@@ -220,6 +235,57 @@ pub const Parser = struct {
             } else if (node.node == .Mac) {
                 try self.program.macs.append(node);
             };
+    }
+
+    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.EnumLit {
+        if (lit.of == null)
+            return error.MissingEnumType;
+        for (self.program.types.items) |t, i| {
+            if (mem.eql(u8, t.name, lit.of.?)) {
+                if (t.def != .Enum)
+                    return error.NotAnEnum;
+                for (t.def.Enum.fields.items) |field, field_i| {
+                    if (mem.eql(u8, field.name, lit.v)) {
+                        return ASTNode.EnumLit{ .type = i, .field = field_i };
+                    }
+                }
+                return error.InvalidEnumField;
+            }
+        }
+        return error.NoSuchType;
+    }
+
+    // Earlier we couldn't know what type an Enum literal belonged to. At this
+    // stage we find and set that information.
+    pub fn lowerEnumLiterals(self: *Parser) ParserError!void {
+        const _S = struct {
+            pub fn walkNodes(parser: *Parser, nodes: []ASTNode) ParserError!void {
+                for (nodes) |*node|
+                    try walkNode(parser, node);
+            }
+
+            pub fn walkNode(parser: *Parser, node: *ASTNode) ParserError!void {
+                switch (node.node) {
+                    .Value => |v| switch (v) {
+                        .AmbigEnumLit => |enumlit| node.node = .{ .Value = .{ .EnumLit = try parser.lowerEnumValue(enumlit) } },
+                        else => {},
+                    },
+                    .Decl => |d| try walkNodes(parser, d.body.items),
+                    .Quote => |d| try walkNodes(parser, d.body.items),
+                    .Loop => |d| try walkNodes(parser, d.body.items),
+                    .Cond => |cond| {
+                        for (cond.branches.items) |branch| {
+                            try walkNodes(parser, branch.cond.items);
+                            try walkNodes(parser, branch.body.items);
+                        }
+                        if (cond.else_branch) |branch|
+                            try walkNodes(parser, branch.items);
+                    },
+                    else => {},
+                }
+            }
+        };
+        try _S.walkNodes(self, self.program.ast.items);
     }
 
     // Setup the entry function
@@ -252,6 +318,7 @@ pub const Parser = struct {
 
         try self.setupMainFunc();
         try self.extractDefs();
+        try self.lowerEnumLiterals();
 
         return self.program;
     }

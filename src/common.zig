@@ -3,6 +3,9 @@ const mem = std.mem;
 const meta = std.meta;
 const fmt = std.fmt;
 
+const lexer = @import("lexer.zig");
+const common = @This();
+
 const LinkedList = @import("list.zig").LinkedList;
 
 // ----------------------------------------------------------------------------
@@ -30,36 +33,25 @@ pub const String = std.ArrayList(u8);
 pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 
-pub const Value = union(enum) {
-    U8: u8,
-    EnumLit: []const u8,
+// pub const Value = union(enum) {
+//     U8: u8,
+//     EnumLit: []const u8,
 
-    pub const Tag = std.meta.Tag(Value);
+//     pub const Tag = std.meta.Tag(Value);
 
-    pub fn from(astval: ASTNode.ASTValue) Value {
-        return switch (astval) {
-            .T => .{ .U8 = 1 },
-            .Nil => .{ .U8 = 0 },
-            .U8 => |v| .{ .U8 = v },
-            .Codepoint => |v| .{ .U8 = v },
-            .String => @panic("Free-standing strings are unimplemented"),
-            .EnumLit => |e| .{ .EnumLit = e },
-        };
-    }
-
-    pub fn asBool(self: Value) bool {
-        return switch (self) {
-            .U8 => |n| n != 0,
-            .EnumLit => true,
-        };
-    }
-};
+//     pub fn asBool(self: Value) bool {
+//         return switch (self) {
+//             .U8 => |n| n != 0,
+//             .EnumLit => true,
+//         };
+//     }
+// };
 
 pub const ASTNode = struct {
     __prev: ?*ASTNode = null,
     __next: ?*ASTNode = null,
 
-    node: Type,
+    node: ASTNode.Type,
     srcloc: usize,
     romloc: usize = 0,
 
@@ -83,9 +75,22 @@ pub const ASTNode = struct {
         U8: u8,
         Codepoint: u8,
         String: String,
-        EnumLit: []const u8,
+        AmbigEnumLit: lexer.Node.EnumLit,
+        EnumLit: EnumLit,
 
         pub const Tag = std.meta.Tag(ASTValue);
+
+        pub fn toU8(self: ASTValue, program: *Program) u8 {
+            return switch (self) {
+                .T => 1,
+                .Nil => 0,
+                .U8 => |v| v,
+                .Codepoint => |v| v,
+                .String => @panic("Free-standing strings are unimplemented"),
+                .EnumLit => |e| program.types.items[e.type].def.Enum.fields.items[e.field].value_a, // TODO: value_b
+                .AmbigEnumLit => unreachable,
+            };
+        }
     };
 
     pub const Cond = struct {
@@ -122,24 +127,98 @@ pub const ASTNode = struct {
     pub const Quote = struct {
         body: ASTNodeList,
     };
+
+    pub const EnumLit = struct {
+        type: usize, // index into Program.types
+        field: usize,
+    };
 };
 
 pub const Program = struct {
     ast: ASTNodeList,
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
+    types: Type.AList,
+
+    // scopes: Scope.AList,
+    // pub const Scope = struct {
+    //     defs: ASTNodePtrList,
+    //     macs: ASTNodePtrList,
+    //     pub const AList = std.ArrayList(Scope);
+    // };
+
+    pub fn addNativeType(self: *Program, comptime T: type, name: []const u8) void {
+        switch (@typeInfo(T)) {
+            .Enum => |info| {
+                if (info.tag_type != u16 and info.tag_type != u8)
+                    @compileError("Enum type must be either u8 or u16");
+                var t = Type{ .node = null, .name = name, .def = .{ .Enum = .{ .fields = std.ArrayList(Type.EnumField).init(gpa.allocator()) } } };
+                inline for (info.fields) |field| {
+                    const va: u8 = if (info.tag_type == u16) @intCast(u16, field.value) & 0xFF else @intCast(u8, field.value);
+                    const vb: ?u8 = if (info.tag_type == u16) (@intCast(u16, field.value) >> 4) & 0xFF else null;
+                    t.def.Enum.fields.append(.{ .name = field.name, .value_a = va, .value_b = vb }) catch unreachable;
+                }
+                self.types.append(t) catch unreachable;
+            },
+            else => @compileError("TODO"),
+        }
+    }
 };
 
-pub const Op = union(enum) {
-    Olit: Value,
-    Osr: ?usize,
-    Oj: ?usize,
-    Ozj: ?usize,
+pub const Type = struct {
+    node: ?usize, // null means native (i.e. compiler internal)
+    name: []const u8,
+    def: Def,
+
+    pub const AList = std.ArrayList(Type);
+
+    pub const Def = union(enum) {
+        Enum: Enum,
+    };
+
+    pub const Enum = struct {
+        fields: std.ArrayList(EnumField),
+    };
+
+    pub const EnumField = struct {
+        name: []const u8,
+        value_a: u8,
+        value_b: ?u8,
+    };
+};
+
+pub const OpTag = enum(u16) {
+    Olit,
+    Osr,
+    Oj,
+    Ozj,
+    Ohalt,
+    Onac,
+    Opick,
+    Oroll,
+    Odrop,
+    Oeq,
+    Oneq,
+    Olt,
+    Ogt,
+    Oeor,
+    Odmod,
+    Omul,
+    Oadd,
+    Osub,
+    Ostash,
+};
+
+pub const Op = union(OpTag) {
+    Olit: u8,
+    Osr: ?u8,
+    Oj: ?u8,
+    Ozj: ?u8,
     Ohalt,
     Onac: []const u8,
-    Opick: ?usize,
-    Oroll: ?usize,
-    Odrop: ?usize,
+    Opick: ?u8,
+    Oroll: ?u8,
+    Odrop: ?u8,
     Oeq,
     Oneq,
     Olt,
