@@ -188,6 +188,7 @@ pub const Type = struct {
 };
 
 pub const OpTag = enum(u16) {
+    Oraw,
     Olit,
     Osr,
     Oj,
@@ -210,7 +211,8 @@ pub const OpTag = enum(u16) {
 };
 
 pub const Op = union(OpTag) {
-    Olit: u8,
+    Oraw: u8,
+    Olit,
     Osr: ?u8,
     Oj: ?u8,
     Ozj: ?u8,
@@ -270,7 +272,7 @@ pub const Op = union(OpTag) {
         }
 
         switch (value) {
-            .Olit => |l| try fmt.format(writer, "{}", .{l}),
+            .Oraw => |l| try fmt.format(writer, "{}", .{l}),
             .Oj => |j| try fmt.format(writer, "{}", .{j}),
             .Ozj => |j| try fmt.format(writer, "{}", .{j}),
             .Osr => |j| try fmt.format(writer, "{}", .{j}),

@@ -11,6 +11,7 @@ const ASTNodeList = @import("common.zig").ASTNodeList;
 const Program = @import("common.zig").Program;
 const Ins = @import("common.zig").Ins;
 const Op = @import("common.zig").Op;
+const OpTag = @import("common.zig").OpTag;
 
 const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
@@ -80,10 +81,15 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
     }
 }
 
+fn emitIMM(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: OpTag, imm: u8) CodegenError!void {
+    try emit(buf, node, stack, op);
+    try emit(buf, node, stack, .{ .Oraw = imm });
+}
+
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .None => {},
-        .Value => |v| try emit(buf, node, WK_STACK, .{ .Olit = v.toU8(program) }),
+        .Value => |v| try emitIMM(buf, node, WK_STACK, .Olit, v.toU8(program)),
         .Mac => {},
         .Decl => |d| {
             node.romloc = buf.items.len;
@@ -99,7 +105,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try genNode(program, buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
             const quote_end_addr = buf.items.len;
-            try emit(buf, node, WK_STACK, .{ .Olit = @intCast(u8, quote_begin_addr) });
+            try emit(buf, node, WK_STACK, .Olit, quote_begin_addr);
             buf.items[quote_jump_addr].op.Oj = @intCast(u8, quote_end_addr); // Replace dummy value // TODO 16
         },
         .Loop => |l| {
@@ -111,7 +117,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emit(buf, node, WK_STACK, .{ .Opick = 0 }); // DUP
                     for (u.cond.items) |*bodynode|
                         try genNode(program, buf, bodynode, ual);
-                    try emit(buf, node, WK_STACK, .{ .Olit = 0 });
+                    try emit(buf, node, WK_STACK, .Olit, 0);
                     try emit(buf, node, WK_STACK, .Oeq);
                     try emit(buf, node, WK_STACK, .{ .Ozj = @intCast(u8, loop_begin) }); // TODO 16
                 },
