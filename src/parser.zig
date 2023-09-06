@@ -196,10 +196,12 @@ pub const Parser = struct {
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
+                    var asm_short = false;
                     if (asm_flags == .String) {
                         for (asm_flags.String.items) |char| switch (char) {
                             'k' => asm_keep = true,
                             'r' => asm_stack = RT_STACK,
+                            's' => asm_short = true,
                             else => return error.InvalidAsmFlag,
                         };
                     }
@@ -214,7 +216,7 @@ pub const Parser = struct {
                     ) orelse return error.InvalidAsmOp;
                     const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
                     break :b ASTNode{
-                        .node = .{ .Asm = .{ .stack = asm_stack, .keep = asm_keep, .op = asm_op } },
+                        .node = .{ .Asm = .{ .stack = asm_stack, .short = asm_short, .keep = asm_keep, .op = asm_op } },
                         .srcloc = ast[0].location,
                     };
                 } else {

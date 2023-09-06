@@ -216,7 +216,7 @@ pub const Op = union(OpTag) {
     Oraw: u8,
     Olit,
     Osr: ?u8,
-    Oj: ?u8,
+    Oj: ?u16,
     Ojcn,
     Ozj: ?u8,
     Ohalt,
@@ -296,6 +296,7 @@ pub const Op = union(OpTag) {
 pub const Ins = struct {
     stack: usize,
     keep: bool = false,
+    short: bool = false,
     op: Op,
 
     pub const List = std.ArrayList(Ins);

@@ -55,14 +55,14 @@ const UA = struct {
 //
 
 // "emit returning index"
-fn emitRI(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!usize {
+fn emitRI(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) CodegenError!usize {
     _ = node;
-    try buf.append(Ins{ .stack = stack, .op = op });
+    try buf.append(Ins{ .stack = stack, .op = op, .keep = k, .short = s });
     return buf.items.len - 1;
 }
 
-fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!void {
-    _ = try emitRI(buf, node, stack, op);
+fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) CodegenError!void {
+    _ = try emitRI(buf, node, stack, k, s, op);
 }
 
 fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
@@ -72,59 +72,70 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
         .node = node,
     });
     switch (node.node) {
-        .Call => try emit(buf, null, 0, .{ .Oj = null }),
+        .Call => try emit(buf, null, 0, false, true, .{ .Oj = null }),
         else => unreachable,
     }
 }
 
-fn emitIMM(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: OpTag, imm: u8) CodegenError!void {
-    try emit(buf, node, stack, Op.fromTag(op) catch unreachable);
-    try emit(buf, node, stack, .{ .Oraw = imm });
+fn emitIMM(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u8) CodegenError!void {
+    try emit(buf, node, stack, k, false, Op.fromTag(op) catch unreachable);
+    try emit(buf, node, stack, k, false, .{ .Oraw = imm });
+}
+
+fn emitIMM16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u16) CodegenError!void {
+    try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
+    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(u8, imm >> 8) });
+    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(u8, imm & 0xFF) });
+}
+
+fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u16) CodegenError!void {
+    try emitIMM16(buf, node, stack, false, .Olit, imm);
+    try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
 }
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .None => {},
-        .Value => |v| try emitIMM(buf, node, WK_STACK, .Olit, v.toU8(program)),
+        .Value => |v| try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program)),
         .Mac => {},
         .Decl => |d| {
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
                 try genNode(program, buf, bodynode, ual);
-            try emit(buf, node, RT_STACK, .{ .Oj = null });
+            try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
         },
         .Quote => |q| {
             const quote_jump_addr = buf.items.len;
-            try emit(buf, node, WK_STACK, .{ .Oj = 0 }); // Dummy value, replaced later
-            const quote_begin_addr = @intCast(u8, buf.items.len); // TODO 16
+            try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
+            const quote_begin_addr = @intCast(u16, buf.items.len);
             for (q.body.items) |*bodynode|
                 try genNode(program, buf, bodynode, ual);
-            try emit(buf, node, RT_STACK, .{ .Oj = null });
-            const quote_end_addr = @intCast(u8, buf.items.len); // TODO 16
-            try emitIMM(buf, node, WK_STACK, .Olit, quote_begin_addr);
+            try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
+            const quote_end_addr = @intCast(u16, buf.items.len); // TODO 16
+            try emitARG16(buf, node, WK_STACK, false, .Olit, quote_begin_addr);
             buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
-            const loop_begin = buf.items.len;
+            const loop_begin = @intCast(u16, buf.items.len);
             for (l.body.items) |*bodynode|
                 try genNode(program, buf, bodynode, ual);
             switch (l.loop) {
                 .Until => |u| {
-                    try emit(buf, node, WK_STACK, .Odup);
+                    try emit(buf, node, WK_STACK, false, false, .Odup);
                     for (u.cond.items) |*bodynode|
                         try genNode(program, buf, bodynode, ual);
-                    try emitIMM(buf, node, WK_STACK, .Olit, 0);
-                    try emit(buf, node, WK_STACK, .Oeq);
-                    try emit(buf, node, WK_STACK, .{ .Ozj = @intCast(u8, loop_begin) }); // TODO 16
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                    try emit(buf, node, WK_STACK, false, false, .Oeq);
+                    try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
                 },
             }
         },
         .Asm => |a| {
-            try emit(buf, node, a.stack, a.op);
+            try emit(buf, node, a.stack, a.keep, a.short, a.op);
         },
         .Call => |f| {
             if (vm.findBuiltin(f)) |_| {
-                try emit(buf, node, WK_STACK, .{ .Onac = f });
+                try emit(buf, node, WK_STACK, false, false, .{ .Onac = f });
             } else if (for (program.macs.items) |mac| {
                 if (mem.eql(u8, mac.node.Mac.name, f))
                     break mac;
@@ -142,11 +153,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             for (cond.branches.items) |branch| {
                 //try emitDUP(buf, WK_STACK);
                 try genNodeList(program, buf, branch.cond.items, ual);
-                try emitIMM(buf, node, WK_STACK, .Olit, 0);
-                try emit(buf, node, WK_STACK, .Oeq);
-                const body_jmp = try emitRI(buf, node, WK_STACK, .{ .Ozj = 0 });
+                try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                try emit(buf, node, WK_STACK, false, false, .Oeq);
+                const body_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Ozj = 0 });
                 try genNodeList(program, buf, branch.body.items, ual);
-                const end_jmp = try emitRI(buf, node, WK_STACK, .{ .Oj = 0 });
+                const end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oj = 0 });
                 try end_jumps.append(end_jmp);
                 buf.items[body_jmp].op.Ozj = @intCast(u8, buf.items.len); // TODO 16
             }

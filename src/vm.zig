@@ -27,7 +27,7 @@ const VMError = error{
 pub const VM = struct {
     stacks: [2]StackType,
     program: []const Ins,
-    pc: u8,
+    pc: u16,
     stopped: bool = false,
 
     pub const StackType = StackBuffer(u8, STACK_SZ);
@@ -58,13 +58,18 @@ pub const VM = struct {
     }
 
     pub fn executeIns(self: *VM, ins: Ins) VMError!bool {
+        if (ins.keep)
+            @panic("keep unimplemented");
+        if (ins.short)
+            @panic("short unimplemented");
         //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
             .Odeo => @panic("unimplemented"),
             .Oraw => unreachable,
             .Olit => try self.push(ins.stack, try self.imm()),
             .Osr => |f| {
-                try self.push(ins.stack, self.pc + 1);
+                // TODO 16
+                //try self.push(ins.stack, self.pc + 1);
                 self.pc = f orelse try self.pop(ins.stack);
                 return false;
             },
@@ -73,7 +78,9 @@ pub const VM = struct {
                 return false;
             },
             .Ojcn => {
-                self.pc = @bitCast(u8, @bitCast(i8, self.pc) + @bitCast(i8, try self.pop(ins.stack)));
+                // TODO: actually make it conditional
+                self.pc = @bitCast(u16, @bitCast(i16, self.pc) +
+                    @bitCast(i16, @intCast(u16, try self.pop(ins.stack))));
                 return false;
             },
             .Ozj => |j| {
