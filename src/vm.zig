@@ -18,6 +18,7 @@ const STACK_SZ = @import("common.zig").STACK_SZ;
 const gpa = &@import("common.zig").gpa;
 
 const VMError = error{
+    NeedImmediate,
     StackUnderflow,
     StackOverflow,
     InvalidType,
@@ -48,10 +49,20 @@ pub const VM = struct {
         }
     }
 
+    pub fn imm(self: *VM) VMError!u8 {
+        self.pc += 1;
+        return switch (self.program[self.pc].op) {
+            .Oraw => |v| v,
+            else => error.NeedImmediate,
+        };
+    }
+
     pub fn executeIns(self: *VM, ins: Ins) VMError!bool {
         //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
-            .Olit => |v| try self.push(ins.stack, v),
+            .Odeo => @panic("unimplemented"),
+            .Oraw => unreachable,
+            .Olit => try self.push(ins.stack, try self.imm()),
             .Osr => |f| {
                 try self.push(ins.stack, self.pc + 1);
                 self.pc = f orelse try self.pop(ins.stack);
@@ -59,6 +70,10 @@ pub const VM = struct {
             },
             .Oj => |j| {
                 self.pc = j orelse try self.pop(ins.stack);
+                return false;
+            },
+            .Ojcn => {
+                self.pc = @bitCast(u8, @bitCast(i8, self.pc) + @bitCast(i8, try self.pop(ins.stack)));
                 return false;
             },
             .Ozj => |j| {
@@ -70,13 +85,17 @@ pub const VM = struct {
             },
             .Ohalt => self.stopped = true,
             .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
-            .Opick => |i| {
-                const ind = i orelse try self.pop(ins.stack);
+            // .Opick => |i| {
+            //     const ind = i orelse try self.pop(ins.stack);
+            //     const len = self.stacks[ins.stack].len;
+            //     if (ind >= len) {
+            //         return error.StackUnderflow;
+            //     }
+            //     try self.push(ins.stack, self.stacks[ins.stack].data[len - ind - 1]);
+            // },
+            .Odup => {
                 const len = self.stacks[ins.stack].len;
-                if (ind >= len) {
-                    return error.StackUnderflow;
-                }
-                try self.push(ins.stack, self.stacks[ins.stack].data[len - ind - 1]);
+                try self.push(ins.stack, self.stacks[ins.stack].data[len - 1]);
             },
             .Oroll => |i| {
                 const ind = i orelse try self.pop(ins.stack);
@@ -178,7 +197,7 @@ pub const BUILTINS = [_]Builtin{
         .func = struct {
             pub fn f(vm: *VM, stk: usize) VMError!void {
                 for (vm.stacks[stk].constSlice()) |item, i| {
-                    std.log.info("{}\t{}", .{ i, item });
+                    std.log.info("{}:\t{}", .{ i, item });
                 }
             }
         }.f,

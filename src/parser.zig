@@ -292,6 +292,19 @@ pub const Parser = struct {
     // TODO: this should be in codegen
     //
     pub fn setupMainFunc(self: *Parser) ParserError!void {
+        // TODO: remove this once 16 is added
+        // TODO 16
+        const is_only_main = for (self.program.ast.items) |ast_item| {
+            if (ast_item.node == .Decl or ast_item.node == .Mac) break false;
+        } else true;
+
+        if (is_only_main) {
+            try self.program.ast.append(ASTNode{ .node = .{
+                .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
+            }, .srcloc = 0 });
+            return;
+        }
+
         var body = ASTNodeList.init(self.alloc);
         for (self.program.ast.items) |ast_item, i| {
             if (ast_item.node != .Decl and ast_item.node != .Mac) {
@@ -302,7 +315,6 @@ pub const Parser = struct {
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = 0 });
-
         try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = "_Start" }, .srcloc = 0 });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },

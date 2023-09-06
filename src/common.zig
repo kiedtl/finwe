@@ -192,10 +192,11 @@ pub const OpTag = enum(u16) {
     Olit,
     Osr,
     Oj,
+    Ojcn,
     Ozj,
     Ohalt,
     Onac,
-    Opick,
+    Odup,
     Oroll,
     Odrop,
     Oeq,
@@ -208,6 +209,7 @@ pub const OpTag = enum(u16) {
     Oadd,
     Osub,
     Ostash,
+    Odeo,
 };
 
 pub const Op = union(OpTag) {
@@ -215,10 +217,11 @@ pub const Op = union(OpTag) {
     Olit,
     Osr: ?u8,
     Oj: ?u8,
+    Ojcn,
     Ozj: ?u8,
     Ohalt,
     Onac: []const u8,
-    Opick: ?u8,
+    Odup,
     Oroll: ?u8,
     Odrop: ?u8,
     Oeq,
@@ -231,17 +234,20 @@ pub const Op = union(OpTag) {
     Oadd,
     Osub,
     Ostash,
+    Odeo,
 
     pub const Tag = meta.Tag(Op);
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
-            .Onac, .Olit => error.NeedsArg,
+            .Oraw, .Onac => error.NeedsArg,
+            .Olit => .Olit,
             .Osr => .{ .Osr = null },
             .Oj => .{ .Oj = null },
+            .Ojcn => .Ojcn,
             .Ozj => .{ .Ozj = null },
             .Ohalt => .Ohalt,
-            .Opick => .{ .Opick = null },
+            .Odup => .Odup,
             .Oroll => .{ .Oroll = null },
             .Odrop => .{ .Odrop = null },
             .Oeq => .Oeq,
@@ -254,6 +260,7 @@ pub const Op = union(OpTag) {
             .Oadd => .Oadd,
             .Osub => .Osub,
             .Ostash => .Ostash,
+            .Odeo => .Odeo,
         };
     }
 
@@ -277,7 +284,6 @@ pub const Op = union(OpTag) {
             .Ozj => |j| try fmt.format(writer, "{}", .{j}),
             .Osr => |j| try fmt.format(writer, "{}", .{j}),
             .Onac => |n| try fmt.format(writer, "'{s}'", .{n}),
-            .Opick => |i| try fmt.format(writer, "{}", .{i}),
             .Oroll => |i| try fmt.format(writer, "{}", .{i}),
             .Omul => |a| try fmt.format(writer, "{}", .{a}),
             .Oadd => |a| try fmt.format(writer, "{}", .{a}),

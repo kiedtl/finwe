@@ -12,6 +12,7 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("zf", "src/main.zig");
+    exe.addPackagePath("clap", "third_party/zig-clap/clap.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();

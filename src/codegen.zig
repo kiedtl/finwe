@@ -65,10 +65,6 @@ fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: Op) CodegenError!void
     _ = try emitRI(buf, node, stack, op);
 }
 
-fn emitDUP(buf: *Ins.List, stack: usize) CodegenError!void {
-    try emit(buf, null, stack, .{ .Opick = 0 });
-}
-
 fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
     try ual.append(.{
         .loc = buf.items.len,
@@ -82,7 +78,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
 }
 
 fn emitIMM(buf: *Ins.List, node: ?*ASTNode, stack: usize, op: OpTag, imm: u8) CodegenError!void {
-    try emit(buf, node, stack, op);
+    try emit(buf, node, stack, Op.fromTag(op) catch unreachable);
     try emit(buf, node, stack, .{ .Oraw = imm });
 }
 
@@ -100,13 +96,13 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Quote => |q| {
             const quote_jump_addr = buf.items.len;
             try emit(buf, node, WK_STACK, .{ .Oj = 0 }); // Dummy value, replaced later
-            const quote_begin_addr = buf.items.len;
+            const quote_begin_addr = @intCast(u8, buf.items.len); // TODO 16
             for (q.body.items) |*bodynode|
                 try genNode(program, buf, bodynode, ual);
             try emit(buf, node, RT_STACK, .{ .Oj = null });
-            const quote_end_addr = buf.items.len;
-            try emit(buf, node, WK_STACK, .Olit, quote_begin_addr);
-            buf.items[quote_jump_addr].op.Oj = @intCast(u8, quote_end_addr); // Replace dummy value // TODO 16
+            const quote_end_addr = @intCast(u8, buf.items.len); // TODO 16
+            try emitIMM(buf, node, WK_STACK, .Olit, quote_begin_addr);
+            buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
             const loop_begin = buf.items.len;
@@ -114,10 +110,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try genNode(program, buf, bodynode, ual);
             switch (l.loop) {
                 .Until => |u| {
-                    try emit(buf, node, WK_STACK, .{ .Opick = 0 }); // DUP
+                    try emit(buf, node, WK_STACK, .Odup);
                     for (u.cond.items) |*bodynode|
                         try genNode(program, buf, bodynode, ual);
-                    try emit(buf, node, WK_STACK, .Olit, 0);
+                    try emitIMM(buf, node, WK_STACK, .Olit, 0);
                     try emit(buf, node, WK_STACK, .Oeq);
                     try emit(buf, node, WK_STACK, .{ .Ozj = @intCast(u8, loop_begin) }); // TODO 16
                 },
@@ -146,7 +142,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             for (cond.branches.items) |branch| {
                 //try emitDUP(buf, WK_STACK);
                 try genNodeList(program, buf, branch.cond.items, ual);
-                try emit(buf, node, WK_STACK, .{ .Olit = 0 });
+                try emitIMM(buf, node, WK_STACK, .Olit, 0);
                 try emit(buf, node, WK_STACK, .Oeq);
                 const body_jmp = try emitRI(buf, node, WK_STACK, .{ .Ozj = 0 });
                 try genNodeList(program, buf, branch.body.items, ual);
