@@ -13,7 +13,9 @@ pub fn spitout(program: []const Ins) !void {
             .Odeo => 0x17,
             .Olit => 0x80,
             .Odup => 0x06,
+            .Ojmp => 0x0c,
             .Ojcn => 0x0d,
+            .Ojsr => 0x0e,
             .Ohalt => 0x0,
             else => @panic("unimplemented"),
         };

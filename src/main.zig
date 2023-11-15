@@ -6,7 +6,7 @@ const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
 const vmm = @import("vm.zig");
 const codegen = @import("codegen.zig");
-const spitterouter = @import("spitterouter.zig");
+const emitter = @import("emitter.zig");
 
 const gpa = &@import("common.zig").gpa;
 
@@ -53,7 +53,7 @@ pub fn main() anyerror!void {
         std.log.info("--------------------------------------------------", .{});
 
         if (args.flag("--spitout")) {
-            try spitterouter.spitout(assembled.items);
+            try emitter.spitout(assembled.items);
         } else {
             var vm = vmm.VM.init(assembled.items);
             try vm.execute();

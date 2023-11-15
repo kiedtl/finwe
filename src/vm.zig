@@ -64,7 +64,6 @@ pub const VM = struct {
             @panic("short unimplemented");
         //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
         switch (ins.op) {
-            .Odeo => @panic("unimplemented"),
             .Oraw => unreachable,
             .Olit => try self.push(ins.stack, try self.imm()),
             .Osr => |f| {
@@ -73,10 +72,10 @@ pub const VM = struct {
                 self.pc = f orelse try self.pop(ins.stack);
                 return false;
             },
-            .Oj => |j| {
-                self.pc = j orelse try self.pop(ins.stack);
-                return false;
-            },
+            // .Oj => |j| {
+            //     self.pc = j orelse try self.pop(ins.stack);
+            //     return false;
+            // },
             .Ojcn => {
                 // TODO: actually make it conditional
                 self.pc = @bitCast(u16, @bitCast(i16, self.pc) +
@@ -170,6 +169,7 @@ pub const VM = struct {
                 const v = try self.pop(src);
                 try self.push(dst, v);
             },
+            else => @panic("unimplemented"),
         }
         return true;
     }

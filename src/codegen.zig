@@ -34,12 +34,6 @@ const CodegenError = error{
 // (they were extracted earlier), we don't know where they'll be in the ROM
 // until *after* the codegen process.
 //
-// The UAType determines how the ual-resolver should insert the address:
-//      - Data:      insert as a raw byte.
-//      - Call:      insert and mask with 0x2000.
-//      - Jump:      insert and mask with 0x1000.
-//      - IndexLoad: insert and mask with 0xA000.
-//
 const UA = struct {
     loc: usize,
     ident: []const u8,
@@ -66,13 +60,14 @@ fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op)
 }
 
 fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
+    try emitIMM16(buf, null, 0, false, .Olit, 0);
     try ual.append(.{
-        .loc = buf.items.len,
+        .loc = buf.items.len - 2,
         .ident = ident,
         .node = node,
     });
     switch (node.node) {
-        .Call => try emit(buf, null, 0, false, true, .{ .Oj = null }),
+        .Call => try emit(buf, null, 0, false, true, .Ojsr),
         else => unreachable,
     }
 }
@@ -102,18 +97,22 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             node.romloc = buf.items.len;
             for (d.body.items) |*bodynode|
                 try genNode(program, buf, bodynode, ual);
-            try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
+            try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
-        .Quote => |q| {
-            const quote_jump_addr = buf.items.len;
-            try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
-            const quote_begin_addr = @intCast(u16, buf.items.len);
-            for (q.body.items) |*bodynode|
-                try genNode(program, buf, bodynode, ual);
-            try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
-            const quote_end_addr = @intCast(u16, buf.items.len); // TODO 16
-            try emitARG16(buf, node, WK_STACK, false, .Olit, quote_begin_addr);
-            buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
+        .Quote => {
+            @panic("unimplemented");
+            // (TODO: shouldn't be gen'ing quotes, they need to be made decls
+            // by parser code)
+            //
+            // const quote_jump_addr = buf.items.len;
+            // try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
+            // const quote_begin_addr = @intCast(u16, buf.items.len);
+            // for (q.body.items) |*bodynode|
+            //     try genNode(program, buf, bodynode, ual);
+            // try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
+            // const quote_end_addr = @intCast(u16, buf.items.len);
+            // try emitARG16(buf, node, WK_STACK, false, .Olit, quote_begin_addr);
+            // buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
             const loop_begin = @intCast(u16, buf.items.len);
@@ -155,11 +154,19 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try genNodeList(program, buf, branch.cond.items, ual);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oeq);
-                const body_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Ozj = 0 });
+
+                try emit(buf, node, WK_STACK, false, false, .Olit);
+                const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emit(buf, node, WK_STACK, false, false, .Ojcn);
+
                 try genNodeList(program, buf, branch.body.items, ual);
-                const end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oj = 0 });
+                const end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oraw = 0 });
+                try emit(buf, node, WK_STACK, false, false, .Ojmp);
                 try end_jumps.append(end_jmp);
-                buf.items[body_jmp].op.Ozj = @intCast(u8, buf.items.len); // TODO 16
+
+                // TODO: overflow checks if body > 256 bytes
+                const body_addr = @intCast(u8, buf.items.len - addr_slot);
+                buf.items[addr_slot].op.Oraw = body_addr;
             }
 
             if (cond.else_branch) |branch| {
@@ -171,7 +178,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
 
             const cond_end_addr = buf.items.len;
             for (end_jumps.items) |end_jump| {
-                buf.items[end_jump].op.Oj = @intCast(u8, cond_end_addr); // TODO 16
+                buf.items[end_jump].op.Oraw = @intCast(u8, cond_end_addr - end_jump);
             }
         },
     }
@@ -193,8 +200,9 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     ual_search: for (ual.items) |ua| {
         for (program.defs.items) |def| {
             if (mem.eql(u8, def.node.Decl.name, ua.ident)) {
-                buf.items[ua.loc] = .{ .stack = RT_STACK, .op = .{ .Osr = @intCast(u8, def.romloc) } }; // TODO 16
-
+                const addr = def.romloc + 0x100;
+                buf.items[ua.loc + 0].op.Oraw = @intCast(u8, addr >> 8);
+                buf.items[ua.loc + 1].op.Oraw = @intCast(u8, addr & 0xFF);
                 continue :ual_search;
             }
         }
