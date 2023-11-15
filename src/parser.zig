@@ -41,6 +41,7 @@ pub const Parser = struct {
         NotAnEnum,
         InvalidEnumField,
         NoSuchType,
+        UnknownIdent,
     } || mem.Allocator.Error;
 
     pub fn init(alloc: mem.Allocator) Parser {
@@ -97,7 +98,7 @@ pub const Parser = struct {
                     .srcloc = node.location,
                 };
             },
-            .Keyword => |i| ASTNode{ .node = .{ .Call = i }, .srcloc = node.location },
+            .Keyword => |i| ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location },
             .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
         };
@@ -259,7 +260,9 @@ pub const Parser = struct {
 
     // Earlier we couldn't know what type an Enum literal belonged to. At this
     // stage we find and set that information.
-    pub fn lowerEnumLiterals(self: *Parser) ParserError!void {
+    //
+    // Also check calls to determine what type they are.
+    pub fn postProcess(self: *Parser) ParserError!void {
         const _S = struct {
             pub fn walkNodes(parser: *Parser, nodes: []ASTNode) ParserError!void {
                 for (nodes) |*node|
@@ -282,6 +285,22 @@ pub const Parser = struct {
                         }
                         if (cond.else_branch) |branch|
                             try walkNodes(parser, branch.items);
+                    },
+                    .Call => |c| if (c.ctyp == .Unchecked) {
+                        if (for (parser.program.macs.items) |mac| {
+                            if (mem.eql(u8, mac.node.Mac.name, c.name))
+                                break true;
+                        } else false) {
+                            node.node.Call.ctyp = .Mac;
+                        } else if (for (parser.program.defs.items) |decl| {
+                            if (mem.eql(u8, decl.node.Decl.name, c.name))
+                                break true;
+                        } else false) {
+                            node.node.Call.ctyp = .Decl;
+                        } else {
+                            std.log.info("Unknown ident {s}", .{c.name});
+                            return error.UnknownIdent;
+                        }
                     },
                     else => {},
                 }
@@ -317,7 +336,7 @@ pub const Parser = struct {
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = 0 });
-        try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = "_Start" }, .srcloc = 0 });
+        try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = .{ .name = "_Start" } }, .srcloc = 0 });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },
             .srcloc = 0,
@@ -332,7 +351,7 @@ pub const Parser = struct {
 
         try self.setupMainFunc();
         try self.extractDefs();
-        try self.lowerEnumLiterals();
+        try self.postProcess();
 
         return self.program;
     }

@@ -2,17 +2,20 @@ const std = @import("std");
 const clap = @import("clap");
 const mem = std.mem;
 
-const lexerm = @import("lexer.zig");
-const parserm = @import("parser.zig");
-const vmm = @import("vm.zig");
+const analyser = @import("analyser.zig");
 const codegen = @import("codegen.zig");
 const emitter = @import("emitter.zig");
+const lexerm = @import("lexer.zig");
+const parserm = @import("parser.zig");
+// const vmm = @import("vm.zig");
 
 const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const params = comptime [_]clap.Param(clap.Help){
         clap.parseParam("-x, --spitout       Directly output UXN binary.") catch unreachable,
+        clap.parseParam("-1, --debug-asm     Output ASM to stderr.") catch unreachable,
+        clap.parseParam("-2, --debug-inf     Output word analysis to stderr.") catch unreachable,
         clap.parseParam("<FILE>...") catch unreachable,
     };
 
@@ -44,19 +47,28 @@ pub fn main() anyerror!void {
         parser.initTypes();
         var parsed = try parser.parse(&lexed);
 
+        analyser.analyse(&parsed);
+
+        if (args.flag("--debug-inf"))
+            for (parsed.defs.items) |def| {
+                const d = def.node.Decl;
+                std.log.info("Word {s}: {}", .{ d.name, d.analysis.? });
+            };
+
         var assembled = try codegen.generate(&parsed);
-        for (assembled.items) |asmstmt, i| {
-            _ = asmstmt;
-            _ = i;
-            std.log.info("{} -\t{}", .{ i, asmstmt });
-        }
+        if (args.flag("--debug-asm"))
+            for (assembled.items) |asmstmt, i| {
+                _ = asmstmt;
+                _ = i;
+                std.log.info("{} -\t{}", .{ i, asmstmt });
+            };
         std.log.info("--------------------------------------------------", .{});
 
         if (args.flag("--spitout")) {
             try emitter.spitout(assembled.items);
         } else {
-            var vm = vmm.VM.init(assembled.items);
-            try vm.execute();
+            // var vm = vmm.VM.init(assembled.items);
+            // try vm.execute();
         }
     }
 }

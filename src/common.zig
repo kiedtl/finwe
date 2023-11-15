@@ -4,6 +4,7 @@ const meta = std.meta;
 const fmt = std.fmt;
 
 const lexer = @import("lexer.zig");
+const analysis = @import("analyser.zig");
 const common = @This();
 
 const LinkedList = @import("list.zig").LinkedList;
@@ -61,7 +62,7 @@ pub const ASTNode = struct {
         None, // Placeholder for removed ast values
         Decl: Decl, // word declaraction
         Mac: Mac, // macro declaraction
-        Call: []const u8,
+        Call: Call,
         Loop: Loop,
         Cond: Cond,
         Asm: Ins,
@@ -93,6 +94,11 @@ pub const ASTNode = struct {
         }
     };
 
+    pub const Call = struct {
+        name: []const u8,
+        ctyp: enum { Mac, Decl, Unchecked } = .Unchecked,
+    };
+
     pub const Cond = struct {
         branches: Branch.List,
         else_branch: ?ASTNodeList,
@@ -116,11 +122,13 @@ pub const ASTNode = struct {
 
     pub const Decl = struct {
         name: []const u8,
+        analysis: ?analysis.BlockAnalysis = null,
         body: ASTNodeList,
     };
 
     pub const Mac = struct {
         name: []const u8,
+        analysis: ?analysis.BlockAnalysis = null,
         body: ASTNodeList,
     };
 

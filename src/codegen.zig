@@ -2,7 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 
-const vm = @import("vm.zig");
+// const vm = @import("vm.zig");
 
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
@@ -18,10 +18,7 @@ const RT_STACK = @import("common.zig").RT_STACK;
 
 const gpa = &@import("common.zig").gpa;
 
-const CodegenError = error{
-    DuplicateWord,
-    UnknownIdent,
-} || mem.Allocator.Error || StackBufferError;
+const CodegenError = mem.Allocator.Error || StackBufferError;
 
 // UA: Unresolved Address
 //
@@ -133,16 +130,14 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emit(buf, node, a.stack, a.keep, a.short, a.op);
         },
         .Call => |f| {
-            if (vm.findBuiltin(f)) |_| {
-                try emit(buf, node, WK_STACK, false, false, .{ .Onac = f });
-            } else if (for (program.macs.items) |mac| {
-                if (mem.eql(u8, mac.node.Mac.name, f))
+            if (for (program.macs.items) |mac| {
+                if (mem.eql(u8, mac.node.Mac.name, f.name))
                     break mac;
             } else null) |mac| {
                 for (mac.node.Mac.body.items) |*item|
                     try genNode(program, buf, item, ual);
             } else {
-                try emitUA(buf, ual, f, node);
+                try emitUA(buf, ual, f.name, node);
             }
         },
         .Cond => |cond| {
@@ -209,8 +204,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
         // If we haven't matched a UA with a label by now, it's an invalid
         // identifier
-        std.log.info("Unknown ident {s}", .{ua.ident});
-        return error.UnknownIdent;
+        unreachable;
     }
 
     return buf;
