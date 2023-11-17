@@ -74,12 +74,24 @@ pub const ASTNode = struct {
         T,
         Nil,
         U8: u8,
+        U16: u16,
         Codepoint: u8,
         String: String,
         AmbigEnumLit: lexer.Node.EnumLit,
         EnumLit: EnumLit,
+        AnyAddr,
+        Addr8: u8,
+        Addr16: u16,
+        AnyPtr,
+        PtrU8: u8,
+        PtrU16: u16,
+        Bool: u8,
+        Any,
+        Any8,
+        Any16,
 
         pub const Tag = std.meta.Tag(ASTValue);
+        pub const TList32 = @import("buffer.zig").StackBuffer(@This().Tag, 32);
 
         pub fn toU8(self: ASTValue, program: *Program) u8 {
             return switch (self) {
@@ -90,6 +102,7 @@ pub const ASTNode = struct {
                 .String => @panic("Free-standing strings are unimplemented"),
                 .EnumLit => |e| program.types.items[e.type].def.Enum.fields.items[e.field].value_a, // TODO: value_b
                 .AmbigEnumLit => unreachable,
+                else => unreachable,
             };
         }
     };

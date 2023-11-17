@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const meta = std.meta;
 const assert = std.debug.assert;
 
 const common = @import("common.zig");
@@ -7,23 +8,44 @@ const common = @import("common.zig");
 const Program = common.Program;
 const ASTNode = common.ASTNode;
 const ASTNodeList = common.ASTNodeList;
+const ASTValue = common.ASTNode.ASTValue;
+const VTList32 = ASTValue.TList32;
 
 pub const BlockAnalysis = struct {
-    args: usize = 0,
-    stack: usize = 0,
-    rargs: usize = 0,
-    rstack: usize = 0,
+    args: VTList32 = VTList32.init(null),
+    stack: VTList32 = VTList32.init(null),
+    rargs: VTList32 = VTList32.init(null),
+    rstack: VTList32 = VTList32.init(null),
+
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (comptime !mem.eql(u8, f, "")) {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        try writer.print("\n    args:   ", .{});
+        for (self.args.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        try writer.print("\n    stack:  ", .{});
+        for (self.stack.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        try writer.print("\n    rargs:  ", .{});
+        for (self.rargs.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        try writer.print("\n    rstack: ", .{});
+        for (self.rstack.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+    }
 
     pub fn mergeInto(self: @This(), b: *@This()) void {
-        if (b.stack < self.args)
-            b.args += self.args - b.stack;
-        b.stack -|= self.args;
-        b.stack += self.stack;
+        if (b.stack.len < self.args.len)
+            b.args.appendSlice(
+                self.args.constSlice()[0 .. self.args.len - b.stack.len],
+            ) catch unreachable;
+        b.stack.resizeTo(b.stack.len -| self.args.len);
+        b.stack.appendSlice(self.stack.constSlice()) catch unreachable;
 
-        if (b.rstack < self.rargs)
-            b.rargs += self.rargs - b.rstack;
-        b.rstack -|= self.rargs;
-        b.rstack += self.rstack;
+        if (b.rstack.len < self.rargs.len)
+            b.rargs.appendSlice(
+                self.rargs.constSlice()[0 .. self.rargs.len - b.rstack.len],
+            ) catch unreachable;
+        b.rstack.resizeTo(b.rstack.len -| self.rargs.len);
+        b.rstack.appendSlice(self.rstack.constSlice()) catch unreachable;
     }
 };
 
@@ -31,40 +53,50 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
     var a = BlockAnalysis{};
 
     switch (i.op) {
-        .Oraw => {}, // TODO: panic and refuse to analyse block
-        .Olit => a.stack += 1,
-        .Ojmp => a.args += 1,
-        .Ojcn => a.args += 2,
-        .Ojsr => a.rstack += 1,
-        .Ohalt => {},
+        .Odeo => {
+            a.args.append(if (i.short) .U16 else .U8) catch unreachable;
+            a.stack.append(.U8) catch unreachable; // TODO: device
+        },
         .Odup => {
-            a.args += 1;
-            a.stack += 1;
+            a.args.append(.Any) catch unreachable;
+            a.stack.append(.Any) catch unreachable;
         },
-        .Odrop => a.args += 1,
+        .Odrop => a.args.append(.Any) catch unreachable,
         .Oeq, .Oneq, .Olt, .Ogt, .Oeor, .Omul, .Oadd, .Osub => {
-            a.args += 2;
-            a.stack += 1;
+            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
+            a.stack.append(if (i.short) .Any16 else .Any8) catch unreachable;
         },
-        .Ostash => {
-            a.rstack += 1;
-            a.args += 1;
+        .Ohalt => {},
+        else => {
+            std.log.info("{} not implmented", .{i});
+            @panic("todo");
         },
-        .Odeo => a.args += 1,
-        .Osr, .Ozj, .Onac, .Oroll, .Odmod => unreachable,
+        // .Oraw => {}, // TODO: panic and refuse to analyse block
+        // .Olit => @panic("todo"), // TODO: panic and refuse to analyse block
+        // .Ojmp => a.args.append(.AnyAddr) catch unreachable,
+        // .Ojcn => {
+        //     a.args.append(.Bool) catch unreachable;
+        //     a.args.append(.AnyAddr) catch unreachable;
+        // },
+        // .Ojsr => a.rstack.append(.AbsAddr), // FIXME: short mode?
+        // .Ostash => {
+        //     a.rstack += 1;
+        //     a.args += 1;
+        // },
+        // .Osr, .Ozj, .Onac, .Oroll, .Odmod => unreachable,
     }
 
-    if (i.keep) a.args = 0;
-    if (i.keep) a.rargs = 0;
+    if (i.keep) a.args.clear();
+    if (i.keep) a.rargs.clear();
 
     if (i.stack == common.RT_STACK) {
-        a.args ^= a.rargs;
-        a.rargs ^= a.args;
-        a.args ^= a.rargs;
+        const tmp = a.args;
+        a.args = a.rargs;
+        a.rargs = tmp;
 
-        a.stack ^= a.rstack;
-        a.rstack ^= a.stack;
-        a.stack ^= a.rstack;
+        const stmp = a.stack;
+        a.stack = a.rstack;
+        a.rstack = stmp;
     }
 
     return a;
@@ -108,8 +140,8 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
             // - Finally, merge one condition block, and one main block
         },
         .Asm => |i| analyseAsm(i).mergeInto(&a),
-        .Value => a.stack += 1,
-        .Quote => a.stack += 1,
+        .Value => |v| a.stack.append(v) catch unreachable,
+        .Quote => a.stack.append(.Addr16) catch unreachable,
     };
 
     return a;
