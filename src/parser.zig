@@ -7,6 +7,7 @@ const common = @import("common.zig");
 const lexer = @import("lexer.zig");
 const utils = @import("utils.zig");
 
+const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
 const ASTValue = ASTNode.ASTValue;
 const ASTNodeList = @import("common.zig").ASTNodeList;
@@ -120,13 +121,48 @@ pub const Parser = struct {
                 if (mem.eql(u8, k, "word")) {
                     const name = try expectNode(.Keyword, &ast[1]);
 
-                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    var arity: ?BlockAnalysis = null;
+                    if (ast.len == 4) {
+                        arity = BlockAnalysis{};
+                        var norm_stack = true;
+                        var before = true;
+                        const ast_arity = try expectNode(.List, &ast[2]);
+                        for (ast_arity.items) |*arity_item| {
+                            var dst: *ASTValue.TList32 = undefined;
+                            if (before) {
+                                dst = if (norm_stack) &arity.?.args else &arity.?.rargs;
+                            } else {
+                                dst = if (norm_stack) &arity.?.stack else &arity.?.rstack;
+                            }
+
+                            switch (arity_item.node) {
+                                .VarNum => |arity_ref| {
+                                    const src = if (norm_stack) &arity.?.stack else &arity.?.rstack;
+                                    dst.append(src.constSlice()[arity_ref]) catch unreachable;
+                                },
+                                .Keyword => |item| {
+                                    if (mem.eql(u8, item, "--")) {
+                                        before = false;
+                                    } else if (mem.eql(u8, item, "|")) {
+                                        norm_stack = false;
+                                    } else if (meta.stringToEnum(ASTValue.Tag, item)) |p| {
+                                        dst.append(p) catch unreachable;
+                                    }
+                                },
+                                else => return error.ExpectedNode,
+                            }
+                        }
+                    }
+
+                    const body_ind: usize = if (ast.len == 4) @as(usize, 3) else 2;
+                    const ast_body = try expectNode(.Quote, &ast[body_ind]);
                     const body = try self.parseStatements(ast_body.items);
 
-                    break :b ASTNode{
-                        .node = .{ .Decl = .{ .name = name, .body = body } },
-                        .srcloc = ast[0].location,
-                    };
+                    break :b ASTNode{ .node = .{ .Decl = .{
+                        .name = name,
+                        .arity = arity,
+                        .body = body,
+                    } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
                     const name = try expectNode(.Keyword, &ast[1]);
 
@@ -221,7 +257,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else {
-                    //std.log.info("Unknown keyword: {s}", .{k});
+                    std.log.info("Unknown keyword: {s}", .{k});
                     break :b error.UnknownKeyword;
                 }
             },

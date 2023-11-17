@@ -19,6 +19,8 @@ pub const Node = struct {
         String: String,
         EnumLit: EnumLit,
         Keyword: []const u8,
+        Var: []const u8,
+        VarNum: u8,
         Child: []const u8,
         ChildNum: u8,
         List: NodeList,
@@ -92,9 +94,10 @@ pub const Lexer = struct {
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
-            'k', ':', '.' => blk: {
+            '$', 'k', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
+                        '$' => Node.NodeType{ .VarNum = node.Number },
                         'k' => node,
                         '.' => error.InvalidEnumLiteral, // Cannot be numeric
                         ':' => Node.NodeType{ .ChildNum = node.Number },
@@ -123,6 +126,7 @@ pub const Lexer = struct {
                                 'k' => Node.NodeType{ .Keyword = s },
                                 '.' => Node.NodeType{ .EnumLit = .{ .v = s, .of = null } },
                                 ':' => Node.NodeType{ .Child = s },
+                                '$' => Node.NodeType{ .Var = s },
                                 else => unreachable,
                             };
                         }

@@ -68,6 +68,7 @@ pub const ASTNode = struct {
         Asm: Ins,
         Value: ASTValue,
         Quote: Quote,
+        Cast: union(enum) { builtin: ASTValue.Tag },
     };
 
     pub const ASTValue = union(enum) {
@@ -135,6 +136,7 @@ pub const ASTNode = struct {
 
     pub const Decl = struct {
         name: []const u8,
+        arity: ?analysis.BlockAnalysis = null,
         analysis: ?analysis.BlockAnalysis = null,
         body: ASTNodeList,
     };

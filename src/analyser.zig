@@ -62,9 +62,15 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
             a.stack.append(.Any) catch unreachable;
         },
         .Odrop => a.args.append(.Any) catch unreachable,
-        .Oeq, .Oneq, .Olt, .Ogt, .Oeor, .Omul, .Oadd, .Osub => {
+        .Oeor, .Omul, .Oadd, .Osub => {
+            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
             a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
             a.stack.append(if (i.short) .Any16 else .Any8) catch unreachable;
+        },
+        .Oeq, .Oneq, .Olt, .Ogt => {
+            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
+            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
+            a.stack.append(.Bool) catch unreachable;
         },
         .Ohalt => {},
         else => {
@@ -142,6 +148,10 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
         .Asm => |i| analyseAsm(i).mergeInto(&a),
         .Value => |v| a.stack.append(v) catch unreachable,
         .Quote => a.stack.append(.Addr16) catch unreachable,
+        .Cast => |c| {
+            _ = a.stack.pop() catch unreachable;
+            a.stack.append(c.builtin) catch unreachable;
+        },
     };
 
     return a;
