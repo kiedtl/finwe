@@ -15,27 +15,35 @@ pub fn ScalarNode(comptime T: type) type {
 }
 
 pub fn LinkedList(comptime T: type) type {
-    switch (@typeInfo(T)) {
-        .Struct => {},
-        else => @compileError("Expected struct, got '" ++ @typeName(T) ++ "'"),
-    }
+    // Stuff commented out because it causes dependency issue
+    // (ASTNode contains fields of type LinkedList(ASTNode))
 
-    if (!@hasField(T, "__next"))
-        @compileError("Struct '" ++ @typeName(T) ++ "' does not have a '__next' field");
-    if (!@hasField(T, "__prev"))
-        @compileError("Struct '" ++ @typeName(T) ++ "' does not have a '__prev' field");
+    // switch (@typeInfo(T)) {
+    //     .Struct => {},
+    //     else => @compileError("Expected struct, got '" ++ @typeName(T) ++ "'"),
+    // }
+
+    // if (!@hasField(T, "__next"))
+    //     @compileError("Struct '" ++ @typeName(T) ++ "' does not have a '__next' field");
+    // if (!@hasField(T, "__prev"))
+    //     @compileError("Struct '" ++ @typeName(T) ++ "' does not have a '__prev' field");
 
     return struct {
         const Self = @This();
 
         pub const Iterator = struct {
             current: ?*T,
+            reverse: bool = false,
 
             pub fn next(iter: *Iterator) ?*T {
                 const current = iter.current;
 
                 if (current) |c| {
-                    iter.current = c.__next;
+                    if (iter.reverse) {
+                        iter.current = c.__prev;
+                    } else {
+                        iter.current = c.__next;
+                    }
                     return c;
                 } else {
                     return null;
@@ -46,6 +54,8 @@ pub fn LinkedList(comptime T: type) type {
         head: ?*T,
         tail: ?*T,
         allocator: mem.Allocator,
+
+        pub const ChildType = T;
 
         pub fn init(allocator: mem.Allocator) Self {
             return Self{
@@ -95,6 +105,21 @@ pub fn LinkedList(comptime T: type) type {
             return self.last() orelse @panic("/dev/sda is on fire");
         }
 
+        pub fn insertAtInd(self: *Self, ind: usize, data: T) !void {
+            var node = try self.allocator.create(T);
+            node.* = data;
+
+            var i: usize = 0;
+            var iter = self.iterator();
+            while (iter.next()) |item| : (i += 1)
+                if (i == ind) {
+                    node.__prev = item;
+                    node.__next = item.__next;
+                    item.__next = node;
+                    return;
+                };
+        }
+
         pub fn remove(self: *Self, node: *T) void {
             if (node.__prev) |prevn| prevn.__next = node.__next;
             if (node.__next) |nextn| nextn.__prev = node.__prev;
@@ -128,36 +153,42 @@ pub fn LinkedList(comptime T: type) type {
         pub fn iterator(self: *const Self) Iterator {
             return Iterator{ .current = self.head };
         }
+
+        // TODO: allow const iteration
+        pub fn iteratorReverse(self: *const Self) Iterator {
+            return Iterator{ .current = self.tail, .reverse = true };
+        }
+
+        pub fn len(self: *const Self) usize {
+            var iter = self.iterator();
+            var i: usize = 0;
+            while (iter.next()) |_| i += 1;
+            return i;
+        }
     };
 }
-
-// Use a GPA for tests as then we get an error when there's a memory leak
-const GPA = std.heap.GeneralPurposeAllocator(.{});
 
 test "basic LinkedList test" {
     const Node = ScalarNode(usize);
     const List = LinkedList(Node);
 
-    var gpa = GPA{};
-    defer testing.expect(!gpa.deinit());
-
-    var list = List.init(&gpa.allocator);
+    var list = List.init(testing.allocator);
     defer list.deinit();
 
     const datas = [_]usize{ 5, 22, 623, 1, 36 };
     for (datas) |data| {
         try list.append(Node{ .data = data });
-        testing.expectEqual(data, list.last().?.data);
+        try testing.expectEqual(data, list.last().?.data);
     }
 
-    testing.expectEqual(datas[0], list.first().?.data);
-    testing.expectEqual(datas[4], list.last().?.data);
+    try testing.expectEqual(datas[0], list.first().?.data);
+    try testing.expectEqual(datas[4], list.last().?.data);
 
     // TODO: separate iterator test into its own test
     var index: usize = 0;
     var iter = list.iterator();
     while (iter.next()) |node| : (index += 1) {
-        testing.expectEqual(datas[index], node.data);
+        try testing.expectEqual(datas[index], node.data);
     }
 
     iter = list.iterator();
@@ -166,19 +197,36 @@ test "basic LinkedList test" {
             list.remove(node);
     }
 
-    testing.expectEqual(list.nth(0).?.data, 5);
-    testing.expectEqual(list.nth(1).?.data, 623);
-    testing.expectEqual(list.nth(2).?.data, 1);
+    try testing.expectEqual(list.nth(0).?.data, 5);
+    try testing.expectEqual(list.nth(1).?.data, 623);
+    try testing.expectEqual(list.nth(2).?.data, 1);
+}
+
+test "LinkedList reverse iterator" {
+    const Node = ScalarNode(usize);
+    var list = LinkedList(Node).init(testing.allocator);
+    defer list.deinit();
+
+    try list.append(Node{ .data = 0 });
+    try list.append(Node{ .data = 1 });
+    try list.append(Node{ .data = 2 });
+    try list.append(Node{ .data = 3 });
+    try list.append(Node{ .data = 4 });
+
+    const data = [_]usize{ 4, 3, 2, 1, 0 };
+    var i: usize = 0;
+    var iter = list.iteratorReverse();
+    while (iter.next()) |number| : (i += 1)
+        try testing.expectEqual(number.data, data[i]);
+
+    try testing.expectEqual(i, data.len);
 }
 
 test "basic nth() usage" {
     const Node = ScalarNode(usize);
     const List = LinkedList(Node);
 
-    var gpa = GPA{};
-    defer testing.expect(!gpa.deinit());
-
-    var list = List.init(&gpa.allocator);
+    var list = List.init(testing.allocator);
     defer list.deinit();
 
     try list.append(Node{ .data = 23 });
@@ -188,10 +236,10 @@ test "basic nth() usage" {
     try list.append(Node{ .data = 12 });
     try list.append(Node{ .data = 72 });
 
-    testing.expectEqual(list.nth(0).?.data, 23);
-    testing.expectEqual(list.nth(1).?.data, 0);
-    testing.expectEqual(list.nth(2).?.data, 98);
-    testing.expectEqual(list.nth(3).?.data, 11);
-    testing.expectEqual(list.nth(4).?.data, 12);
-    testing.expectEqual(list.nth(5).?.data, 72);
+    try testing.expectEqual(list.nth(0).?.data, 23);
+    try testing.expectEqual(list.nth(1).?.data, 0);
+    try testing.expectEqual(list.nth(2).?.data, 98);
+    try testing.expectEqual(list.nth(3).?.data, 11);
+    try testing.expectEqual(list.nth(4).?.data, 12);
+    try testing.expectEqual(list.nth(5).?.data, 72);
 }

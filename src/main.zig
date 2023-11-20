@@ -16,21 +16,23 @@ pub fn main() anyerror!void {
         clap.parseParam("-x, --spitout       Directly output UXN binary.") catch unreachable,
         clap.parseParam("-1, --debug-asm     Output ASM to stderr.") catch unreachable,
         clap.parseParam("-2, --debug-inf     Output word analysis to stderr.") catch unreachable,
-        clap.parseParam("<FILE>...") catch unreachable,
+        clap.parseParam("<str>...") catch unreachable,
     };
 
     // Initalize our diagnostics, which can be used for reporting useful errors.
     // This is optional. You can also pass `.{}` to `clap.parse` if you don't
     // care about the extra information `Diagnostics` provides.
     var diag = clap.Diagnostic{};
-    var args = clap.parse(clap.Help, &params, .{ .diagnostic = &diag }) catch |err| {
+    var args = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+    }) catch |err| {
         // Report useful error and exit
         diag.report(std.io.getStdErr().writer(), err) catch {};
         return;
     };
     defer args.deinit();
 
-    for (args.positionals()) |filename| {
+    for (args.positionals) |filename| {
         const file = try std.fs.cwd().openFile(filename, .{});
         defer file.close();
 
@@ -49,22 +51,20 @@ pub fn main() anyerror!void {
 
         analyser.analyse(&parsed);
 
-        if (args.flag("--debug-inf"))
+        if (args.args.@"debug-inf" != 0)
             for (parsed.defs.items) |def| {
                 const d = def.node.Decl;
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis.? });
             };
 
         var assembled = try codegen.generate(&parsed);
-        if (args.flag("--debug-asm"))
-            for (assembled.items) |asmstmt, i| {
-                _ = asmstmt;
-                _ = i;
+        if (args.args.@"debug-asm" != 0)
+            for (assembled.items, 0..) |asmstmt, i| {
                 std.log.info("{} -\t{}", .{ i, asmstmt });
             };
         std.log.info("--------------------------------------------------", .{});
 
-        if (args.flag("--spitout")) {
+        if (args.args.spitout != 0) {
             try emitter.spitout(assembled.items);
         } else {
             // var vm = vmm.VM.init(assembled.items);

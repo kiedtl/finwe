@@ -8,6 +8,10 @@
 #0 (asm nil .Op/Oneq)
 #0x01 30 (asm "s" .Op/Ojcn)
 
-(until [ 0 (asm nil .Op/Oeq) ]
+(word =   (Any $1 -- Bool) [ (asm nil .Op/Oeq) ])
+#(word 0=  (Any    -- Bool) [ 0 (as $1) = ])
+(word 0=  [ 0  = ])
+
+(until [ 0= ]
 	[ 0x18 (asm nil .Op/Odeo) ]
 )

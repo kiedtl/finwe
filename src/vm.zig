@@ -78,8 +78,8 @@ pub const VM = struct {
             // },
             .Ojcn => {
                 // TODO: actually make it conditional
-                self.pc = @bitCast(u16, @bitCast(i16, self.pc) +
-                    @bitCast(i16, @intCast(u16, try self.pop(ins.stack))));
+                self.pc = @as(u16, @bitCast(@as(i16, @bitCast(self.pc)) +
+                    @as(i16, @bitCast(@as(u16, @intCast(try self.pop(ins.stack)))))));
                 return false;
             },
             .Ozj => |j| {
@@ -203,7 +203,7 @@ pub const BUILTINS = [_]Builtin{
         .name = "print-stack",
         .func = struct {
             pub fn f(vm: *VM, stk: usize) VMError!void {
-                for (vm.stacks[stk].constSlice()) |item, i| {
+                for (vm.stacks[stk].constSlice(), 0..) |item, i| {
                     std.log.info("{}:\t{}", .{ i, item });
                 }
             }

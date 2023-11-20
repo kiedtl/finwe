@@ -268,7 +268,8 @@ pub const Parser = struct {
 
     // Extract definitions
     pub fn extractDefs(self: *Parser) ParserError!void {
-        for (self.program.ast.items) |*node|
+        var iter = self.program.ast.iterator();
+        while (iter.next()) |node|
             if (node.node == .Decl) {
                 try self.program.defs.append(node);
             } else if (node.node == .Mac) {
@@ -279,11 +280,11 @@ pub const Parser = struct {
     pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.EnumLit {
         if (lit.of == null)
             return error.MissingEnumType;
-        for (self.program.types.items) |t, i| {
+        for (self.program.types.items, 0..) |t, i| {
             if (mem.eql(u8, t.name, lit.of.?)) {
                 if (t.def != .Enum)
                     return error.NotAnEnum;
-                for (t.def.Enum.fields.items) |field, field_i| {
+                for (t.def.Enum.fields.items, 0..) |field, field_i| {
                     if (mem.eql(u8, field.name, lit.v)) {
                         return ASTNode.EnumLit{ .type = i, .field = field_i };
                     }
@@ -300,8 +301,9 @@ pub const Parser = struct {
     // Also check calls to determine what type they are.
     pub fn postProcess(self: *Parser) ParserError!void {
         const _S = struct {
-            pub fn walkNodes(parser: *Parser, nodes: []ASTNode) ParserError!void {
-                for (nodes) |*node|
+            pub fn walkNodes(parser: *Parser, nodes: ASTNodeList) ParserError!void {
+                var iter = nodes.iterator();
+                while (iter.next()) |node|
                     try walkNode(parser, node);
             }
 
@@ -311,16 +313,16 @@ pub const Parser = struct {
                         .AmbigEnumLit => |enumlit| node.node = .{ .Value = .{ .EnumLit = try parser.lowerEnumValue(enumlit) } },
                         else => {},
                     },
-                    .Decl => |d| try walkNodes(parser, d.body.items),
-                    .Quote => |d| try walkNodes(parser, d.body.items),
-                    .Loop => |d| try walkNodes(parser, d.body.items),
+                    .Decl => |d| try walkNodes(parser, d.body),
+                    .Quote => |d| try walkNodes(parser, d.body),
+                    .Loop => |d| try walkNodes(parser, d.body),
                     .Cond => |cond| {
                         for (cond.branches.items) |branch| {
-                            try walkNodes(parser, branch.cond.items);
-                            try walkNodes(parser, branch.body.items);
+                            try walkNodes(parser, branch.cond);
+                            try walkNodes(parser, branch.body);
                         }
                         if (cond.else_branch) |branch|
-                            try walkNodes(parser, branch.items);
+                            try walkNodes(parser, branch);
                     },
                     .Call => |c| if (c.ctyp == .Unchecked) {
                         if (for (parser.program.macs.items) |mac| {
@@ -342,7 +344,7 @@ pub const Parser = struct {
                 }
             }
         };
-        try _S.walkNodes(self, self.program.ast.items);
+        try _S.walkNodes(self, self.program.ast);
     }
 
     // Setup the entry function
@@ -351,7 +353,8 @@ pub const Parser = struct {
     pub fn setupMainFunc(self: *Parser) ParserError!void {
         // TODO: remove this once 16 is added
         // TODO 16
-        const is_only_main = for (self.program.ast.items) |ast_item| {
+        var iter = self.program.ast.iterator();
+        const is_only_main = while (iter.next()) |ast_item| {
             if (ast_item.node == .Decl or ast_item.node == .Mac) break false;
         } else true;
 
@@ -363,16 +366,17 @@ pub const Parser = struct {
         }
 
         var body = ASTNodeList.init(self.alloc);
-        for (self.program.ast.items) |ast_item, i| {
+        var iter2 = self.program.ast.iterator();
+        while (iter2.next()) |ast_item| {
             if (ast_item.node != .Decl and ast_item.node != .Mac) {
-                try body.append(ast_item);
-                self.program.ast.items[i] = ASTNode{ .node = .None, .srcloc = 0 };
+                try body.append(ast_item.*);
+                ast_item.* = ASTNode{ .node = .None, .srcloc = 0 };
             }
         }
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = 0 });
-        try self.program.ast.insert(0, ASTNode{ .node = .{ .Call = .{ .name = "_Start" } }, .srcloc = 0 });
+        try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{ .name = "_Start" } }, .srcloc = 0 });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },
             .srcloc = 0,

@@ -76,8 +76,8 @@ fn emitIMM(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, im
 
 fn emitIMM16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u16) CodegenError!void {
     try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
-    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(u8, imm >> 8) });
-    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(u8, imm & 0xFF) });
+    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(imm >> 8) });
+    try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(imm & 0xFF) });
 }
 
 fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u16) CodegenError!void {
@@ -93,8 +93,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Mac => {},
         .Decl => |d| {
             node.romloc = buf.items.len;
-            for (d.body.items) |*bodynode|
-                try genNode(program, buf, bodynode, ual);
+            try genNodeList(program, buf, d.body, ual);
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
         .Quote => {
@@ -104,23 +103,21 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             //
             // const quote_jump_addr = buf.items.len;
             // try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
-            // const quote_begin_addr = @intCast(u16, buf.items.len);
+            // const quote_begin_addr = @intCast(buf.items.len);
             // for (q.body.items) |*bodynode|
             //     try genNode(program, buf, bodynode, ual);
             // try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
-            // const quote_end_addr = @intCast(u16, buf.items.len);
+            // const quote_end_addr = @intCast(buf.items.len);
             // try emitARG16(buf, node, WK_STACK, false, .Olit, quote_begin_addr);
             // buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
-            const loop_begin = @intCast(u16, buf.items.len);
-            for (l.body.items) |*bodynode|
-                try genNode(program, buf, bodynode, ual);
+            const loop_begin: u16 = @intCast(buf.items.len);
+            try genNodeList(program, buf, l.body, ual);
             switch (l.loop) {
                 .Until => |u| {
                     try emit(buf, node, WK_STACK, false, false, .Odup);
-                    for (u.cond.items) |*bodynode|
-                        try genNode(program, buf, bodynode, ual);
+                    try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oeq);
                     try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
@@ -135,8 +132,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 if (mem.eql(u8, mac.node.Mac.name, f.name))
                     break mac;
             } else null) |mac| {
-                for (mac.node.Mac.body.items) |*item|
-                    try genNode(program, buf, item, ual);
+                try genNodeList(program, buf, mac.node.Mac.body, ual);
             } else {
                 try emitUA(buf, ual, f.name, node);
             }
@@ -147,7 +143,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
 
             for (cond.branches.items) |branch| {
                 //try emitDUP(buf, WK_STACK);
-                try genNodeList(program, buf, branch.cond.items, ual);
+                try genNodeList(program, buf, branch.cond, ual);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oeq);
 
@@ -155,18 +151,18 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
                 try emit(buf, node, WK_STACK, false, false, .Ojcn);
 
-                try genNodeList(program, buf, branch.body.items, ual);
+                try genNodeList(program, buf, branch.body, ual);
                 const end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oraw = 0 });
                 try emit(buf, node, WK_STACK, false, false, .Ojmp);
                 try end_jumps.append(end_jmp);
 
                 // TODO: overflow checks if body > 256 bytes
-                const body_addr = @intCast(u8, buf.items.len - addr_slot);
+                const body_addr: u8 = @intCast(buf.items.len - addr_slot);
                 buf.items[addr_slot].op.Oraw = body_addr;
             }
 
             if (cond.else_branch) |branch| {
-                try genNodeList(program, buf, branch.items, ual);
+                try genNodeList(program, buf, branch, ual);
             }
 
             // TODO: remove the very last end jump if there's no else_branch,
@@ -174,14 +170,15 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
 
             const cond_end_addr = buf.items.len;
             for (end_jumps.items) |end_jump| {
-                buf.items[end_jump].op.Oraw = @intCast(u8, cond_end_addr - end_jump);
+                buf.items[end_jump].op.Oraw = @intCast(cond_end_addr - end_jump);
             }
         },
     }
 }
 
-pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: []ASTNode, ual: *UA.List) CodegenError!void {
-    for (nodes) |*node|
+pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList, ual: *UA.List) CodegenError!void {
+    var iter = nodes.iterator();
+    while (iter.next()) |node|
         try genNode(program, buf, node, ual);
 }
 
@@ -189,16 +186,14 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     var buf = Ins.List.init(gpa.allocator());
     var ual = UA.List.init(gpa.allocator());
 
-    for (program.ast.items) |*node| {
-        try genNode(program, &buf, node, &ual);
-    }
+    try genNodeList(program, &buf, program.ast, &ual);
 
     ual_search: for (ual.items) |ua| {
         for (program.defs.items) |def| {
             if (mem.eql(u8, def.node.Decl.name, ua.ident)) {
                 const addr = def.romloc + 0x100;
-                buf.items[ua.loc + 0].op.Oraw = @intCast(u8, addr >> 8);
-                buf.items[ua.loc + 1].op.Oraw = @intCast(u8, addr & 0xFF);
+                buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
+                buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
                 continue :ual_search;
             }
         }

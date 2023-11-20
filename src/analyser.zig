@@ -111,7 +111,8 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
 fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
     var a = BlockAnalysis{};
 
-    for (block.items) |node| switch (node.node) {
+    var iter = block.iterator();
+    while (iter.next()) |node| switch (node.node) {
         .None => {},
         .Mac, .Decl => unreachable,
         .Call => |c| switch (c.ctyp) {

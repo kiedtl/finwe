@@ -1,0 +1,14 @@
+Roadmap
+=======
+
+- Basic analyzer (keep track of stack count)
+- Basic analyzer (keep track of types)
+- Streams
+- Devices (@streams)
+- Structs (types)
+- Structs (values)
+  -@ type checker
+- Imports
+  -@ structs (types)
+- If statement
+- String literals

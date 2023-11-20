@@ -30,23 +30,10 @@ pub var gpa = std.heap.GeneralPurposeAllocator(.{
 
 pub const String = std.ArrayList(u8);
 
-//pub const ASTNodeList = LinkedList(ASTNode);
-pub const ASTNodeList = std.ArrayList(ASTNode);
+pub const ASTNodeList = LinkedList(ASTNode);
+//pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
-
-// pub const Value = union(enum) {
-//     U8: u8,
-//     EnumLit: []const u8,
-
-//     pub const Tag = std.meta.Tag(Value);
-
-//     pub fn asBool(self: Value) bool {
-//         return switch (self) {
-//             .U8 => |n| n != 0,
-//             .EnumLit => true,
-//         };
-//     }
-// };
+//pub const ASTNodePtrList = LinkedList(*ASTNode);
 
 pub const ASTNode = struct {
     __prev: ?*ASTNode = null,
@@ -177,8 +164,8 @@ pub const Program = struct {
                     @compileError("Enum type must be either u8 or u16");
                 var t = Type{ .node = null, .name = name, .def = .{ .Enum = .{ .fields = std.ArrayList(Type.EnumField).init(gpa.allocator()) } } };
                 inline for (info.fields) |field| {
-                    const va: u8 = if (info.tag_type == u16) @intCast(u16, field.value) & 0xFF else @intCast(u8, field.value);
-                    const vb: ?u8 = if (info.tag_type == u16) (@intCast(u16, field.value) >> 4) & 0xFF else null;
+                    const va: u8 = if (info.tag_type == u16) @as(u16, @intCast(field.value)) & 0xFF else @intCast(field.value);
+                    const vb: ?u8 = if (info.tag_type == u16) (@as(u8, @intCast(field.value)) >> 4) & 0xFF else null;
                     t.def.Enum.fields.append(.{ .name = field.name, .value_a = va, .value_b = vb }) catch unreachable;
                 }
                 self.types.append(t) catch unreachable;
@@ -306,13 +293,13 @@ pub const Op = union(OpTag) {
 
         switch (value) {
             .Oraw => |l| try fmt.format(writer, "{}", .{l}),
-            .Ozj => |j| try fmt.format(writer, "{}", .{j}),
-            .Osr => |j| try fmt.format(writer, "{}", .{j}),
+            .Ozj => |j| try fmt.format(writer, "{?}", .{j}),
+            .Osr => |j| try fmt.format(writer, "{?}", .{j}),
             .Onac => |n| try fmt.format(writer, "'{s}'", .{n}),
-            .Oroll => |i| try fmt.format(writer, "{}", .{i}),
-            .Omul => |a| try fmt.format(writer, "{}", .{a}),
-            .Oadd => |a| try fmt.format(writer, "{}", .{a}),
-            .Osub => |a| try fmt.format(writer, "{}", .{a}),
+            .Oroll => |i| try fmt.format(writer, "{?}", .{i}),
+            .Omul => |a| try fmt.format(writer, "{?}", .{a}),
+            .Oadd => |a| try fmt.format(writer, "{?}", .{a}),
+            .Osub => |a| try fmt.format(writer, "{?}", .{a}),
             else => try fmt.format(writer, "@", .{}),
         }
     }
@@ -342,7 +329,7 @@ pub const Ins = struct {
 
         var str: []const u8 = undefined;
         inline for (@typeInfo(Op.Tag).Enum.fields) |enum_field| {
-            if (@intToEnum(Op.Tag, enum_field.value) == value.op) {
+            if (@as(Op.Tag, @enumFromInt(enum_field.value)) == value.op) {
                 str = enum_field.name;
                 //break; // FIXME: Wait for that bug to be fixed, then uncomment
             }

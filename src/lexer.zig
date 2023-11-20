@@ -158,7 +158,7 @@ pub const Lexer = struct {
                 const encoded_codepoint = utf8.nextCodepointSlice() orelse return error.InvalidCharLiteral;
                 if (utf8.nextCodepointSlice()) |_| return error.InvalidCharLiteral;
                 const codepoint = std.unicode.utf8Decode(encoded_codepoint) catch return error.InvalidUtf8;
-                break :blk Node.NodeType{ .Codepoint = @intCast(u8, codepoint % 255) };
+                break :blk Node.NodeType{ .Codepoint = @intCast(codepoint % 255) };
             },
             else => @panic("what were you trying to do anyway"),
         };

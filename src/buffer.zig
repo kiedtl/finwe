@@ -47,7 +47,7 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             }
 
             const item = self.data[index];
-            for (self.data[index..newlen]) |*data, j|
+            for (self.data[index..newlen], 0..) |*data, j|
                 data.* = self.data[index + 1 + j];
             self.len = newlen;
             return item;
