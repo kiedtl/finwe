@@ -8,8 +8,9 @@ const common = @import("common.zig");
 const Program = common.Program;
 const ASTNode = common.ASTNode;
 const ASTNodeList = common.ASTNodeList;
-const ASTValue = common.ASTNode.ASTValue;
-const VTList32 = ASTValue.TList32;
+const TypeInfo = common.TypeInfo;
+const Value = common.Value;
+const VTList32 = TypeInfo.List32;
 
 pub const BlockAnalysis = struct {
     args: VTList32 = VTList32.init(null),
@@ -79,12 +80,12 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
         },
         // .Oraw => {}, // TODO: panic and refuse to analyse block
         // .Olit => @panic("todo"), // TODO: panic and refuse to analyse block
-        // .Ojmp => a.args.append(.AnyAddr) catch unreachable,
+        // .Ojmp => a.args.append(.Ptr8) catch unreachable,
         // .Ojcn => {
         //     a.args.append(.Bool) catch unreachable;
-        //     a.args.append(.AnyAddr) catch unreachable;
+        //     a.args.append(.Ptr8) catch unreachable;
         // },
-        // .Ojsr => a.rstack.append(.AbsAddr), // FIXME: short mode?
+        // .Ojsr => a.rstack.append(.AbsPtr), // FIXME: short mode?
         // .Ostash => {
         //     a.rstack += 1;
         //     a.args += 1;
@@ -147,8 +148,8 @@ fn analyseBlock(program: *Program, parent_arity: ?BlockAnalysis, block: ASTNodeL
             // - Finally, merge one condition block, and one main block
         },
         .Asm => |i| analyseAsm(i).mergeInto(&a),
-        .Value => |v| a.stack.append(v) catch unreachable,
-        .Quote => a.stack.append(.Addr16) catch unreachable,
+        .Value => |v| a.stack.append(v.typ) catch unreachable,
+        .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
         .Cast => |c| {
             const typ = switch (c) {
                 .builtin => |b| b,

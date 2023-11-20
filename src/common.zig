@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const meta = std.meta;
 const fmt = std.fmt;
+const assert = std.debug.assert;
 
 const lexer = @import("lexer.zig");
 const analysis = @import("analyser.zig");
@@ -34,6 +35,112 @@ pub const ASTNodeList = LinkedList(ASTNode);
 //pub const ASTNodeList = std.ArrayList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 //pub const ASTNodePtrList = LinkedList(*ASTNode);
+//
+pub const TypeInfo = union(enum) {
+    Bool,
+    T,
+    Nil,
+    U8,
+    U16,
+    Codepoint,
+    EnumLit: usize,
+    AnyPtr,
+    Ptr8: Ptr,
+    Ptr16: Ptr,
+    Any,
+    Any8,
+    Any16,
+
+    AmbigEnumLit,
+    String,
+    Quote,
+
+    pub const Tag = meta.Tag(@This());
+    pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
+
+    pub const Ptr = struct {
+        typ: usize,
+        indirection: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
+    };
+
+    pub const EnumLit = struct {
+        type: usize, // index into Program.types
+        field: usize,
+    };
+
+    pub fn eq(a: @This(), b: @This()) bool {
+        return switch (a) {
+            .EnumLit => |e| b == .EnumLit and e == b.EnumLit,
+            .Ptr8 => |p| b == .Ptr8 and p.typ == b.Ptr8.typ and p.indirection == b.Ptr8.indirection,
+            .Ptr16 => |p| b == .Ptr16 and p.typ == b.Ptr16.typ and p.indirection == b.Ptr16.indirection,
+            .AmbigEnumLit => unreachable,
+            else => @as(Tag, a) == @as(Tag, b),
+        };
+    }
+
+    pub fn ptr16(program: *Program, to: TypeInfo, indirection: usize) TypeInfo {
+        assert(indirection >= 1);
+        const ind: ?usize = for (program.builtin_types.items, 0..) |typ, i| {
+            if (to.eq(typ)) break i;
+        } else null;
+        if (ind) |_ind| {
+            return .{ .Ptr16 = .{ .typ = _ind, .indirection = indirection } };
+        } else {
+            program.builtin_types.append(to) catch unreachable;
+            return .{ .Ptr16 = .{
+                .typ = program.builtin_types.items.len - 1,
+                .indirection = indirection,
+            } };
+        }
+    }
+
+    pub fn includes(self: @This(), other: @This()) bool {
+        return switch (self) {
+            .Any => true,
+            .AnyPtr => other == .Ptr8 or other == .Ptr16,
+            .EnumLit => |e| other == .EnumLit and e.type == other.EnumLit.type,
+            .Bool => other == .T or other == .Nil,
+            else => @as(Tag, self) == @as(Tag, other),
+        };
+    }
+
+    pub fn bits(self: @This(), program: *const Program) ?u5 {
+        return switch (self) {
+            .T, .Nil, .U8, .Codepoint, .Ptr8, .Bool, .Any8 => 8,
+            .U16, .Ptr16, .Any16 => 16,
+            .AnyPtr, .Any => null,
+            .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
+            .String => unreachable, // TODO: remove string
+        };
+    }
+};
+
+pub const Value = struct {
+    typ: TypeInfo,
+    val: V,
+
+    pub const V = union(enum) {
+        u8: u8,
+        u16: u16,
+        String: String,
+        EnumLit: TypeInfo.EnumLit,
+        AmbigEnumLit: lexer.Node.EnumLit,
+        None,
+    };
+
+    pub fn toU8(self: Value, program: *Program) u8 {
+        return switch (self.typ) {
+            .T => 1,
+            .Nil => 0,
+            .U8, .Codepoint, .Ptr8 => self.val.u8,
+            .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field].value_a, // TODO: value_b
+            .AmbigEnumLit => unreachable,
+            .Any, .Any8, .Any16, .AnyPtr => unreachable,
+            .String => @panic("Free-standing strings are unimplemented"),
+            else => unreachable,
+        };
+    }
+};
 
 pub const ASTNode = struct {
     __prev: ?*ASTNode = null,
@@ -53,74 +160,9 @@ pub const ASTNode = struct {
         Loop: Loop,
         Cond: Cond,
         Asm: Ins,
-        Value: ASTValue,
+        Value: Value,
         Quote: Quote,
-        Cast: union(enum) { builtin: ASTValue.Tag, ref: usize },
-    };
-
-    pub const ASTValueType = enum(u8) {
-        T,
-        Nil,
-        U8,
-        U16,
-        Codepoint,
-        String,
-        EnumLit,
-        AnyAddr,
-        Addr8,
-        Addr16,
-        AnyPtr,
-        PtrU8,
-        PtrU16,
-        Bool,
-
-        Any,
-        Any8,
-        Any16,
-
-        // Compiler-internal types
-        AmbigEnumLit = 0xAA,
-        TypeRef = 0xBB,
-    };
-
-    pub const ASTValue = union(ASTValueType) {
-        T,
-        Nil,
-        U8: u8,
-        U16: u16,
-        Codepoint: u8,
-        String: String,
-        EnumLit: EnumLit,
-        AnyAddr,
-        Addr8: u8,
-        Addr16: u16,
-        AnyPtr,
-        PtrU8: u8,
-        PtrU16: u16,
-        Bool: u8,
-
-        Any,
-        Any8,
-        Any16,
-
-        AmbigEnumLit: lexer.Node.EnumLit,
-        TypeRef: usize,
-
-        pub const Tag = ASTValueType;
-        pub const TList32 = @import("buffer.zig").StackBuffer(@This().Tag, 32);
-
-        pub fn toU8(self: ASTValue, program: *Program) u8 {
-            return switch (self) {
-                .T => 1,
-                .Nil => 0,
-                .U8 => |v| v,
-                .Codepoint => |v| v,
-                .String => @panic("Free-standing strings are unimplemented"),
-                .EnumLit => |e| program.types.items[e.type].def.Enum.fields.items[e.field].value_a, // TODO: value_b
-                .AmbigEnumLit => unreachable,
-                else => unreachable,
-            };
-        }
+        Cast: union(enum) { builtin: TypeInfo, ref: usize },
     };
 
     pub const Call = struct {
@@ -165,11 +207,6 @@ pub const ASTNode = struct {
     pub const Quote = struct {
         body: ASTNodeList,
     };
-
-    pub const EnumLit = struct {
-        type: usize, // index into Program.types
-        field: usize,
-    };
 };
 
 pub const Program = struct {
@@ -177,6 +214,7 @@ pub const Program = struct {
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
     types: Type.AList,
+    builtin_types: std.ArrayList(TypeInfo),
 
     // scopes: Scope.AList,
     // pub const Scope = struct {
@@ -190,10 +228,13 @@ pub const Program = struct {
             .Enum => |info| {
                 if (info.tag_type != u16 and info.tag_type != u8)
                     @compileError("Enum type must be either u8 or u16");
-                var t = Type{ .node = null, .name = name, .def = .{ .Enum = .{ .fields = std.ArrayList(Type.EnumField).init(gpa.allocator()) } } };
+                var t = Type{ .node = null, .name = name, .def = .{ .Enum = .{
+                    .is_short = info.tag_type == u16,
+                    .fields = std.ArrayList(Type.EnumField).init(gpa.allocator()),
+                } } };
                 inline for (info.fields) |field| {
                     const va: u8 = if (info.tag_type == u16) @as(u16, @intCast(field.value)) & 0xFF else @intCast(field.value);
-                    const vb: ?u8 = if (info.tag_type == u16) (@as(u8, @intCast(field.value)) >> 4) & 0xFF else null;
+                    const vb: ?u8 = if (info.tag_type == u16) (@as(u16, @intCast(field.value)) >> 4) & 0xFF else null;
                     t.def.Enum.fields.append(.{ .name = field.name, .value_a = va, .value_b = vb }) catch unreachable;
                 }
                 self.types.append(t) catch unreachable;
@@ -215,6 +256,7 @@ pub const Type = struct {
     };
 
     pub const Enum = struct {
+        is_short: bool = false,
         fields: std.ArrayList(EnumField),
     };
 

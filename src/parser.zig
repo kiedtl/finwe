@@ -9,7 +9,8 @@ const utils = @import("utils.zig");
 
 const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
-const ASTValue = ASTNode.ASTValue;
+const TypeInfo = common.TypeInfo;
+const Value = common.Value;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
@@ -53,6 +54,7 @@ pub const Parser = struct {
                 .defs = ASTNodePtrList.init(alloc),
                 .macs = ASTNodePtrList.init(alloc),
                 .types = common.Type.AList.init(alloc),
+                .builtin_types = std.ArrayList(TypeInfo).init(alloc),
                 //.defs = ASTNodeList.init(alloc),
             },
             .alloc = alloc,
@@ -61,7 +63,6 @@ pub const Parser = struct {
 
     pub fn initTypes(self: *Parser) void {
         self.program.addNativeType(common.Op.Tag, "Op");
-        self.program.addNativeType(ASTValue.Tag, "Typ");
     }
 
     fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
@@ -78,15 +79,15 @@ pub const Parser = struct {
         return @field(node.node, @tagName(nodetype));
     }
 
-    fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!ASTValue {
+    fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
         _ = self;
         return switch (node.node) {
-            .T => .T,
-            .Nil => .Nil,
-            .Number => |n| .{ .U8 = n },
-            .Codepoint => |c| .{ .Codepoint = c },
-            .String => |s| .{ .String = s },
-            .EnumLit => |e| .{ .AmbigEnumLit = e },
+            .T => .{ .typ = .T, .val = .None },
+            .Nil => .{ .typ = .Nil, .val = .None },
+            .Number => |n| .{ .typ = .U8, .val = .{ .u8 = n } },
+            .Codepoint => |c| .{ .typ = .Codepoint, .val = .{ .u8 = c } },
+            .String => |s| .{ .typ = .String, .val = .{ .String = s } },
+            .EnumLit => |e| .{ .typ = .AmbigEnumLit, .val = .{ .AmbigEnumLit = e } },
             else => error.ExpectedValue,
         };
     }
@@ -130,7 +131,7 @@ pub const Parser = struct {
                         var before = true;
                         const ast_arity = try expectNode(.List, &ast[2]);
                         for (ast_arity.items) |*arity_item| {
-                            var dst: *ASTValue.TList32 = undefined;
+                            var dst: *TypeInfo.List32 = undefined;
                             if (before) {
                                 dst = if (norm_stack) &arity.?.args else &arity.?.rargs;
                             } else {
@@ -143,13 +144,22 @@ pub const Parser = struct {
                                     dst.append(src.constSlice()[arity_ref]) catch unreachable;
                                 },
                                 .Keyword => |item| {
-                                    std.log.info("keyword: {s}", .{item});
                                     if (mem.eql(u8, item, "--")) {
                                         before = false;
                                     } else if (mem.eql(u8, item, "|")) {
                                         norm_stack = false;
-                                    } else if (meta.stringToEnum(ASTValue.Tag, item)) |p| {
-                                        dst.append(p) catch unreachable;
+                                    } else if (meta.stringToEnum(TypeInfo.Tag, item)) |p| {
+                                        // FIXME: fails silently
+                                        // Will fix once type values are fully fleshed out
+                                        // (Including (Ptr8), (Ptr16), (Enum), etc
+                                        inline for (meta.fields(TypeInfo)) |field|
+                                            if (field.type == void and
+                                                mem.eql(u8, field.name, @tagName(p)))
+                                            {
+                                                dst.append(
+                                                    @unionInit(TypeInfo, field.name, {}),
+                                                ) catch unreachable;
+                                            };
                                     } else {
                                         std.log.err("Invalid type in arity def: {s}", .{item});
                                         return error.InvalidType;
@@ -187,17 +197,17 @@ pub const Parser = struct {
                             .node = .{ .Cast = .{ .ref = n } },
                             .srcloc = ast[0].location,
                         },
-                        .EnumLit => {
-                            const typ_kwd = try self.parseValue(&ast[1]);
-                            if (typ_kwd != .AmbigEnumLit)
-                                return error.ExpectedEnumLit;
-                            const typ_lowered = try self.lowerEnumValue(typ_kwd.AmbigEnumLit);
-                            const typ = meta.stringToEnum(ASTValue.Tag, self.program.types.items[typ_lowered.type].def.Enum.fields.items[typ_lowered.field].name) orelse return error.InvalidType;
-                            break :b ASTNode{
-                                .node = .{ .Cast = .{ .builtin = typ } },
-                                .srcloc = ast[0].location,
-                            };
-                        },
+                        // .EnumLit => {
+                        //     const typ_kwd = try self.parseValue(&ast[1]);
+                        //     if (typ_kwd != .AmbigEnumLit)
+                        //         return error.ExpectedEnumLit;
+                        //     const typ_lowered = try self.lowerEnumValue(typ_kwd.AmbigEnumLit);
+                        //     const typ = meta.stringToEnum(ASTValue.Tag, self.program.types.items[typ_lowered.type].def.Enum.fields.items[typ_lowered.field].name) orelse return error.InvalidType;
+                        //     break :b ASTNode{
+                        //         .node = .{ .Cast = .{ .builtin = typ } },
+                        //         .srcloc = ast[0].location,
+                        //     };
+                        // },
                         else => return error.ExpectedNode,
                     }
                 } else if (mem.eql(u8, k, "until")) {
@@ -255,14 +265,14 @@ pub const Parser = struct {
                     try validateListLength(ast, 3);
 
                     const asm_flags = try self.parseValue(&ast[1]);
-                    if (asm_flags != .Nil and asm_flags != .String)
+                    if (asm_flags.typ != .Nil and asm_flags.typ != .String)
                         return error.ExpectedOptionalString;
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
                     var asm_short = false;
-                    if (asm_flags == .String) {
-                        for (asm_flags.String.items) |char| switch (char) {
+                    if (asm_flags.typ == .String) {
+                        for (asm_flags.val.String.items) |char| switch (char) {
                             'k' => asm_keep = true,
                             'r' => asm_stack = RT_STACK,
                             's' => asm_short = true,
@@ -271,9 +281,9 @@ pub const Parser = struct {
                     }
 
                     const asm_op_kwd = try self.parseValue(&ast[2]);
-                    if (asm_op_kwd != .AmbigEnumLit)
+                    if (asm_op_kwd.typ != .AmbigEnumLit)
                         return error.ExpectedEnumLit;
-                    const asm_op_lowered = try self.lowerEnumValue(asm_op_kwd.AmbigEnumLit);
+                    const asm_op_lowered = try self.lowerEnumValue(asm_op_kwd.val.AmbigEnumLit);
                     const asm_op_e = meta.stringToEnum(
                         Op.Tag,
                         self.program.types.items[asm_op_lowered.type].def.Enum.fields.items[asm_op_lowered.field].name,
@@ -304,7 +314,7 @@ pub const Parser = struct {
             };
     }
 
-    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.EnumLit {
+    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!TypeInfo.EnumLit {
         if (lit.of == null)
             return error.MissingEnumType;
         for (self.program.types.items, 0..) |t, i| {
@@ -313,7 +323,7 @@ pub const Parser = struct {
                     return error.NotAnEnum;
                 for (t.def.Enum.fields.items, 0..) |field, field_i| {
                     if (mem.eql(u8, field.name, lit.v)) {
-                        return ASTNode.EnumLit{ .type = i, .field = field_i };
+                        return TypeInfo.EnumLit{ .type = i, .field = field_i };
                     }
                 }
                 return error.InvalidEnumField;
@@ -336,8 +346,11 @@ pub const Parser = struct {
 
             pub fn walkNode(parser: *Parser, node: *ASTNode) ParserError!void {
                 switch (node.node) {
-                    .Value => |v| switch (v) {
-                        .AmbigEnumLit => |enumlit| node.node = .{ .Value = .{ .EnumLit = try parser.lowerEnumValue(enumlit) } },
+                    .Value => |v| switch (v.typ) {
+                        .AmbigEnumLit => {
+                            const lowered = try parser.lowerEnumValue(v.val.AmbigEnumLit);
+                            node.node = .{ .Value = .{ .typ = .{ .EnumLit = lowered.type }, .val = .{ .EnumLit = lowered } } };
+                        },
                         else => {},
                     },
                     .Decl => |d| try walkNodes(parser, d.body),
