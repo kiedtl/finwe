@@ -38,6 +38,7 @@ pub const Parser = struct {
         UnexpectedLabelDefinition,
         InvalidAsmOp,
         InvalidAsmFlag,
+        InvalidType,
         MissingEnumType,
         NotAnEnum,
         InvalidEnumField,
@@ -60,6 +61,7 @@ pub const Parser = struct {
 
     pub fn initTypes(self: *Parser) void {
         self.program.addNativeType(common.Op.Tag, "Op");
+        self.program.addNativeType(ASTValue.Tag, "Typ");
     }
 
     fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
@@ -137,16 +139,20 @@ pub const Parser = struct {
 
                             switch (arity_item.node) {
                                 .VarNum => |arity_ref| {
-                                    const src = if (norm_stack) &arity.?.stack else &arity.?.rstack;
+                                    const src = if (norm_stack) &arity.?.args else &arity.?.rargs;
                                     dst.append(src.constSlice()[arity_ref]) catch unreachable;
                                 },
                                 .Keyword => |item| {
+                                    std.log.info("keyword: {s}", .{item});
                                     if (mem.eql(u8, item, "--")) {
                                         before = false;
                                     } else if (mem.eql(u8, item, "|")) {
                                         norm_stack = false;
                                     } else if (meta.stringToEnum(ASTValue.Tag, item)) |p| {
                                         dst.append(p) catch unreachable;
+                                    } else {
+                                        std.log.err("Invalid type in arity def: {s}", .{item});
+                                        return error.InvalidType;
                                     }
                                 },
                                 else => return error.ExpectedNode,
@@ -173,6 +179,27 @@ pub const Parser = struct {
                         .node = .{ .Mac = .{ .name = name, .body = body } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "as")) {
+                    try validateListLength(ast, 2);
+
+                    switch (ast[1].node) {
+                        .VarNum => |n| break :b ASTNode{
+                            .node = .{ .Cast = .{ .ref = n } },
+                            .srcloc = ast[0].location,
+                        },
+                        .EnumLit => {
+                            const typ_kwd = try self.parseValue(&ast[1]);
+                            if (typ_kwd != .AmbigEnumLit)
+                                return error.ExpectedEnumLit;
+                            const typ_lowered = try self.lowerEnumValue(typ_kwd.AmbigEnumLit);
+                            const typ = meta.stringToEnum(ASTValue.Tag, self.program.types.items[typ_lowered.type].def.Enum.fields.items[typ_lowered.field].name) orelse return error.InvalidType;
+                            break :b ASTNode{
+                                .node = .{ .Cast = .{ .builtin = typ } },
+                                .srcloc = ast[0].location,
+                            };
+                        },
+                        else => return error.ExpectedNode,
+                    }
                 } else if (mem.eql(u8, k, "until")) {
                     try validateListLength(ast, 3);
 
@@ -370,7 +397,8 @@ pub const Parser = struct {
         while (iter2.next()) |ast_item| {
             if (ast_item.node != .Decl and ast_item.node != .Mac) {
                 try body.append(ast_item.*);
-                ast_item.* = ASTNode{ .node = .None, .srcloc = 0 };
+                ast_item.node = .None;
+                ast_item.srcloc = 0;
             }
         }
         try body.append(ASTNode{ .node = .{

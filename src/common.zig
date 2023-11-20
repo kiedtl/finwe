@@ -55,17 +55,41 @@ pub const ASTNode = struct {
         Asm: Ins,
         Value: ASTValue,
         Quote: Quote,
-        Cast: union(enum) { builtin: ASTValue.Tag },
+        Cast: union(enum) { builtin: ASTValue.Tag, ref: usize },
     };
 
-    pub const ASTValue = union(enum) {
+    pub const ASTValueType = enum(u8) {
+        T,
+        Nil,
+        U8,
+        U16,
+        Codepoint,
+        String,
+        EnumLit,
+        AnyAddr,
+        Addr8,
+        Addr16,
+        AnyPtr,
+        PtrU8,
+        PtrU16,
+        Bool,
+
+        Any,
+        Any8,
+        Any16,
+
+        // Compiler-internal types
+        AmbigEnumLit = 0xAA,
+        TypeRef = 0xBB,
+    };
+
+    pub const ASTValue = union(ASTValueType) {
         T,
         Nil,
         U8: u8,
         U16: u16,
         Codepoint: u8,
         String: String,
-        AmbigEnumLit: lexer.Node.EnumLit,
         EnumLit: EnumLit,
         AnyAddr,
         Addr8: u8,
@@ -74,11 +98,15 @@ pub const ASTNode = struct {
         PtrU8: u8,
         PtrU16: u16,
         Bool: u8,
+
         Any,
         Any8,
         Any16,
 
-        pub const Tag = std.meta.Tag(ASTValue);
+        AmbigEnumLit: lexer.Node.EnumLit,
+        TypeRef: usize,
+
+        pub const Tag = ASTValueType;
         pub const TList32 = @import("buffer.zig").StackBuffer(@This().Tag, 32);
 
         pub fn toU8(self: ASTValue, program: *Program) u8 {

@@ -108,7 +108,7 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
     return a;
 }
 
-fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
+fn analyseBlock(program: *Program, parent_arity: ?BlockAnalysis, block: ASTNodeList) BlockAnalysis {
     var a = BlockAnalysis{};
 
     var iter = block.iterator();
@@ -121,7 +121,7 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
                     if (mem.eql(u8, decl.node.Decl.name, c.name))
                         break decl;
                 } else unreachable;
-                const analysis = d.node.Decl.analysis orelse analyseBlock(program, d.node.Decl.body);
+                const analysis = d.node.Decl.analysis orelse analyseBlock(program, parent_arity, d.node.Decl.body);
                 d.node.Decl.analysis = analysis;
                 d.node.Decl.analysis.?.mergeInto(&a);
             },
@@ -130,13 +130,13 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
                     if (mem.eql(u8, mac.node.Mac.name, c.name))
                         break mac;
                 } else unreachable;
-                const analysis = m.node.Mac.analysis orelse analyseBlock(program, m.node.Mac.body);
+                const analysis = m.node.Mac.analysis orelse analyseBlock(program, parent_arity, m.node.Mac.body);
                 m.node.Mac.analysis = analysis;
                 m.node.Mac.analysis.?.mergeInto(&a);
             },
             .Unchecked => unreachable, // parser.postProcess missed something
         },
-        .Loop => |l| analyseBlock(program, l.body).mergeInto(&a),
+        .Loop => |l| analyseBlock(program, parent_arity, l.body).mergeInto(&a),
         .Cond => {
             // TODO: implement
             // Outline:
@@ -150,8 +150,12 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
         .Value => |v| a.stack.append(v) catch unreachable,
         .Quote => a.stack.append(.Addr16) catch unreachable,
         .Cast => |c| {
+            const typ = switch (c) {
+                .builtin => |b| b,
+                .ref => |r| parent_arity.?.stack.constSlice()[r],
+            };
             _ = a.stack.pop() catch unreachable;
-            a.stack.append(c.builtin) catch unreachable;
+            a.stack.append(typ) catch unreachable;
         },
     };
 
@@ -159,8 +163,9 @@ fn analyseBlock(program: *Program, block: ASTNodeList) BlockAnalysis {
 }
 
 pub fn analyse(program: *Program) void {
-    for (program.defs.items) |decl| {
-        assert(decl.node.Decl.analysis == null);
-        decl.node.Decl.analysis = analyseBlock(program, decl.node.Decl.body);
+    for (program.defs.items) |decl_node| {
+        const decl = decl_node.node.Decl;
+        if (decl.analysis == null)
+            decl_node.node.Decl.analysis = analyseBlock(program, decl.arity, decl.body);
     }
 }

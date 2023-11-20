@@ -252,7 +252,7 @@ pub const Lexer = struct {
                 },
                 0x09...0x0d, 0x20 => continue,
                 '"' => try self.lexString(),
-                '.', ':', '\'' => try self.lexValue(ch),
+                '$', '.', ':', '\'' => try self.lexValue(ch),
                 '[' => Node.NodeType{ .Quote = try self.lex(.Bracket) },
                 '(' => Node.NodeType{ .List = try self.lex(.Paren) },
                 ']', ')' => {

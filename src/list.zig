@@ -113,9 +113,13 @@ pub fn LinkedList(comptime T: type) type {
             var iter = self.iterator();
             while (iter.next()) |item| : (i += 1)
                 if (i == ind) {
-                    node.__prev = item;
-                    node.__next = item.__next;
-                    item.__next = node;
+                    if (item.__prev) |prev|
+                        prev.__next = node
+                    else
+                        self.head = node;
+                    node.__prev = item.__prev;
+                    node.__next = item;
+                    item.__prev = node;
                     return;
                 };
         }
@@ -200,6 +204,36 @@ test "basic LinkedList test" {
     try testing.expectEqual(list.nth(0).?.data, 5);
     try testing.expectEqual(list.nth(1).?.data, 623);
     try testing.expectEqual(list.nth(2).?.data, 1);
+}
+
+test "LinkedList insertAtInd" {
+    const Node = ScalarNode(usize);
+    const List = LinkedList(Node);
+
+    var list = List.init(testing.allocator);
+    defer list.deinit();
+
+    const datas = [_]usize{ 1, 2, 3, 4 };
+    for (datas) |data|
+        try list.append(Node{ .data = data });
+
+    try list.insertAtInd(0, Node{ .data = 99 });
+    try list.insertAtInd(2, Node{ .data = 88 });
+
+    // var i = list.iterator();
+    // while (i.next()) |data|
+    //     std.log.err("node: {}", .{data.data});
+
+    try testing.expectEqual(list.nth(0).?.data, 99);
+    try testing.expectEqual(list.nth(1).?.data, 1);
+    try testing.expectEqual(list.nth(2).?.data, 88);
+    try testing.expectEqual(list.nth(3).?.data, 2);
+    try testing.expectEqual(list.nth(4).?.data, 3);
+    try testing.expectEqual(list.nth(5).?.data, 4);
+
+    try list.append(Node{ .data = 77 });
+
+    try testing.expectEqual(list.nth(6).?.data, 77);
 }
 
 test "LinkedList reverse iterator" {
