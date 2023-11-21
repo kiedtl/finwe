@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const mem = std.mem;
+const testing = std.testing;
 const assert = std.debug.assert;
 
 pub const StackBufferError = error{
@@ -68,6 +69,33 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             self.resizeTo(0);
         }
 
+        pub fn insert(self: *Self, ind: usize, item: T) StackBufferError!void {
+            if (self.len >= capacity) {
+                return error.NoSpaceLeft;
+            }
+
+            //@setRuntimeSafety(false);
+
+            var i = self.len - ind;
+            while (i > 0) {
+                i -= 1;
+                self.data[ind + i + 1] = self.data[ind..self.len][i];
+            }
+
+            self.data[ind] = item;
+            self.len += 1;
+        }
+
+        // FIXME: this is stupidly inefficient... too lazy to correct it...
+        pub fn insertSlice(self: *Self, ind: usize, items: []const T) StackBufferError!void {
+            if (self.len + items.len >= capacity) {
+                return error.NoSpaceLeft;
+            }
+
+            for (items, 0..) |item, i|
+                try self.insert(ind + i, item);
+        }
+
         pub fn append(self: *Self, item: T) StackBufferError!void {
             if (self.len >= capacity) {
                 return error.NoSpaceLeft;
@@ -89,4 +117,30 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             return if (self.len > 0) self.data[self.len - 1] else null;
         }
     };
+}
+
+test "insert" {
+    {
+        var b = StackBuffer(u8, 128).init("fefifofum");
+        try b.insert(0, 'a');
+        try testing.expectEqualSlices(u8, "afefifofum", b.constSlice());
+    }
+    {
+        var b = StackBuffer(u8, 128).init("fefifofum");
+        try b.insert(3, 'a');
+        try testing.expectEqualSlices(u8, "fefaifofum", b.constSlice());
+    }
+}
+
+test "insertSlice" {
+    {
+        var b = StackBuffer(u8, 128).init("fefifofum");
+        try b.insertSlice(0, "GLORY_TO_ZIG");
+        try testing.expectEqualSlices(u8, "GLORY_TO_ZIGfefifofum", b.constSlice());
+    }
+    {
+        var b = StackBuffer(u8, 128).init("fefifofum");
+        try b.insertSlice(3, "ABCD");
+        try testing.expectEqualSlices(u8, "fefABCDifofum", b.constSlice());
+    }
 }

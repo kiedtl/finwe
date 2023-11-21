@@ -9,6 +9,7 @@ const analysis = @import("analyser.zig");
 const common = @This();
 
 const LinkedList = @import("list.zig").LinkedList;
+const StackBuffer = @import("buffer.zig").StackBuffer;
 
 // ----------------------------------------------------------------------------
 
@@ -51,9 +52,11 @@ pub const TypeInfo = union(enum) {
     Any8,
     Any16,
 
-    AmbigEnumLit,
     String,
     Quote,
+
+    AmbigEnumLit,
+    TypeRef: usize,
 
     pub const Tag = meta.Tag(@This());
     pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
@@ -94,13 +97,22 @@ pub const TypeInfo = union(enum) {
         }
     }
 
-    pub fn includes(self: @This(), other: @This()) bool {
+    pub fn isGeneric(self: @This()) bool {
         return switch (self) {
+            .Any, .Any8, .Any16, .AnyPtr, .Bool, .TypeRef => true,
+            else => false,
+        };
+    }
+
+    pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
+        return @as(Tag, self) == @as(Tag, other) or switch (self) {
             .Any => true,
+            .Any8 => other.bits(program) != null and other.bits(program).? == 8,
+            .Any16 => other.bits(program) != null and other.bits(program).? == 16,
             .AnyPtr => other == .Ptr8 or other == .Ptr16,
-            .EnumLit => |e| other == .EnumLit and e.type == other.EnumLit.type,
+            .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
             .Bool => other == .T or other == .Nil,
-            else => @as(Tag, self) == @as(Tag, other),
+            else => false, // self == other case already handled earlier
         };
     }
 
@@ -111,6 +123,7 @@ pub const TypeInfo = union(enum) {
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
             .String => unreachable, // TODO: remove string
+            .Quote, .AmbigEnumLit, .TypeRef => unreachable,
         };
     }
 };
@@ -167,7 +180,11 @@ pub const ASTNode = struct {
 
     pub const Call = struct {
         name: []const u8,
-        ctyp: enum { Mac, Decl, Unchecked } = .Unchecked,
+        ctyp: union(enum) {
+            Mac,
+            Decl: usize, // variant, 0 if not generic
+            Unchecked,
+        } = .Unchecked,
     };
 
     pub const Cond = struct {
@@ -194,14 +211,17 @@ pub const ASTNode = struct {
     pub const Decl = struct {
         name: []const u8,
         arity: ?analysis.BlockAnalysis = null,
-        analysis: ?analysis.BlockAnalysis = null,
+        analysis: analysis.BlockAnalysis = analysis.BlockAnalysis{},
+        variations: StackBuffer(analysis.BlockAnalysis, 8) = StackBuffer(analysis.BlockAnalysis, 8).init(null),
         body: ASTNodeList,
+        is_analysed: bool = false,
     };
 
     pub const Mac = struct {
         name: []const u8,
-        analysis: ?analysis.BlockAnalysis = null,
+        analysis: analysis.BlockAnalysis = analysis.BlockAnalysis{},
         body: ASTNodeList,
+        is_analysed: bool = false,
     };
 
     pub const Quote = struct {

@@ -140,8 +140,7 @@ pub const Parser = struct {
 
                             switch (arity_item.node) {
                                 .VarNum => |arity_ref| {
-                                    const src = if (norm_stack) &arity.?.args else &arity.?.rargs;
-                                    dst.append(src.constSlice()[arity_ref]) catch unreachable;
+                                    dst.append(.{ .TypeRef = arity_ref }) catch unreachable;
                                 },
                                 .Keyword => |item| {
                                     if (mem.eql(u8, item, "--")) {
@@ -374,7 +373,7 @@ pub const Parser = struct {
                             if (mem.eql(u8, decl.node.Decl.name, c.name))
                                 break true;
                         } else false) {
-                            node.node.Call.ctyp = .Decl;
+                            node.node.Call.ctyp = .{ .Decl = 0 };
                         } else {
                             std.log.info("Unknown ident {s}", .{c.name});
                             return error.UnknownIdent;

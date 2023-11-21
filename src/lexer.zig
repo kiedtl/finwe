@@ -104,7 +104,9 @@ pub const Lexer = struct {
                         else => unreachable,
                     };
                 } else |_| {
-                    if (mem.eql(u8, word, "nil")) {
+                    if (mem.eql(u8, word, "nil") or mem.eql(u8, word, "Nil") or
+                        mem.eql(u8, word, "nah") or mem.eql(u8, word, "Nah"))
+                    {
                         break :blk Node.NodeType{ .Nil = {} };
                     } else if (mem.eql(u8, word, "t") or mem.eql(u8, word, "T")) {
                         break :blk Node.NodeType{ .T = {} };

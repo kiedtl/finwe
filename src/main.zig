@@ -54,7 +54,7 @@ pub fn main() anyerror!void {
         if (args.args.@"debug-inf" != 0)
             for (parsed.defs.items) |def| {
                 const d = def.node.Decl;
-                std.log.info("Word {s}: {}", .{ d.name, d.analysis.? });
+                std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
         var assembled = try codegen.generate(&parsed);
