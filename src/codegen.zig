@@ -190,7 +190,9 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     ual_search: for (ual.items) |ua| {
         for (program.defs.items) |def| {
-            if (mem.eql(u8, def.node.Decl.name, ua.ident)) {
+            if (mem.eql(u8, def.node.Decl.name, ua.ident) and
+                ua.node.node.Call.ctyp.Decl == def.node.Decl.variant)
+            {
                 const addr = def.romloc + 0x100;
                 buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
                 buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));

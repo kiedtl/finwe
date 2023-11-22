@@ -99,7 +99,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn isGeneric(self: @This()) bool {
         return switch (self) {
-            .Any, .Any8, .Any16, .AnyPtr, .Bool, .TypeRef => true,
+            .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             else => false,
         };
     }
@@ -167,8 +167,8 @@ pub const ASTNode = struct {
 
     pub const Type = union(enum) {
         None, // Placeholder for removed ast values
-        Decl: Decl, // word declaraction
-        Mac: Mac, // macro declaraction
+        Decl: Decl, // word declaration
+        Mac: Mac, // macro declaration
         Call: Call,
         Loop: Loop,
         Cond: Cond,
@@ -215,6 +215,7 @@ pub const ASTNode = struct {
         variations: StackBuffer(analysis.BlockAnalysis, 8) = StackBuffer(analysis.BlockAnalysis, 8).init(null),
         body: ASTNodeList,
         is_analysed: bool = false,
+        variant: usize = 0,
     };
 
     pub const Mac = struct {
@@ -227,6 +228,45 @@ pub const ASTNode = struct {
     pub const Quote = struct {
         body: ASTNodeList,
     };
+
+    fn _deepcloneASTList(lst: ASTNodeList) ASTNodeList {
+        var new = ASTNodeList.init(gpa.allocator());
+        var itr = lst.iterator();
+        while (itr.next()) |item| {
+            new.append(item.deepclone()) catch unreachable;
+        }
+        return new;
+    }
+
+    pub fn deepclone(self: @This()) @This() {
+        var new = self.node;
+        switch (new) {
+            .Cond => |*c| {
+                if (c.else_branch != null)
+                    c.else_branch = _deepcloneASTList(c.else_branch.?);
+                for (c.branches.items, 0..) |br, i| {
+                    c.branches.items[i].body = _deepcloneASTList(br.body);
+                    c.branches.items[i].cond = _deepcloneASTList(br.cond);
+                }
+            },
+            .Loop => {
+                new.Loop.body = _deepcloneASTList(new.Loop.body);
+                switch (new.Loop.loop) {
+                    .Until => |u| new.Loop.loop.Until.cond = _deepcloneASTList(u.cond),
+                }
+            },
+            .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body),
+            .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body),
+            .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body),
+            else => {},
+        }
+
+        return .{
+            .node = new,
+            .srcloc = self.srcloc,
+            .romloc = self.romloc,
+        };
+    }
 };
 
 pub const Program = struct {
@@ -400,6 +440,10 @@ pub const Ins = struct {
     keep: bool = false,
     short: bool = false,
     op: Op,
+
+    // Generic, may be either short or not
+    // Will be lowered once analysis is done on calling function
+    generic: bool = false,
 
     pub const List = std.ArrayList(Ins);
 

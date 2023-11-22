@@ -126,8 +126,33 @@ pub const BlockAnalysis = struct {
     }
 };
 
-fn analyseAsm(i: common.Ins) BlockAnalysis {
+fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) BlockAnalysis {
     var a = BlockAnalysis{};
+
+    const args_needed: usize = switch (i.op) {
+        .Ohalt => 0,
+        .Odeo, .Odup, .Odrop => 1,
+        else => 2,
+    };
+
+    const stk = if (i.stack == common.WK_STACK) &caller_an.stack else &caller_an.rstack;
+    const a1 = if (stk.len >= 1) stk.constSlice()[stk.len - 1] else null;
+    const a2 = if (stk.len >= 2) stk.constSlice()[stk.len - 2] else null;
+    const a1b: ?u5 = if (stk.len >= 1) a1.?.bits(prog) else null;
+    const a2b: ?u5 = if (stk.len >= 2) a2.?.bits(prog) else null;
+
+    if (i.generic and stk.len >= args_needed and
+        ((args_needed == 2 and a1b != null and a2b != null) or
+        (args_needed == 1 and a1b != null)))
+    {
+        i.short = switch (i.op) {
+            .Odup, .Odrop, .Odeo => a1b.? == 16,
+            else => a1b.? == 16 and a2b.? == 16,
+        };
+        i.generic = false;
+    }
+
+    const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
 
     switch (i.op) {
         .Odeo => {
@@ -135,18 +160,18 @@ fn analyseAsm(i: common.Ins) BlockAnalysis {
             a.stack.append(.U8) catch unreachable; // TODO: device
         },
         .Odup => {
-            a.args.append(.Any) catch unreachable;
-            a.stack.append(.Any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
         },
-        .Odrop => a.args.append(.Any) catch unreachable,
+        .Odrop => a.args.append(a1 orelse any) catch unreachable,
         .Oeor, .Omul, .Oadd, .Osub => {
-            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
-            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
-            a.stack.append(if (i.short) .Any16 else .Any8) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
         },
         .Oeq, .Oneq, .Olt, .Ogt => {
-            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
-            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
             a.stack.append(.Bool) catch unreachable;
         },
         .Ohalt => {},
@@ -199,23 +224,41 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (mem.eql(u8, decl.node.Decl.name, c.name))
                             break decl;
                     } else unreachable;
-                    // TODO: don't analyse if arity exists
-                    if (!d.node.Decl.is_analysed) {
-                        analyseBlock(program, parent, d.node.Decl.body, &d.node.Decl.analysis);
+
+                    if (d.node.Decl.arity == null and !d.node.Decl.is_analysed) {
+                        analyseBlock(program, &d.node.Decl, d.node.Decl.body, &d.node.Decl.analysis);
                         d.node.Decl.is_analysed = true;
                     }
+
                     const analysis = d.node.Decl.arity orelse d.node.Decl.analysis;
-                    if (analysis.isGeneric()) {
+
+                    if (a.isGeneric() or !analysis.isGeneric()) {
+                        analysis.mergeInto(a);
+                    } else if (analysis.isGeneric()) {
                         const ungenericified = analysis.conformGenericTo(a, program);
-                        const variant_ind: ?usize = for (d.node.Decl.variations.slice(), 0..) |an, i| {
+                        const var_ind: ?usize = for (d.node.Decl.variations.slice(), 0..) |an, i| {
                             if (ungenericified.eqExact(an)) break i;
                         } else null;
-                        if (variant_ind == null)
+                        if (var_ind == null)
                             d.node.Decl.variations.append(ungenericified) catch unreachable;
-                        c.ctyp.Decl = variant_ind orelse d.node.Decl.variations.len - 1;
+                        c.ctyp.Decl = var_ind orelse d.node.Decl.variations.len - 1;
+
                         ungenericified.mergeInto(a);
-                    } else {
-                        d.node.Decl.analysis.mergeInto(a);
+
+                        if (var_ind == null) {
+                            const newdef_ = d.deepclone();
+                            const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                            program.defs.append(newdef) catch unreachable;
+
+                            newdef.node.Decl.variant = d.node.Decl.variations.len - 1;
+                            newdef.node.Decl.arity = ungenericified;
+
+                            var ab = BlockAnalysis{};
+                            for (ungenericified.args.constSlice()) |arg|
+                                ab.stack.append(arg) catch unreachable;
+                            analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                            newdef.node.Decl.is_analysed = true;
+                        }
                     }
                 },
                 .Mac => {
@@ -231,9 +274,14 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 },
                 .Unchecked => unreachable, // parser.postProcess missed something
             },
-            .Loop => |l| analyseBlock(program, parent, l.body, a),
+            .Loop => |l| {
+                switch (l.loop) {
+                    .Until => |u| analyseBlock(program, parent, u.cond, a),
+                }
+                analyseBlock(program, parent, l.body, a);
+            },
             .Cond => {
-                // TODO: implement
+                @panic("TODO");
                 // Outline:
                 // - Check first branch, don't merge analysis
                 // - Check every other branch block, assert they're all the same
@@ -241,9 +289,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // - Check condition blocks, assert they're all identical
                 // - Finally, merge one condition block, and one main block
             },
-            .Asm => |i| {
+            .Asm => |*i| {
                 // std.log.info("merging asm into main", .{});
-                analyseAsm(i).mergeInto(a);
+                analyseAsm(i, a, program).mergeInto(a);
             },
             .Value => |v| a.stack.append(v.typ) catch unreachable,
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
@@ -260,12 +308,20 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 }
 
 pub fn analyse(program: *Program) void {
-    for (program.defs.items) |decl_node| {
-        const decl = &decl_node.node.Decl;
-        assert(!decl.is_analysed);
-        if (!decl.is_analysed) {
-            analyseBlock(program, decl, decl.body, &decl_node.node.Decl.analysis);
-            decl.is_analysed = true;
-        }
-    }
+    // for (program.defs.items) |decl_node| {
+    //     const decl = &decl_node.node.Decl;
+    //     if (!decl.is_analysed) {
+    //         analyseBlock(program, decl, decl.body, &decl_node.node.Decl.analysis);
+    //         decl.is_analysed = true;
+    //     }
+    // }
+
+    const entrypoint_node = for (program.defs.items) |decl_node| {
+        if (mem.eql(u8, decl_node.node.Decl.name, "_Start")) break decl_node;
+    } else unreachable;
+    const entrypoint = &entrypoint_node.node.Decl;
+
+    assert(!entrypoint.is_analysed);
+    entrypoint.is_analysed = true;
+    analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
 }

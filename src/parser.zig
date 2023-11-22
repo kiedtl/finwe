@@ -270,11 +270,13 @@ pub const Parser = struct {
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
                     var asm_short = false;
+                    var asm_generic = false;
                     if (asm_flags.typ == .String) {
                         for (asm_flags.val.String.items) |char| switch (char) {
                             'k' => asm_keep = true,
                             'r' => asm_stack = RT_STACK,
                             's' => asm_short = true,
+                            'g' => asm_generic = true,
                             else => return error.InvalidAsmFlag,
                         };
                     }
@@ -354,7 +356,12 @@ pub const Parser = struct {
                     },
                     .Decl => |d| try walkNodes(parser, d.body),
                     .Quote => |d| try walkNodes(parser, d.body),
-                    .Loop => |d| try walkNodes(parser, d.body),
+                    .Loop => |d| {
+                        switch (d.loop) {
+                            .Until => |u| try walkNodes(parser, u.cond),
+                        }
+                        try walkNodes(parser, d.body);
+                    },
                     .Cond => |cond| {
                         for (cond.branches.items) |branch| {
                             try walkNodes(parser, branch.cond);
