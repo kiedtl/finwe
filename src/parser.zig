@@ -29,7 +29,7 @@ pub const Parser = struct {
         ExpectedKeyword,
         ExpectedEnumLit,
         ExpectedOptionalNumber,
-        ExpectedOptionalString,
+        ExpectedString,
         ExpectedItems,
         ExpectedNode,
         UnexpectedItems,
@@ -82,8 +82,8 @@ pub const Parser = struct {
     fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
         _ = self;
         return switch (node.node) {
-            .T => .{ .typ = .T, .val = .None },
-            .Nil => .{ .typ = .Nil, .val = .None },
+            .T => .{ .typ = .Bool, .val = .{ .u8 = 1 } },
+            .Nil => .{ .typ = .Bool, .val = .{ .u8 = 0 } },
             .Number => |n| .{ .typ = .U8, .val = .{ .u8 = n } },
             .Codepoint => |c| .{ .typ = .Codepoint, .val = .{ .u8 = c } },
             .String => |s| .{ .typ = .String, .val = .{ .String = s } },
@@ -193,7 +193,7 @@ pub const Parser = struct {
 
                     switch (ast[1].node) {
                         .VarNum => |n| break :b ASTNode{
-                            .node = .{ .Cast = .{ .ref = n } },
+                            .node = .{ .Cast = .{ .to = .{ .ref = n } } },
                             .srcloc = ast[0].location,
                         },
                         // .EnumLit => {
@@ -223,6 +223,13 @@ pub const Parser = struct {
                             .loop = .{ .Until = .{ .cond = cond } },
                             .body = body,
                         } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "when")) {
+                    const yup = try self.parseStatements((try expectNode(.Quote, &ast[1])).items);
+                    const nah = if (ast.len > 2) try self.parseStatements((try expectNode(.Quote, &ast[2])).items) else null;
+                    break :b ASTNode{
+                        .node = .{ .When = .{ .yup = yup, .nah = nah } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "cond")) {
@@ -264,8 +271,8 @@ pub const Parser = struct {
                     try validateListLength(ast, 3);
 
                     const asm_flags = try self.parseValue(&ast[1]);
-                    if (asm_flags.typ != .Nil and asm_flags.typ != .String)
-                        return error.ExpectedOptionalString;
+                    if (asm_flags.typ != .String)
+                        return error.ExpectedString;
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
@@ -362,6 +369,10 @@ pub const Parser = struct {
                         }
                         try walkNodes(parser, d.body);
                     },
+                    .When => |when| {
+                        try walkNodes(parser, when.yup);
+                        if (when.nah) |n| try walkNodes(parser, n);
+                    },
                     .Cond => |cond| {
                         for (cond.branches.items) |branch| {
                             try walkNodes(parser, branch.cond);
@@ -397,20 +408,6 @@ pub const Parser = struct {
     // TODO: this should be in codegen
     //
     pub fn setupMainFunc(self: *Parser) ParserError!void {
-        // TODO: remove this once 16 is added
-        // TODO 16
-        var iter = self.program.ast.iterator();
-        const is_only_main = while (iter.next()) |ast_item| {
-            if (ast_item.node == .Decl or ast_item.node == .Mac) break false;
-        } else true;
-
-        if (is_only_main) {
-            try self.program.ast.append(ASTNode{ .node = .{
-                .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
-            }, .srcloc = 0 });
-            return;
-        }
-
         var body = ASTNodeList.init(self.alloc);
         var iter2 = self.program.ast.iterator();
         while (iter2.next()) |ast_item| {

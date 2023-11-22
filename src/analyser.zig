@@ -22,8 +22,8 @@ pub const BlockAnalysis = struct {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
-        std.log.info("CONFORM {}", .{generic});
-        std.log.info("TO ARGS {}", .{caller});
+        // std.log.info("CONFORM {}", .{generic});
+        // std.log.info("TO ARGS {}", .{caller});
 
         var r = generic;
 
@@ -57,7 +57,7 @@ pub const BlockAnalysis = struct {
             }
         }
 
-        std.log.info("RESULTS {}\n\n", .{r});
+        // std.log.info("RESULTS {}\n\n", .{r});
 
         return r;
     }
@@ -234,6 +234,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                     if (a.isGeneric() or !analysis.isGeneric()) {
                         analysis.mergeInto(a);
+                        d.node.Decl.calls += 1;
                     } else if (analysis.isGeneric()) {
                         const ungenericified = analysis.conformGenericTo(a, program);
                         const var_ind: ?usize = for (d.node.Decl.variations.slice(), 0..) |an, i| {
@@ -241,7 +242,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         } else null;
                         if (var_ind == null)
                             d.node.Decl.variations.append(ungenericified) catch unreachable;
-                        c.ctyp.Decl = var_ind orelse d.node.Decl.variations.len - 1;
+                        c.ctyp.Decl = (var_ind orelse d.node.Decl.variations.len - 1) + 1;
 
                         ungenericified.mergeInto(a);
 
@@ -250,7 +251,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
                             program.defs.append(newdef) catch unreachable;
 
-                            newdef.node.Decl.variant = d.node.Decl.variations.len - 1;
+                            newdef.node.Decl.variant = d.node.Decl.variations.len;
                             newdef.node.Decl.arity = ungenericified;
 
                             var ab = BlockAnalysis{};
@@ -258,6 +259,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                                 ab.stack.append(arg) catch unreachable;
                             analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
                             newdef.node.Decl.is_analysed = true;
+
+                            newdef.node.Decl.calls += 1;
                         }
                     }
                 },
@@ -280,6 +283,14 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
                 analyseBlock(program, parent, l.body, a);
             },
+            .When => {
+                // TODO: assert that body doesn't result in change to stack, or
+                // that body and else result in same change
+
+                var whena = BlockAnalysis{};
+                whena.args.append(.Bool) catch unreachable;
+                whena.mergeInto(a);
+            },
             .Cond => {
                 @panic("TODO");
                 // Outline:
@@ -295,13 +306,19 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Value => |v| a.stack.append(v.typ) catch unreachable,
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
-            .Cast => |c| {
-                const typ = switch (c) {
+            .Cast => |*c| {
+                const typ = switch (c.to) {
                     .builtin => |b| b,
                     .ref => |r| parent.arity.?.args.constSlice()[r],
                 };
-                _ = a.stack.pop() catch unreachable;
-                a.stack.append(typ) catch unreachable;
+
+                var casta = BlockAnalysis{};
+                casta.args.append(.Any) catch unreachable;
+                casta.stack.append(typ) catch unreachable;
+                casta.mergeInto(a);
+
+                c.to = .{ .builtin = typ };
+                c.of = a.stack.last() orelse .Any; // FIXME
             },
         }
     }
@@ -320,6 +337,7 @@ pub fn analyse(program: *Program) void {
         if (mem.eql(u8, decl_node.node.Decl.name, "_Start")) break decl_node;
     } else unreachable;
     const entrypoint = &entrypoint_node.node.Decl;
+    entrypoint.calls += 1;
 
     assert(!entrypoint.is_analysed);
     entrypoint.is_analysed = true;

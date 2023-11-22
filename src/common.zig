@@ -39,8 +39,6 @@ pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 //
 pub const TypeInfo = union(enum) {
     Bool,
-    T,
-    Nil,
     U8,
     U16,
     Codepoint,
@@ -105,20 +103,19 @@ pub const TypeInfo = union(enum) {
     }
 
     pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
-        return @as(Tag, self) == @as(Tag, other) or switch (self) {
+        return (self != .EnumLit and @as(Tag, self) == @as(Tag, other)) or switch (self) {
             .Any => true,
             .Any8 => other.bits(program) != null and other.bits(program).? == 8,
             .Any16 => other.bits(program) != null and other.bits(program).? == 16,
             .AnyPtr => other == .Ptr8 or other == .Ptr16,
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
-            .Bool => other == .T or other == .Nil,
             else => false, // self == other case already handled earlier
         };
     }
 
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
-            .T, .Nil, .U8, .Codepoint, .Ptr8, .Bool, .Any8 => 8,
+            .U8, .Codepoint, .Ptr8, .Bool, .Any8 => 8,
             .U16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
@@ -143,9 +140,7 @@ pub const Value = struct {
 
     pub fn toU8(self: Value, program: *Program) u8 {
         return switch (self.typ) {
-            .T => 1,
-            .Nil => 0,
-            .U8, .Codepoint, .Ptr8 => self.val.u8,
+            .Bool, .U8, .Codepoint, .Ptr8 => self.val.u8,
             .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field].value_a, // TODO: value_b
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,
@@ -171,11 +166,17 @@ pub const ASTNode = struct {
         Mac: Mac, // macro declaration
         Call: Call,
         Loop: Loop,
+        When: When,
         Cond: Cond,
         Asm: Ins,
         Value: Value,
         Quote: Quote,
-        Cast: union(enum) { builtin: TypeInfo, ref: usize },
+        Cast: Cast,
+    };
+
+    pub const Cast = struct {
+        of: TypeInfo = .Any,
+        to: union(enum) { builtin: TypeInfo, ref: usize },
     };
 
     pub const Call = struct {
@@ -185,6 +186,11 @@ pub const ASTNode = struct {
             Decl: usize, // variant, 0 if not generic
             Unchecked,
         } = .Unchecked,
+    };
+
+    pub const When = struct {
+        yup: ASTNodeList,
+        nah: ?ASTNodeList,
     };
 
     pub const Cond = struct {
@@ -216,6 +222,7 @@ pub const ASTNode = struct {
         body: ASTNodeList,
         is_analysed: bool = false,
         variant: usize = 0,
+        calls: usize = 0,
     };
 
     pub const Mac = struct {
@@ -337,6 +344,10 @@ pub const OpTag = enum(u16) {
     Ozj,
     Ohalt,
     Onac,
+    Onip,
+    Oswp,
+    Orot,
+    Oovr,
     Odup,
     Oroll,
     Odrop,
@@ -347,6 +358,7 @@ pub const OpTag = enum(u16) {
     Oeor,
     Odmod,
     Omul,
+    Odiv,
     Oadd,
     Osub,
     Ostash,
@@ -363,9 +375,13 @@ pub const Op = union(OpTag) {
     Ozj: ?u8,
     Ohalt,
     Onac: []const u8,
+    Onip,
+    Oswp,
+    Orot,
+    Oovr,
     Odup,
     Oroll: ?u8,
-    Odrop: ?u8,
+    Odrop,
     Oeq,
     Oneq,
     Olt,
@@ -373,6 +389,7 @@ pub const Op = union(OpTag) {
     Oeor,
     Odmod,
     Omul,
+    Odiv,
     Oadd,
     Osub,
     Ostash,
@@ -390,9 +407,13 @@ pub const Op = union(OpTag) {
             .Ojcn => .Ojcn,
             .Ozj => .{ .Ozj = null },
             .Ohalt => .Ohalt,
+            .Onip => .Onip,
+            .Oswp => .Oswp,
+            .Orot => .Orot,
+            .Oovr => .Oovr,
             .Odup => .Odup,
             .Oroll => .{ .Oroll = null },
-            .Odrop => .{ .Odrop = null },
+            .Odrop => .Odrop,
             .Oeq => .Oeq,
             .Oneq => .Oneq,
             .Olt => .Olt,
@@ -400,6 +421,7 @@ pub const Op = union(OpTag) {
             .Oeor => .Oeor,
             .Odmod => .Odmod,
             .Omul => .Omul,
+            .Odiv => .Odiv,
             .Oadd => .Oadd,
             .Osub => .Osub,
             .Ostash => .Ostash,
