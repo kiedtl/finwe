@@ -88,6 +88,7 @@ fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .Cast => |c| {
+            std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
             const from = c.of.bits(program).?;
             const to = c.to.builtin.bits(program).?;
             if (from == 16 and to == 8) {
@@ -232,7 +233,13 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             if (mem.eql(u8, def.node.Decl.name, ua.ident) and
                 ua.node.node.Call.ctyp.Decl == def.node.Decl.variant)
             {
-                assert(def.romloc != 0);
+                if (def.romloc == 0) {
+                    std.log.err("Def {s} (var {}) was never generated", .{
+                        def.node.Decl.name, def.node.Decl.variant,
+                    });
+                    unreachable;
+                }
+
                 const addr = def.romloc + 0x100;
                 buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
                 buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));

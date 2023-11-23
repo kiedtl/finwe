@@ -22,26 +22,19 @@ pub const BlockAnalysis = struct {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
-        // std.log.info("CONFORM {}", .{generic});
-        // std.log.info("TO ARGS {}", .{caller});
+        std.log.info("CONFORM {}", .{generic});
+        std.log.info("TO ARGS {}", .{caller});
 
         var r = generic;
-
-        for (r.args.slice()) |*arg|
-            if (arg.* == .TypeRef) {
-                arg.* = r.args.constSlice()[r.args.len - arg.*.TypeRef - 1];
-            };
-
-        for (r.stack.slice()) |*stack|
-            if (stack.* == .TypeRef) {
-                stack.* = r.args.constSlice()[r.args.len - stack.*.TypeRef - 1];
-            };
 
         var i = r.args.len;
         var j: usize = 0;
         while (i > 0) : (j += 1) {
             i -= 1;
             const arg = &r.args.slice()[i];
+            if (arg.* == .TypeRef)
+                arg.* = r.args.constSlice()[r.args.len - arg.*.TypeRef - 1];
+
             const calleritem = if (j < caller.stack.len)
                 caller.stack.constSlice()[caller.stack.len - j - 1]
             else if ((j - caller.stack.len) < caller.args.len)
@@ -57,7 +50,12 @@ pub const BlockAnalysis = struct {
             }
         }
 
-        // std.log.info("RESULTS {}\n\n", .{r});
+        for (r.stack.slice()) |*stack|
+            if (stack.* == .TypeRef) {
+                stack.* = r.args.constSlice()[r.args.len - stack.*.TypeRef - 1];
+            };
+
+        std.log.info("RESULTS {}\n\n", .{r});
 
         return r;
     }
@@ -132,12 +130,14 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     const args_needed: usize = switch (i.op) {
         .Ohalt => 0,
         .Odeo, .Odup, .Odrop => 1,
+        .Orot => 3,
         else => 2,
     };
 
     const stk = if (i.stack == common.WK_STACK) &caller_an.stack else &caller_an.rstack;
     const a1 = if (stk.len >= 1) stk.constSlice()[stk.len - 1] else null;
     const a2 = if (stk.len >= 2) stk.constSlice()[stk.len - 2] else null;
+    const a3 = if (stk.len >= 3) stk.constSlice()[stk.len - 3] else null;
     const a1b: ?u5 = if (stk.len >= 1) a1.?.bits(prog) else null;
     const a2b: ?u5 = if (stk.len >= 2) a2.?.bits(prog) else null;
 
@@ -155,6 +155,27 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
 
     switch (i.op) {
+        .Orot => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a3 orelse any) catch unreachable;
+            a.stack.append(a2 orelse any) catch unreachable;
+            a.stack.append(a3 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+        },
+        .Oovr => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+            a.stack.append(a2 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+        },
+        .Oswp => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+            a.stack.append(a2 orelse any) catch unreachable;
+        },
         .Odeo => {
             a.args.append(if (i.short) .U16 else .U8) catch unreachable;
             a.stack.append(.U8) catch unreachable; // TODO: device
@@ -164,9 +185,9 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Odrop => a.args.append(a1 orelse any) catch unreachable,
-        .Oeor, .Omul, .Oadd, .Osub => {
+        .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
             a.args.append(a1 orelse any) catch unreachable;
-            a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Oeq, .Oneq, .Olt, .Ogt => {
@@ -211,10 +232,10 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
 }
 
 fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) void {
-    // std.log.info("*** analysing {s}", .{parent.name});
     var iter = block.iterator();
     while (iter.next()) |node| {
-        // std.log.info("node: {}", .{node.node});
+        std.log.info("{s}: node: {}", .{ parent.name, node.node });
+        std.log.info("analysis: {}\n", .{a});
         switch (node.node) {
             .None => {},
             .Mac, .Decl => unreachable,
@@ -224,44 +245,61 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (mem.eql(u8, decl.node.Decl.name, c.name))
                             break decl;
                     } else unreachable;
+                    const cdecl = &d.node.Decl;
 
-                    if (d.node.Decl.arity == null and !d.node.Decl.is_analysed) {
-                        analyseBlock(program, &d.node.Decl, d.node.Decl.body, &d.node.Decl.analysis);
-                        d.node.Decl.is_analysed = true;
-                    }
-
-                    const analysis = d.node.Decl.arity orelse d.node.Decl.analysis;
-
-                    if (a.isGeneric() or !analysis.isGeneric()) {
-                        analysis.mergeInto(a);
-                        d.node.Decl.calls += 1;
-                    } else if (analysis.isGeneric()) {
-                        const ungenericified = analysis.conformGenericTo(a, program);
-                        const var_ind: ?usize = for (d.node.Decl.variations.slice(), 0..) |an, i| {
-                            if (ungenericified.eqExact(an)) break i;
-                        } else null;
-                        if (var_ind == null)
-                            d.node.Decl.variations.append(ungenericified) catch unreachable;
-                        c.ctyp.Decl = (var_ind orelse d.node.Decl.variations.len - 1) + 1;
-
-                        ungenericified.mergeInto(a);
-
-                        if (var_ind == null) {
-                            const newdef_ = d.deepclone();
-                            const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
-                            program.defs.append(newdef) catch unreachable;
-
-                            newdef.node.Decl.variant = d.node.Decl.variations.len;
-                            newdef.node.Decl.arity = ungenericified;
-
-                            var ab = BlockAnalysis{};
+                    if (cdecl.arity) |d_arity| {
+                        if (!cdecl.is_analysed) {
+                            const ungenericified = d_arity.conformGenericTo(a, program);
+                            assert(a.isGeneric() or !ungenericified.isGeneric());
                             for (ungenericified.args.constSlice()) |arg|
-                                ab.stack.append(arg) catch unreachable;
-                            analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
-                            newdef.node.Decl.is_analysed = true;
-
-                            newdef.node.Decl.calls += 1;
+                                cdecl.analysis.stack.append(arg) catch unreachable;
+                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                            cdecl.is_analysed = true;
                         }
+
+                        if (a.isGeneric() or !d_arity.isGeneric()) {
+                            d_arity.mergeInto(a);
+                            cdecl.calls += 1;
+                        } else if (d_arity.isGeneric()) {
+                            const ungenericified = d_arity.conformGenericTo(a, program);
+                            assert(!ungenericified.isGeneric());
+                            const var_ind: ?usize = for (cdecl.variations.slice(), 0..) |an, i| {
+                                if (ungenericified.eqExact(an)) break i;
+                            } else null;
+                            if (var_ind == null)
+                                cdecl.variations.append(ungenericified) catch unreachable;
+                            c.ctyp.Decl = (var_ind orelse cdecl.variations.len - 1) + 1;
+
+                            ungenericified.mergeInto(a);
+
+                            if (var_ind == null) {
+                                const newdef_ = d.deepclone();
+                                const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                                program.defs.append(newdef) catch unreachable;
+
+                                newdef.node.Decl.variant = cdecl.variations.len;
+                                newdef.node.Decl.arity = ungenericified;
+
+                                var ab = BlockAnalysis{};
+                                for (ungenericified.args.constSlice()) |arg|
+                                    ab.stack.append(arg) catch unreachable;
+                                newdef.node.Decl.arity = ungenericified;
+                                newdef.node.Decl.calls += 1;
+                                analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                                newdef.node.Decl.is_analysed = true;
+                            }
+                        } else unreachable;
+                    } else {
+                        if (!cdecl.is_analysed) {
+                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                            cdecl.is_analysed = true;
+                        }
+                        if (cdecl.analysis.isGeneric()) {
+                            std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
+                            unreachable;
+                        }
+                        cdecl.analysis.mergeInto(a);
+                        cdecl.calls += 1;
                     }
                 },
                 .Mac => {
@@ -307,18 +345,22 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Value => |v| a.stack.append(v.typ) catch unreachable,
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
             .Cast => |*c| {
-                const typ = switch (c.to) {
+                const ctyp = switch (c.to) {
                     .builtin => |b| b,
                     .ref => |r| parent.arity.?.args.constSlice()[r],
                 };
 
+                const into = a.stack.last() orelse .Any;
+
                 var casta = BlockAnalysis{};
-                casta.args.append(.Any) catch unreachable;
-                casta.stack.append(typ) catch unreachable;
+                casta.args.append(into) catch unreachable;
+                casta.stack.append(ctyp) catch unreachable;
                 casta.mergeInto(a);
 
-                c.to = .{ .builtin = typ };
-                c.of = a.stack.last() orelse .Any; // FIXME
+                if (!ctyp.isGeneric()) c.to = .{ .builtin = ctyp };
+                if (!into.isGeneric()) c.of = into;
+
+                std.log.info("{s}_{}: casting {} -> {}", .{ parent.name, parent.calls, c.of, c.to });
             },
         }
     }
