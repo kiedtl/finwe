@@ -102,7 +102,12 @@ pub const Parser = struct {
                     .srcloc = node.location,
                 };
             },
-            .Keyword => |i| ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location },
+            .Keyword => |i| b: {
+                if (mem.eql(u8, i, "return")) {
+                    break :b ASTNode{ .node = .Return, .srcloc = node.location };
+                }
+                break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
+            },
             .Child => @panic("TODO"),
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
         };
@@ -209,6 +214,9 @@ pub const Parser = struct {
                         // },
                         else => return error.ExpectedNode,
                     }
+                } else if (mem.eql(u8, k, "return")) {
+                    try validateListLength(ast, 1);
+                    break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until")) {
                     try validateListLength(ast, 3);
 
@@ -420,7 +428,10 @@ pub const Parser = struct {
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = 0 });
-        try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{ .name = "_Start" } }, .srcloc = 0 });
+        try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
+            .name = "_Start",
+            .goto = true,
+        } }, .srcloc = 0 });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },
             .srcloc = 0,

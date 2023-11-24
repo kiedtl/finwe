@@ -231,7 +231,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     return a;
 }
 
-fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) void {
+fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) !void {
     var iter = block.iterator();
     while (iter.next()) |node| {
         std.log.info("{s}: node: {}", .{ parent.name, node.node });
@@ -253,7 +253,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             assert(a.isGeneric() or !ungenericified.isGeneric());
                             for (ungenericified.args.constSlice()) |arg|
                                 cdecl.analysis.stack.append(arg) catch unreachable;
-                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis) catch {};
                             cdecl.is_analysed = true;
                         }
 
@@ -285,13 +285,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                                     ab.stack.append(arg) catch unreachable;
                                 newdef.node.Decl.arity = ungenericified;
                                 newdef.node.Decl.calls += 1;
-                                analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                                analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab) catch {};
                                 newdef.node.Decl.is_analysed = true;
                             }
                         } else unreachable;
                     } else {
                         if (!cdecl.is_analysed) {
-                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis) catch {};
                             cdecl.is_analysed = true;
                         }
                         if (cdecl.analysis.isGeneric()) {
@@ -303,12 +303,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     }
                 },
                 .Mac => {
-                    const m = for (program.defs.items) |mac| {
+                    const m = for (program.macs.items) |mac| {
                         if (mem.eql(u8, mac.node.Mac.name, c.name))
                             break mac;
                     } else unreachable;
                     if (!m.node.Mac.is_analysed) {
-                        analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis);
+                        analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis) catch {};
                         m.node.Mac.is_analysed = true;
                     }
                     m.node.Mac.analysis.mergeInto(a);
@@ -317,18 +317,36 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Loop => |l| {
                 switch (l.loop) {
-                    .Until => |u| analyseBlock(program, parent, u.cond, a),
+                    .Until => |u| analyseBlock(program, parent, u.cond, a) catch {},
                 }
-                analyseBlock(program, parent, l.body, a);
+                analyseBlock(program, parent, l.body, a) catch {};
             },
-            .When => {
-                // TODO: assert that body doesn't result in change to stack, or
-                // that body and else result in same change
-
+            .When => |w| {
                 var whena = BlockAnalysis{};
                 whena.args.append(.Bool) catch unreachable;
                 whena.mergeInto(a);
+
+                var ya_r = false;
+                var ya = a.*;
+                analyseBlock(program, parent, w.yup, &ya) catch {
+                    ya_r = true;
+                };
+
+                var na_r = false;
+                var na = a.*;
+                if (w.nah) |n| analyseBlock(program, parent, n, &na) catch {
+                    na_r = true;
+                };
+
+                if (ya_r and na_r) {
+                    a.* = ya;
+                } else if (ya_r) {
+                    a.* = na;
+                } else if (na_r) {
+                    a.* = ya;
+                }
             },
+            .Return => break,
             .Cond => {
                 @panic("TODO");
                 // Outline:
@@ -360,7 +378,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 if (!ctyp.isGeneric()) c.to = .{ .builtin = ctyp };
                 if (!into.isGeneric()) c.of = into;
 
-                std.log.info("{s}_{}: casting {} -> {}", .{ parent.name, parent.calls, c.of, c.to });
+                // std.log.info("{s}_{}: casting {} -> {}", .{ parent.name, parent.calls, c.of, c.to });
             },
         }
     }
@@ -383,5 +401,5 @@ pub fn analyse(program: *Program) void {
 
     assert(!entrypoint.is_analysed);
     entrypoint.is_analysed = true;
-    analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
+    analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis) catch {};
 }

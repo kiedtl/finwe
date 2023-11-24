@@ -172,6 +172,7 @@ pub const ASTNode = struct {
         Value: Value,
         Quote: Quote,
         Cast: Cast,
+        Return,
     };
 
     pub const Cast = struct {
@@ -186,6 +187,7 @@ pub const ASTNode = struct {
             Decl: usize, // variant, 0 if not generic
             Unchecked,
         } = .Unchecked,
+        goto: bool = false,
     };
 
     pub const When = struct {
@@ -483,15 +485,11 @@ pub const Ins = struct {
             @compileError("Unknown format string: '" ++ f ++ "'");
         }
 
-        var str: []const u8 = undefined;
-        inline for (@typeInfo(Op.Tag).Enum.fields) |enum_field| {
-            if (@as(Op.Tag, @enumFromInt(enum_field.value)) == value.op) {
-                str = enum_field.name;
-                //break; // FIXME: Wait for that bug to be fixed, then uncomment
-            }
-        }
-
-        try fmt.format(writer, "<[{}] {s} {}>", .{ value.stack, str, value.op });
+        const stk: []const u8 = if (value.stack == RT_STACK) "r" else " ";
+        const osz: []const u8 = if (value.short) "2" else " ";
+        try fmt.format(writer, "[{s}{s}] {s: <5} {}", .{
+            stk, osz, @tagName(value.op), value.op,
+        });
     }
 };
 

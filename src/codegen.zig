@@ -64,7 +64,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
         .node = node,
     });
     switch (node.node) {
-        .Call => try emit(buf, null, 0, false, true, .Ojsr),
+        .Call => |c| try emit(buf, null, 0, false, true, if (c.goto) .Ojmp else .Ojsr),
         else => unreachable,
     }
 }
@@ -87,8 +87,11 @@ fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
+        .Return => {
+            try emit(buf, node, RT_STACK, false, true, .Ojmp);
+        },
         .Cast => |c| {
-            std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
+            // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
             const from = c.of.bits(program).?;
             const to = c.to.builtin.bits(program).?;
             if (from == 16 and to == 8) {
@@ -151,30 +154,43 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .When => |when| {
-            // Jump to skip to end (or else clause) if condition fails
-            // TODO: handle case where body(s) >= 255 bytes generated code
+            // TODO: handle case where body(s) >= 127 bytes generated code
+
+            // Structure
+            // - When else branch
+            //   1. Jump-if-true to IF
+            //   2. ELSE
+            //   3. Jump-to END
+            //   4. IF
+            //   5. <end>
+            // - When no else branch
+            //   1. Jump-if-true to IF
+            //   2.
+            //   3. Jump-to END
+            //   4. IF
+            //   5. <end>
+
+            // 1.
             try emit(buf, node, WK_STACK, false, false, .Olit);
-            const skip1_addr = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            const blk_jump = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
             try emit(buf, node, WK_STACK, false, false, .Ojcn);
 
-            var end_jmp: ?usize = null;
+            // 2.
+            if (when.nah) |nah|
+                try genNodeList(program, buf, nah, ual);
+
+            // 3.
+            try emit(buf, node, WK_STACK, false, false, .Olit);
+            const end_jump = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            try emit(buf, node, WK_STACK, false, false, .Ojmp);
+
+            buf.items[blk_jump].op.Oraw = @intCast(buf.items.len - blk_jump - 2);
+
+            // 4.
+
             try genNodeList(program, buf, when.yup, ual);
 
-            if (when.nah) |nah| {
-                // Add jump to skip else branch, since else branch exists
-                try emit(buf, node, WK_STACK, false, false, .Olit);
-                end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oraw = 0 });
-                try emit(buf, node, WK_STACK, false, false, .Ojmp);
-
-                try genNodeList(program, buf, nah, ual);
-            }
-
-            if (when.nah != null)
-                buf.items[skip1_addr].op.Oraw = @as(u8, @intCast(buf.items.len - (end_jmp.? + 1)))
-            else
-                buf.items[skip1_addr].op.Oraw = @as(u8, @intCast(buf.items.len - skip1_addr));
-            if (end_jmp) |skip2_slot|
-                buf.items[skip2_slot].op.Oraw = @as(u8, @intCast(buf.items.len - skip2_slot));
+            buf.items[end_jump].op.Oraw = @intCast(buf.items.len - end_jump - 2);
         },
         .Cond => |cond| {
             var end_jumps = std.ArrayList(usize).init(gpa.allocator()); // Dummy jumps to fix
