@@ -18,6 +18,22 @@ pub const BlockAnalysis = struct {
     rargs: VTList32 = VTList32.init(null),
     rstack: VTList32 = VTList32.init(null),
 
+    pub fn resolveTypeRefs(self: @This(), arity: *const @This()) @This() {
+        // std.log.info("resolving {}\n with {}", .{ self, arity });
+        var r = self;
+        for (r.stack.slice()) |*stack|
+            if (stack.* == .TypeRef) {
+                // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
+                stack.* = arity.args.constSlice()[arity.args.len - stack.*.TypeRef - 1];
+            };
+        for (r.args.slice()) |*arg|
+            if (arg.* == .TypeRef) {
+                // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
+                arg.* = arity.args.constSlice()[arity.args.len - arg.*.TypeRef - 1];
+            };
+        return r;
+    }
+
     pub fn conformGenericTo(generic: @This(), caller: *const @This(), p: *const Program) @This() {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
@@ -69,8 +85,8 @@ pub const BlockAnalysis = struct {
                 } else true;
             }
         };
-        return S.f(a.args, b.args) or S.f(a.rargs, b.rargs) or
-            S.f(a.stack, b.stack) or S.f(a.rstack, b.rstack);
+        return S.f(a.args, b.args) and S.f(a.rargs, b.rargs) and
+            S.f(a.stack, b.stack) and S.f(a.rstack, b.rstack);
     }
 
     pub fn isGeneric(self: @This()) bool {
@@ -140,17 +156,24 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     const a3 = if (stk.len >= 3) stk.constSlice()[stk.len - 3] else null;
     const a1b: ?u5 = if (stk.len >= 1) a1.?.bits(prog) else null;
     const a2b: ?u5 = if (stk.len >= 2) a2.?.bits(prog) else null;
+    const a3b: ?u5 = if (stk.len >= 3) a3.?.bits(prog) else null;
+
+    std.log.info("ASM: {}, stk.len: {}, args_needed: {}, a1b: {?}, a2b: {?}", .{ i, stk.len, args_needed, a1b, a2b });
+    std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
 
     if (i.generic and stk.len >= args_needed and
         ((args_needed == 2 and a1b != null and a2b != null) or
+        (args_needed == 3 and a1b != null and a2b != null) or
         (args_needed == 1 and a1b != null)))
     {
         i.short = switch (i.op) {
             .Odup, .Odrop, .Odeo => a1b.? == 16,
+            .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
         };
-        i.generic = false;
     }
+
+    std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
 
     const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
 
@@ -239,6 +262,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
         switch (node.node) {
             .None => {},
             .Mac, .Decl => unreachable,
+            .Wild => |w| {
+                var wa = a.*;
+                analyseBlock(program, parent, w.body, &wa) catch {};
+                w.arity.resolveTypeRefs(&(parent.arity orelse BlockAnalysis{})).mergeInto(a);
+            },
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
                     const d = for (program.defs.items) |decl| {
@@ -258,7 +286,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
 
                         if (a.isGeneric() or !d_arity.isGeneric()) {
-                            d_arity.mergeInto(a);
+                            d_arity.resolveTypeRefs(&d_arity).mergeInto(a);
                             cdecl.calls += 1;
                         } else if (d_arity.isGeneric()) {
                             const ungenericified = d_arity.conformGenericTo(a, program);
@@ -315,11 +343,17 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 },
                 .Unchecked => unreachable, // parser.postProcess missed something
             },
-            .Loop => |l| {
+            .Loop => |*l| {
                 switch (l.loop) {
-                    .Until => |u| analyseBlock(program, parent, u.cond, a) catch {},
+                    .Until => |*u| {
+                        analyseBlock(program, parent, l.body, a) catch {};
+                        const t = a.stack.last().?;
+                        analyseBlock(program, parent, u.cond, a) catch {};
+                        if (t.bits(program)) |b| {
+                            u.cond_prep = if (b == 16) .DupShort else .Dup;
+                        }
+                    },
                 }
-                analyseBlock(program, parent, l.body, a) catch {};
             },
             .When => |w| {
                 var whena = BlockAnalysis{};

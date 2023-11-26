@@ -95,15 +95,22 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             const from = c.of.bits(program).?;
             const to = c.to.builtin.bits(program).?;
             if (from == 16 and to == 8) {
-                try emit(buf, node, WK_STACK, false, false, .Odrop);
+                try emit(buf, node, WK_STACK, false, false, .Onip);
             } else if (from == 8 and to == 16) {
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                try emit(buf, node, WK_STACK, false, false, .Oswp);
             } else {
                 // nothing
             }
         },
         .None => {},
-        .Value => |v| try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program)),
+        .Value => |v| {
+            if (v.typ.bits(program).? == 16) {
+                try emitIMM16(buf, node, WK_STACK, false, .Olit, v.toU16(program));
+            } else {
+                try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program));
+            }
+        },
         .Mac => {},
         .Decl => |d| {
             if (d.calls == 0)
@@ -112,6 +119,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try genNodeList(program, buf, d.body, ual);
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
+        .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .Quote => {
             @panic("unimplemented");
             // (TODO: shouldn't be gen'ing quotes, they need to be made decls
@@ -132,7 +140,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try genNodeList(program, buf, l.body, ual);
             switch (l.loop) {
                 .Until => |u| {
-                    try emit(buf, node, WK_STACK, false, false, .Odup);
+                    try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oeq);

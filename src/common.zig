@@ -41,7 +41,8 @@ pub const TypeInfo = union(enum) {
     Bool,
     U8,
     U16,
-    Codepoint,
+    Char8,
+    Char16,
     EnumLit: usize,
     AnyPtr,
     Ptr8: Ptr,
@@ -115,8 +116,8 @@ pub const TypeInfo = union(enum) {
 
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
-            .U8, .Codepoint, .Ptr8, .Bool, .Any8 => 8,
-            .U16, .Ptr16, .Any16 => 16,
+            .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
+            .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
             .String => unreachable, // TODO: remove string
@@ -138,9 +139,23 @@ pub const Value = struct {
         None,
     };
 
+    pub fn toU16(self: Value, program: *Program) u16 {
+        return switch (self.typ) {
+            .U16, .Char16, .Ptr16 => self.val.u16,
+            .EnumLit => |e| b: {
+                const v = program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field];
+                break :b v.value_b.? << 4 | v.value_a;
+            },
+            .AmbigEnumLit => unreachable,
+            .Any, .Any8, .Any16, .AnyPtr => unreachable,
+            .String => @panic("Free-standing strings are unimplemented"),
+            else => unreachable,
+        };
+    }
+
     pub fn toU8(self: Value, program: *Program) u8 {
         return switch (self.typ) {
-            .Bool, .U8, .Codepoint, .Ptr8 => self.val.u8,
+            .Bool, .U8, .Char8, .Ptr8 => self.val.u8,
             .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field].value_a, // TODO: value_b
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,
@@ -165,6 +180,7 @@ pub const ASTNode = struct {
         Decl: Decl, // word declaration
         Mac: Mac, // macro declaration
         Call: Call,
+        Wild: Wild,
         Loop: Loop,
         When: When,
         Cond: Cond,
@@ -173,6 +189,11 @@ pub const ASTNode = struct {
         Quote: Quote,
         Cast: Cast,
         Return,
+    };
+
+    pub const Wild = struct {
+        arity: analysis.BlockAnalysis,
+        body: ASTNodeList,
     };
 
     pub const Cast = struct {
@@ -212,7 +233,10 @@ pub const ASTNode = struct {
         body: ASTNodeList,
 
         pub const Type = union(enum) {
-            Until: struct { cond: ASTNodeList },
+            Until: struct {
+                cond: ASTNodeList,
+                cond_prep: enum { Unchecked, Dup, DupShort }, // TODO: Dup2, DupShort2, etc
+            },
         };
     };
 

@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const meta = std.meta;
 const activeTag = std.meta.activeTag;
+const assert = std.debug.assert;
 
 const common = @import("common.zig");
 const lexer = @import("lexer.zig");
@@ -84,11 +85,67 @@ pub const Parser = struct {
         return switch (node.node) {
             .T => .{ .typ = .Bool, .val = .{ .u8 = 1 } },
             .Nil => .{ .typ = .Bool, .val = .{ .u8 = 0 } },
-            .Number => |n| .{ .typ = .U8, .val = .{ .u8 = n } },
-            .Codepoint => |c| .{ .typ = .Codepoint, .val = .{ .u8 = c } },
+            .U8 => |n| .{ .typ = .U8, .val = .{ .u8 = n } },
+            .U16 => |n| .{ .typ = .U16, .val = .{ .u16 = n } },
+            .Char8 => |c| .{ .typ = .Char8, .val = .{ .u8 = c } },
+            .Char16 => |c| .{ .typ = .Char16, .val = .{ .u16 = c } },
             .String => |s| .{ .typ = .String, .val = .{ .String = s } },
             .EnumLit => |e| .{ .typ = .AmbigEnumLit, .val = .{ .AmbigEnumLit = e } },
             else => error.ExpectedValue,
+        };
+    }
+
+    fn parseArity(self: *Parser, node: *const lexer.Node) ParserError!BlockAnalysis {
+        var arity = BlockAnalysis{};
+        var norm_stack = true;
+        var before = true;
+
+        const ast_arity = try expectNode(.List, node);
+        for (ast_arity.items) |*arity_item| {
+            var dst: *TypeInfo.List32 = undefined;
+            if (before) {
+                dst = if (norm_stack) &arity.args else &arity.rargs;
+            } else {
+                dst = if (norm_stack) &arity.stack else &arity.rstack;
+            }
+
+            if (arity_item.node == .Keyword and mem.eql(u8, arity_item.node.Keyword, "--")) {
+                assert(before);
+                before = false;
+            } else if (arity_item.node == .Keyword and mem.eql(u8, arity_item.node.Keyword, "|")) {
+                norm_stack = false;
+            } else {
+                dst.append(try self.parseType(arity_item)) catch unreachable;
+            }
+        }
+
+        return arity;
+    }
+
+    // TODO: (AnySz) (PtrSz) (Ptr8) (Ptr16) etc
+    fn parseType(_: *Parser, node: *const lexer.Node) ParserError!TypeInfo {
+        return switch (node.node) {
+            .VarNum => |n| .{ .TypeRef = n },
+            .Keyword => |item| b: {
+                if (meta.stringToEnum(TypeInfo.Tag, item)) |p| {
+                    var r: ?TypeInfo = null;
+                    inline for (meta.fields(TypeInfo)) |field|
+                        if (field.type == void and
+                            mem.eql(u8, field.name, @tagName(p)))
+                        {
+                            r = @unionInit(TypeInfo, field.name, {});
+                        };
+                    if (r) |ret| {
+                        break :b ret;
+                    } else {
+                        return error.InvalidType;
+                    }
+                } else {
+                    std.log.err("Invalid type in arity def: {s}", .{item});
+                    return error.InvalidType;
+                }
+            },
+            else => return error.ExpectedNode,
         };
     }
 
@@ -130,49 +187,8 @@ pub const Parser = struct {
                     const name = try expectNode(.Keyword, &ast[1]);
 
                     var arity: ?BlockAnalysis = null;
-                    if (ast.len == 4) {
-                        arity = BlockAnalysis{};
-                        var norm_stack = true;
-                        var before = true;
-                        const ast_arity = try expectNode(.List, &ast[2]);
-                        for (ast_arity.items) |*arity_item| {
-                            var dst: *TypeInfo.List32 = undefined;
-                            if (before) {
-                                dst = if (norm_stack) &arity.?.args else &arity.?.rargs;
-                            } else {
-                                dst = if (norm_stack) &arity.?.stack else &arity.?.rstack;
-                            }
-
-                            switch (arity_item.node) {
-                                .VarNum => |arity_ref| {
-                                    dst.append(.{ .TypeRef = arity_ref }) catch unreachable;
-                                },
-                                .Keyword => |item| {
-                                    if (mem.eql(u8, item, "--")) {
-                                        before = false;
-                                    } else if (mem.eql(u8, item, "|")) {
-                                        norm_stack = false;
-                                    } else if (meta.stringToEnum(TypeInfo.Tag, item)) |p| {
-                                        // FIXME: fails silently
-                                        // Will fix once type values are fully fleshed out
-                                        // (Including (Ptr8), (Ptr16), (Enum), etc
-                                        inline for (meta.fields(TypeInfo)) |field|
-                                            if (field.type == void and
-                                                mem.eql(u8, field.name, @tagName(p)))
-                                            {
-                                                dst.append(
-                                                    @unionInit(TypeInfo, field.name, {}),
-                                                ) catch unreachable;
-                                            };
-                                    } else {
-                                        std.log.err("Invalid type in arity def: {s}", .{item});
-                                        return error.InvalidType;
-                                    }
-                                },
-                                else => return error.ExpectedNode,
-                            }
-                        }
-                    }
+                    if (ast.len == 4)
+                        arity = try self.parseArity(&ast[2]);
 
                     const body_ind: usize = if (ast.len == 4) @as(usize, 3) else 2;
                     const ast_body = try expectNode(.Quote, &ast[body_ind]);
@@ -193,6 +209,17 @@ pub const Parser = struct {
                         .node = .{ .Mac = .{ .name = name, .body = body } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "wild")) {
+                    try validateListLength(ast, 3);
+
+                    const arity = try self.parseArity(&ast[1]);
+                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const block = try self.parseStatements(ast_body.items);
+
+                    break :b ASTNode{
+                        .node = .{ .Wild = .{ .arity = arity, .body = block } },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "as")) {
                     try validateListLength(ast, 2);
 
@@ -201,18 +228,12 @@ pub const Parser = struct {
                             .node = .{ .Cast = .{ .to = .{ .ref = n } } },
                             .srcloc = ast[0].location,
                         },
-                        // .EnumLit => {
-                        //     const typ_kwd = try self.parseValue(&ast[1]);
-                        //     if (typ_kwd != .AmbigEnumLit)
-                        //         return error.ExpectedEnumLit;
-                        //     const typ_lowered = try self.lowerEnumValue(typ_kwd.AmbigEnumLit);
-                        //     const typ = meta.stringToEnum(ASTValue.Tag, self.program.types.items[typ_lowered.type].def.Enum.fields.items[typ_lowered.field].name) orelse return error.InvalidType;
-                        //     break :b ASTNode{
-                        //         .node = .{ .Cast = .{ .builtin = typ } },
-                        //         .srcloc = ast[0].location,
-                        //     };
-                        // },
-                        else => return error.ExpectedNode,
+                        else => break :b ASTNode{
+                            .node = .{ .Cast = .{ .to = .{
+                                .builtin = try self.parseType(&ast[1]),
+                            } } },
+                            .srcloc = ast[0].location,
+                        },
                     }
                 } else if (mem.eql(u8, k, "return")) {
                     try validateListLength(ast, 1);
@@ -228,7 +249,7 @@ pub const Parser = struct {
 
                     break :b ASTNode{
                         .node = .{ .Loop = .{
-                            .loop = .{ .Until = .{ .cond = cond } },
+                            .loop = .{ .Until = .{ .cond = cond, .cond_prep = .Unchecked } },
                             .body = body,
                         } },
                         .srcloc = ast[0].location,
@@ -306,7 +327,13 @@ pub const Parser = struct {
                     ) orelse return error.InvalidAsmOp;
                     const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
                     break :b ASTNode{
-                        .node = .{ .Asm = .{ .stack = asm_stack, .short = asm_short, .keep = asm_keep, .op = asm_op } },
+                        .node = .{ .Asm = .{
+                            .stack = asm_stack,
+                            .short = asm_short,
+                            .generic = asm_generic,
+                            .keep = asm_keep,
+                            .op = asm_op,
+                        } },
                         .srcloc = ast[0].location,
                     };
                 } else {
@@ -369,8 +396,10 @@ pub const Parser = struct {
                         },
                         else => {},
                     },
-                    .Decl => |d| try walkNodes(parser, d.body),
-                    .Quote => |d| try walkNodes(parser, d.body),
+                    .Decl => |b| try walkNodes(parser, b.body),
+                    .Mac => |b| try walkNodes(parser, b.body),
+                    .Wild => |b| try walkNodes(parser, b.body),
+                    .Quote => |b| try walkNodes(parser, b.body),
                     .Loop => |d| {
                         switch (d.loop) {
                             .Until => |u| try walkNodes(parser, u.cond),

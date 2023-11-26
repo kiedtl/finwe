@@ -14,8 +14,10 @@ pub const Node = struct {
     pub const NodeType = union(enum) {
         T,
         Nil,
-        Number: u8,
-        Codepoint: u8,
+        U8: u8,
+        U16: u16,
+        Char8: u8,
+        Char16: u16,
         String: String,
         EnumLit: EnumLit,
         Keyword: []const u8,
@@ -97,10 +99,10 @@ pub const Lexer = struct {
             '$', 'k', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
-                        '$' => Node.NodeType{ .VarNum = node.Number },
+                        '$' => Node.NodeType{ .VarNum = node.U8 },
                         'k' => node,
                         '.' => error.InvalidEnumLiteral, // Cannot be numeric
-                        ':' => Node.NodeType{ .ChildNum = node.Number },
+                        ':' => Node.NodeType{ .ChildNum = node.U8 },
                         else => unreachable,
                     };
                 } else |_| {
@@ -152,15 +154,26 @@ pub const Lexer = struct {
                     offset = 2;
                 }
 
-                const num = try std.fmt.parseInt(u8, word[offset..], base);
-                break :blk Node.NodeType{ .Number = num };
+                if (mem.endsWith(u8, word, "s")) {
+                    const num = try std.fmt.parseInt(u16, word[offset .. word.len - 1], base);
+                    break :blk Node.NodeType{ .U16 = num };
+                } else {
+                    const num = try std.fmt.parseInt(u8, word[offset..], base);
+                    break :blk Node.NodeType{ .U8 = num };
+                }
             },
             '\'' => blk: {
-                var utf8 = (std.unicode.Utf8View.init(word) catch return error.InvalidUtf8).iterator();
+                const short = mem.endsWith(u8, word, "s");
+
+                var utf8 = (std.unicode.Utf8View.init(if (short) word[0 .. word.len - 1] else word) catch return error.InvalidUtf8).iterator();
                 const encoded_codepoint = utf8.nextCodepointSlice() orelse return error.InvalidCharLiteral;
                 if (utf8.nextCodepointSlice()) |_| return error.InvalidCharLiteral;
                 const codepoint = std.unicode.utf8Decode(encoded_codepoint) catch return error.InvalidUtf8;
-                break :blk Node.NodeType{ .Codepoint = @intCast(codepoint % 255) };
+                if (short) {
+                    break :blk Node.NodeType{ .Char16 = @intCast(codepoint) };
+                } else {
+                    break :blk Node.NodeType{ .Char8 = @intCast(codepoint % 255) };
+                }
             },
             else => @panic("what were you trying to do anyway"),
         };
