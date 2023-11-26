@@ -60,6 +60,19 @@ pub const TypeInfo = union(enum) {
     pub const Tag = meta.Tag(@This());
     pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
 
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (comptime !mem.eql(u8, f, "")) {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        switch (self) {
+            .EnumLit, .TypeRef => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
+            .Ptr8, .Ptr16 => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
+            else => try writer.print("{s}", .{@tagName(self)}),
+        }
+        try writer.print("", .{});
+    }
+
     pub const Ptr = struct {
         typ: usize,
         indirection: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
@@ -189,7 +202,33 @@ pub const ASTNode = struct {
         Quote: Quote,
         Cast: Cast,
         Return,
+
+        pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+            if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format: '" ++ f ++ "'");
+
+            const s = @tagName(self);
+            switch (self) {
+                .Call => |c| switch (c.ctyp) {
+                    .Decl => |d| try writer.print("Call<{s}, {}>", .{ c.name, d }),
+                    .Mac => try writer.print("CallMac<{s}>", .{c.name}),
+                    .Unchecked => try writer.print("Call<{s}?>", .{c.name}),
+                },
+                .Wild => |w| try writer.print("Wild<{}>", .{w.arity}),
+                .Loop => |l| switch (l.loop) {
+                    .Until => |u| try writer.print("Until<{s}>", .{@tagName(u.cond_prep)}),
+                },
+                .Asm => |a| try writer.print("Asm<{}>", .{a}),
+                .Value => |v| try writer.print("Val<{}, {}>", .{ v.typ, v.val }),
+                .Cast => |c| try writer.print("Cast<{}, {} ${?}>", .{ c.of, c.to, c.ref }),
+                else => try writer.print("{s}", .{s}),
+            }
+        }
     };
+
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
+        try writer.print("{}", .{self.node});
+    }
 
     pub const Wild = struct {
         arity: analysis.BlockAnalysis,
@@ -198,7 +237,8 @@ pub const ASTNode = struct {
 
     pub const Cast = struct {
         of: TypeInfo = .Any,
-        to: union(enum) { builtin: TypeInfo, ref: usize },
+        to: TypeInfo,
+        ref: ?usize = null,
     };
 
     pub const Call = struct {
@@ -274,6 +314,11 @@ pub const ASTNode = struct {
     pub fn deepclone(self: @This()) @This() {
         var new = self.node;
         switch (new) {
+            .When => {
+                new.When.yup = _deepcloneASTList(new.When.yup);
+                if (new.When.nah) |n|
+                    new.When.nah = _deepcloneASTList(n);
+            },
             .Cond => |*c| {
                 if (c.else_branch != null)
                     c.else_branch = _deepcloneASTList(c.else_branch.?);
@@ -291,7 +336,8 @@ pub const ASTNode = struct {
             .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body),
             .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body),
             .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body),
-            else => {},
+            .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body),
+            .None, .Call, .Asm, .Value, .Cast, .Return => {},
         }
 
         return .{

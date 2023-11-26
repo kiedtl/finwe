@@ -93,7 +93,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Cast => |c| {
             // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
             const from = c.of.bits(program).?;
-            const to = c.to.builtin.bits(program).?;
+            const to = c.to.bits(program).?;
             if (from == 16 and to == 8) {
                 try emit(buf, node, WK_STACK, false, false, .Onip);
             } else if (from == 8 and to == 16) {
@@ -115,6 +115,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Decl => |d| {
             if (d.calls == 0)
                 return;
+            // std.log.info("codegen: generating {s}_{}", .{ d.name, d.variant });
             node.romloc = buf.items.len;
             try genNodeList(program, buf, d.body, ual);
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
@@ -140,6 +141,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try genNodeList(program, buf, l.body, ual);
             switch (l.loop) {
                 .Until => |u| {
+                    assert(u.cond_prep != .Unchecked);
                     try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);

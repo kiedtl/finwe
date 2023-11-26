@@ -225,13 +225,11 @@ pub const Parser = struct {
 
                     switch (ast[1].node) {
                         .VarNum => |n| break :b ASTNode{
-                            .node = .{ .Cast = .{ .to = .{ .ref = n } } },
+                            .node = .{ .Cast = .{ .to = .Any, .ref = n } },
                             .srcloc = ast[0].location,
                         },
                         else => break :b ASTNode{
-                            .node = .{ .Cast = .{ .to = .{
-                                .builtin = try self.parseType(&ast[1]),
-                            } } },
+                            .node = .{ .Cast = .{ .to = try self.parseType(&ast[1]) } },
                             .srcloc = ast[0].location,
                         },
                     }
