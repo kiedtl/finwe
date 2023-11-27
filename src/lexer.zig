@@ -9,7 +9,7 @@ pub const NodeList = std.ArrayList(Node);
 
 pub const Node = struct {
     node: NodeType,
-    location: usize,
+    location: common.Srcloc,
 
     pub const NodeType = union(enum) {
         T,
@@ -35,7 +35,7 @@ pub const Node = struct {
     };
 
     pub fn deinitMain(list: NodeList, alloc: mem.Allocator) void {
-        (Node{ .node = .{ .List = list }, .location = 0 }).deinit(alloc);
+        (Node{ .node = .{ .List = list }, .location = undefined }).deinit(alloc);
     }
 
     pub fn deinit(self: *Node, alloc: mem.Allocator) void {
@@ -62,6 +62,8 @@ pub const Lexer = struct {
     alloc: mem.Allocator,
     index: usize = 0,
     stack: Stack.List, // Lexing stack, not program one
+    line: usize = 1,
+    column: usize = 0,
 
     pub const Stack = struct {
         type: Type,
@@ -179,22 +181,34 @@ pub const Lexer = struct {
         };
     }
 
+    pub fn moar(self: *Self) void {
+        self.index += 1;
+        if (self.index < self.input.len and
+            self.input[self.index] == '\n')
+        {
+            self.line += 1;
+            self.column = 0;
+        } else {
+            self.column += 1;
+        }
+    }
+
     pub fn lexString(self: *Self) LexerError!Node.NodeType {
         if (self.input[self.index] != '"') {
             return error.BadString; // ERROR: Invalid string
         }
 
         var buf = String.init(common.gpa.allocator());
-        self.index += 1; // skip beginning quote
+        self.moar(); // skip beginning quote
 
-        while (self.index < self.input.len) : (self.index += 1) {
+        while (self.index < self.input.len) : (self.moar()) {
             switch (self.input[self.index]) {
                 '"' => {
-                    self.index += 1;
+                    self.moar();
                     return Node.NodeType{ .String = buf };
                 },
                 '\\' => {
-                    self.index += 1;
+                    self.moar();
                     if (self.index == self.input.len) {
                         return error.BadString; // ERROR: incomplete escape sequence
                     }
@@ -222,21 +236,21 @@ pub const Lexer = struct {
 
     pub fn lexValue(self: *Self, vtype: u21) LexerError!Node.NodeType {
         if (vtype != 'k' and vtype != '#')
-            self.index += 1;
+            self.moar();
         const oldi = self.index;
 
-        while (self.index < self.input.len) : (self.index += 1) {
-            switch (self.input[self.index]) {
-                0x09...0x0d, 0x20, '(', ')', '[', ']', '#' => break,
+        const word_end = for (self.index..self.input.len) |ind| {
+            switch (self.input[ind]) {
+                0x09...0x0d, 0x20, '(', ')', '[', ']', '#' => break ind,
                 else => {},
             }
-        }
+        } else self.input.len;
 
-        const word = self.input[oldi..self.index];
+        const word = self.input[oldi..word_end];
         assert(word.len > 0);
 
-        // lex() expects index to point to last non-word char, so move index back
-        self.index -= 1;
+        for (oldi..word_end - 1) |_|
+            self.moar();
 
         return self.lexWord(vtype, word);
     }
@@ -252,17 +266,16 @@ pub const Lexer = struct {
                 .Paren => assert(self.input[self.index] == '('),
                 .Bracket => assert(self.input[self.index] == '['),
             }
-            self.index += 1;
+            self.moar();
         }
 
-        while (self.index < self.input.len) : (self.index += 1) {
+        while (self.index < self.input.len) : (self.moar()) {
             const ch = self.input[self.index];
 
-            var vch = self.index;
             var v: Node.NodeType = switch (ch) {
                 '#' => {
                     while (self.index < self.input.len and self.input[self.index] != 0x0a)
-                        self.index += 1;
+                        self.moar();
                     continue;
                 },
                 0x09...0x0d, 0x20 => continue,
@@ -286,7 +299,7 @@ pub const Lexer = struct {
 
             res.append(Node{
                 .node = v,
-                .location = vch,
+                .location = .{ .line = self.line, .column = self.column },
             }) catch return error.OutOfMemory;
         }
 

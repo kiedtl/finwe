@@ -21,10 +21,10 @@ const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
 
 pub const Parser = struct {
-    program: Program,
+    program: *Program,
     alloc: mem.Allocator,
 
-    const ParserError = error{
+    pub const ParserError = error{
         StrayToken,
         EmptyList,
         ExpectedKeyword,
@@ -48,16 +48,9 @@ pub const Parser = struct {
         UnknownIdent,
     } || mem.Allocator.Error;
 
-    pub fn init(alloc: mem.Allocator) Parser {
+    pub fn init(program: *Program, alloc: mem.Allocator) Parser {
         return .{
-            .program = Program{
-                .ast = ASTNodeList.init(alloc),
-                .defs = ASTNodePtrList.init(alloc),
-                .macs = ASTNodePtrList.init(alloc),
-                .types = common.Type.AList.init(alloc),
-                .builtin_types = std.ArrayList(TypeInfo).init(alloc),
-                //.defs = ASTNodeList.init(alloc),
-            },
+            .program = program,
             .alloc = alloc,
         };
     }
@@ -123,7 +116,7 @@ pub const Parser = struct {
     }
 
     // TODO: (AnySz) (PtrSz) (Ptr8) (Ptr16) etc
-    fn parseType(_: *Parser, node: *const lexer.Node) ParserError!TypeInfo {
+    fn parseType(self: *Parser, node: *const lexer.Node) ParserError!TypeInfo {
         return switch (node.node) {
             .VarNum => |n| .{ .TypeRef = n },
             .Keyword => |item| b: {
@@ -138,11 +131,11 @@ pub const Parser = struct {
                     if (r) |ret| {
                         break :b ret;
                     } else {
-                        return error.InvalidType;
+                        return self.err(error.InvalidType, node.location);
                     }
                 } else {
                     std.log.err("Invalid type in arity def: {s}", .{item});
-                    return error.InvalidType;
+                    return self.err(error.InvalidType, node.location);
                 }
             },
             else => return error.ExpectedNode,
@@ -449,23 +442,23 @@ pub const Parser = struct {
             if (ast_item.node != .Decl and ast_item.node != .Mac) {
                 try body.append(ast_item.*);
                 ast_item.node = .None;
-                ast_item.srcloc = 0;
+                ast_item.srcloc = .{};
             }
         }
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
-        }, .srcloc = 0 });
+        }, .srcloc = .{} });
         try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
             .name = "_Start",
             .goto = true,
-        } }, .srcloc = 0 });
+        } }, .srcloc = .{} });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },
-            .srcloc = 0,
+            .srcloc = .{},
         });
     }
 
-    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!Program {
+    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!void {
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
             else => try self.program.ast.append(try self.parseStatement(node)),
@@ -474,7 +467,14 @@ pub const Parser = struct {
         try self.setupMainFunc();
         try self.extractDefs();
         try self.postProcess();
+    }
 
-        return self.program;
+    pub fn err(self: *Parser, e: ParserError!void, srcloc: common.Srcloc) ParserError {
+        if (e) {
+            unreachable;
+        } else |er| {
+            self.program.errors.append(.{ .e = er, .l = srcloc }) catch unreachable;
+            return er;
+        }
     }
 };

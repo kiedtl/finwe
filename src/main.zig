@@ -1,9 +1,12 @@
 const std = @import("std");
 const clap = @import("clap");
 const mem = std.mem;
+const assert = std.debug.assert;
 
+const errors = @import("errors.zig");
 const analyser = @import("analyser.zig");
 const codegen = @import("codegen.zig");
+const common = @import("common.zig");
 const emitter = @import("emitter.zig");
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
@@ -45,19 +48,25 @@ pub fn main() anyerror!void {
         const lexed = try lexer.lex(.Root);
         defer lexer.deinit();
 
-        var parser = parserm.Parser.init(gpa.allocator());
-        parser.initTypes();
-        var parsed = try parser.parse(&lexed);
+        var program = common.Program.init(gpa.allocator());
 
-        analyser.analyse(&parsed);
+        var parser = parserm.Parser.init(&program, gpa.allocator());
+        parser.initTypes();
+        parser.parse(&lexed) catch {
+            assert(program.errors.items.len > 0);
+            errors.printErrors(&program, buf);
+            std.os.exit(1);
+        };
+
+        analyser.analyse(&program);
 
         if (args.args.@"debug-inf" != 0)
-            for (parsed.defs.items) |def| {
+            for (program.defs.items) |def| {
                 const d = def.node.Decl;
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
-        var assembled = try codegen.generate(&parsed);
+        var assembled = try codegen.generate(&program);
         if (args.args.@"debug-asm" != 0)
             for (assembled.items, 0..) |asmstmt, i| {
                 std.log.info("{} -\t{}", .{ i, asmstmt });

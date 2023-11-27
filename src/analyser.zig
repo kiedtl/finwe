@@ -12,6 +12,8 @@ const TypeInfo = common.TypeInfo;
 const Value = common.Value;
 const VTList32 = TypeInfo.List32;
 
+pub const Error = error{};
+
 pub const BlockAnalysis = struct {
     args: VTList32 = VTList32.init(null),
     stack: VTList32 = VTList32.init(null),
@@ -254,7 +256,12 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     return a;
 }
 
-fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) !void {
+pub const AnalyserInfo = struct {
+    early_return: bool = false,
+};
+
+fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) Error!AnalyserInfo {
+    var info = AnalyserInfo{};
     var iter = block.iterator();
     while (iter.next()) |node| {
         // if (mem.eql(u8, parent.name, "print") and parent.variant == 2) {
@@ -266,7 +273,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Mac, .Decl => unreachable,
             .Wild => |w| {
                 var wa = a.*;
-                analyseBlock(program, parent, w.body, &wa) catch {};
+                _ = try analyseBlock(program, parent, w.body, &wa);
                 w.arity.resolveTypeRefs(&(parent.arity orelse BlockAnalysis{})).mergeInto(a);
             },
             .Call => |*c| switch (c.ctyp) {
@@ -283,7 +290,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             assert(a.isGeneric() or !ungenericified.isGeneric());
                             for (ungenericified.args.constSlice()) |arg|
                                 cdecl.analysis.stack.append(arg) catch unreachable;
-                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis) catch {};
+                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
                             cdecl.is_analysed = true;
                         }
 
@@ -317,13 +324,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                                     ab.stack.append(arg) catch unreachable;
                                 newdef.node.Decl.arity = ungenericified;
                                 newdef.node.Decl.calls += 1;
-                                analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab) catch {};
+                                _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
                                 newdef.node.Decl.is_analysed = true;
                             }
                         } else unreachable;
                     } else {
                         if (!cdecl.is_analysed) {
-                            analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis) catch {};
+                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
                             cdecl.is_analysed = true;
                         }
                         if (cdecl.analysis.isGeneric()) {
@@ -340,7 +347,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             break mac;
                     } else unreachable;
                     if (!m.node.Mac.is_analysed) {
-                        analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis) catch {};
+                        _ = try analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis);
                         m.node.Mac.is_analysed = true;
                     }
                     m.node.Mac.analysis.mergeInto(a);
@@ -351,11 +358,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 switch (l.loop) {
                     .Until => |*u| {
                         // std.log.info("{s}_{}: until: a: {}", .{ parent.name, parent.variant, a });
-                        analyseBlock(program, parent, l.body, a) catch {};
+                        _ = try analyseBlock(program, parent, l.body, a);
                         // std.log.info("{s}_{}: until: b: {}", .{ parent.name, parent.variant, a });
                         const t = a.stack.last().?;
                         a.stack.append(t) catch unreachable;
-                        analyseBlock(program, parent, u.cond, a) catch {};
+                        _ = try analyseBlock(program, parent, u.cond, a);
                         assert(a.stack.last().? == .Bool);
                         _ = a.stack.pop() catch unreachable;
                         if (t.bits(program)) |b| {
@@ -369,27 +376,28 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 whena.args.append(.Bool) catch unreachable;
                 whena.mergeInto(a);
 
-                var ya_r = false;
                 var ya = a.*;
-                analyseBlock(program, parent, w.yup, &ya) catch {
-                    ya_r = true;
-                };
+                const yr = try analyseBlock(program, parent, w.yup, &ya);
 
                 var na_r = false;
                 var na = a.*;
-                if (w.nah) |n| analyseBlock(program, parent, n, &na) catch {
-                    na_r = true;
-                };
+                if (w.nah) |n|
+                    if ((try analyseBlock(program, parent, n, &na)).early_return) {
+                        na_r = true;
+                    };
 
-                if (ya_r and na_r) {
+                if (yr.early_return and na_r) {
                     a.* = ya;
-                } else if (ya_r) {
+                } else if (yr.early_return) {
                     a.* = na;
                 } else if (na_r) {
                     a.* = ya;
                 }
             },
-            .Return => break,
+            .Return => {
+                info.early_return = true;
+                break;
+            },
             .Cond => {
                 @panic("TODO");
                 // Outline:
@@ -423,6 +431,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
         }
     }
+
+    return info;
 }
 
 pub fn analyse(program: *Program) void {
@@ -442,5 +452,5 @@ pub fn analyse(program: *Program) void {
 
     assert(!entrypoint.is_analysed);
     entrypoint.is_analysed = true;
-    analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis) catch {};
+    _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
 }

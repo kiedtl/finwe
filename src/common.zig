@@ -5,7 +5,8 @@ const fmt = std.fmt;
 const assert = std.debug.assert;
 
 const lexer = @import("lexer.zig");
-const analysis = @import("analyser.zig");
+const parser = @import("parser.zig");
+const analyser = @import("analyser.zig");
 const common = @This();
 
 const LinkedList = @import("list.zig").LinkedList;
@@ -183,7 +184,7 @@ pub const ASTNode = struct {
     __next: ?*ASTNode = null,
 
     node: ASTNode.Type,
-    srcloc: usize,
+    srcloc: Srcloc,
     romloc: usize = 0,
 
     pub const Tag = std.meta.Tag(ASTNode.Type);
@@ -231,7 +232,7 @@ pub const ASTNode = struct {
     }
 
     pub const Wild = struct {
-        arity: analysis.BlockAnalysis,
+        arity: analyser.BlockAnalysis,
         body: ASTNodeList,
     };
 
@@ -282,9 +283,9 @@ pub const ASTNode = struct {
 
     pub const Decl = struct {
         name: []const u8,
-        arity: ?analysis.BlockAnalysis = null,
-        analysis: analysis.BlockAnalysis = analysis.BlockAnalysis{},
-        variations: StackBuffer(analysis.BlockAnalysis, 8) = StackBuffer(analysis.BlockAnalysis, 8).init(null),
+        arity: ?analyser.BlockAnalysis = null,
+        analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
+        variations: StackBuffer(analyser.BlockAnalysis, 8) = StackBuffer(analyser.BlockAnalysis, 8).init(null),
         body: ASTNodeList,
         is_analysed: bool = false,
         variant: usize = 0,
@@ -293,7 +294,7 @@ pub const ASTNode = struct {
 
     pub const Mac = struct {
         name: []const u8,
-        analysis: analysis.BlockAnalysis = analysis.BlockAnalysis{},
+        analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
         body: ASTNodeList,
         is_analysed: bool = false,
     };
@@ -348,6 +349,20 @@ pub const ASTNode = struct {
     }
 };
 
+pub const Srcloc = struct {
+    line: usize = 0,
+    column: usize = 0,
+    // file: []const u8,
+};
+
+pub const Error = struct {
+    e: Set,
+    l: Srcloc,
+
+    pub const Set = parser.Parser.ParserError || analyser.Error;
+    pub const AList = std.ArrayList(@This());
+};
+
 pub const Program = struct {
     ast: ASTNodeList,
     defs: ASTNodePtrList,
@@ -355,12 +370,26 @@ pub const Program = struct {
     types: Type.AList,
     builtin_types: std.ArrayList(TypeInfo),
 
+    errors: Error.AList,
+
     // scopes: Scope.AList,
     // pub const Scope = struct {
     //     defs: ASTNodePtrList,
     //     macs: ASTNodePtrList,
     //     pub const AList = std.ArrayList(Scope);
     // };
+
+    pub fn init(alloc: mem.Allocator) @This() {
+        return Program{
+            .ast = ASTNodeList.init(alloc),
+            .defs = ASTNodePtrList.init(alloc),
+            .macs = ASTNodePtrList.init(alloc),
+            .types = common.Type.AList.init(alloc),
+            .builtin_types = std.ArrayList(TypeInfo).init(alloc),
+            .errors = common.Error.AList.init(alloc),
+            //.defs = ASTNodeList.init(alloc),
+        };
+    }
 
     pub fn addNativeType(self: *Program, comptime T: type, name: []const u8) void {
         switch (@typeInfo(T)) {
@@ -536,7 +565,7 @@ pub const Ins = struct {
     op: Op,
 
     // Generic, may be either short or not
-    // Will be lowered once analysis is done on calling function
+    // Will be lowered once analyser is done on calling function
     generic: bool = false,
 
     pub const List = std.ArrayList(Ins);
