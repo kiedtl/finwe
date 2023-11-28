@@ -52,10 +52,13 @@ pub fn main() anyerror!void {
 
         var parser = parserm.Parser.init(&program, gpa.allocator());
         parser.initTypes();
-        parser.parse(&lexed) catch {
-            assert(program.errors.items.len > 0);
-            errors.printErrors(&program, buf);
-            std.os.exit(1);
+        parser.parse(&lexed) catch |e| {
+            if (program.errors.items.len > 0) {
+                errors.printErrors(&program, buf);
+                std.os.exit(1);
+            } else {
+                @panic(@errorName(e));
+            }
         };
 
         analyser.analyse(&program);

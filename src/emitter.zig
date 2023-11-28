@@ -9,7 +9,7 @@ pub fn spitout(program: []const Ins) !void {
         var byte = switch (ins.op) {
             .Oraw => |v| v,
             .Ohalt => 0x0,
-            // .Oinc => 0x01,
+            .Oinc => 0x01,
             .Odrop => 0x02,
             .Onip => 0x03,
             .Oswp => 0x04,
@@ -23,6 +23,9 @@ pub fn spitout(program: []const Ins) !void {
             .Ojmp => 0x0c,
             .Ojcn => 0x0d,
             .Ojsr => 0x0e,
+            .Olda => 0x14,
+            .Osta => 0x15,
+            .Odei => 0x16,
             .Odeo => 0x17,
             .Oadd => 0x18,
             .Osub => 0x19,

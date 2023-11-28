@@ -205,7 +205,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.args.append(if (i.short) .U16 else .U8) catch unreachable;
             a.stack.append(.U8) catch unreachable; // TODO: device
         },
-        .Odup => {
+        .Oinc, .Odup => {
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
@@ -219,6 +219,12 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
             a.stack.append(.Bool) catch unreachable;
+        },
+        .Olda => {
+            a.args.append(a1 orelse .AnyPtr16) catch unreachable;
+            a.stack.append(
+                if (a1) |t| prog.builtin_types.items[t.Ptr16.typ] else .Any,
+            ) catch unreachable;
         },
         .Ohalt => {},
         else => {
@@ -411,7 +417,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // std.log.info("merging asm into main", .{});
                 analyseAsm(i, a, program).mergeInto(a);
             },
-            .Value => |v| a.stack.append(v.typ) catch unreachable,
+            .Value => |v| switch (v.typ) {
+                .StaticPtr => |ind| a.stack.append(
+                    program.statics.items[ind].type.ptrize16(program),
+                ) catch unreachable,
+                else => a.stack.append(v.typ) catch unreachable,
+            },
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
             .Cast => |*c| {
                 if (c.ref) |r| {

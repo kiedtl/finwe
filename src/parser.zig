@@ -64,17 +64,16 @@ pub const Parser = struct {
         if (ast.len > require) return error.UnexpectedItems;
     }
 
-    fn expectNode(comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) b: {
+    fn expectNode(self: *Parser, comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) b: {
         break :b ParserError!@TypeOf(@field(node.node, @tagName(nodetype)));
     } {
         if (node.node != nodetype) {
-            return error.ExpectedNode;
+            return self.err(error.ExpectedNode, node.location);
         }
         return @field(node.node, @tagName(nodetype));
     }
 
     fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
-        _ = self;
         return switch (node.node) {
             .T => .{ .typ = .Bool, .val = .{ .u8 = 1 } },
             .Nil => .{ .typ = .Bool, .val = .{ .u8 = 0 } },
@@ -82,7 +81,17 @@ pub const Parser = struct {
             .U16 => |n| .{ .typ = .U16, .val = .{ .u16 = n } },
             .Char8 => |c| .{ .typ = .Char8, .val = .{ .u8 = c } },
             .Char16 => |c| .{ .typ = .Char16, .val = .{ .u16 = c } },
-            .String => |s| .{ .typ = .String, .val = .{ .String = s } },
+            .String => |s| b: {
+                self.program.statics.append(.{
+                    .type = .U8,
+                    .count = s.items.len + 1,
+                    .default = .{ .String = s },
+                }) catch unreachable;
+                break :b .{
+                    .typ = .{ .StaticPtr = self.program.statics.items.len - 1 },
+                    .val = .None,
+                };
+            },
             .EnumLit => |e| .{ .typ = .AmbigEnumLit, .val = .{ .AmbigEnumLit = e } },
             else => error.ExpectedValue,
         };
@@ -93,7 +102,7 @@ pub const Parser = struct {
         var norm_stack = true;
         var before = true;
 
-        const ast_arity = try expectNode(.List, node);
+        const ast_arity = try self.expectNode(.List, node);
         for (ast_arity.items) |*arity_item| {
             var dst: *TypeInfo.List32 = undefined;
             if (before) {
@@ -138,7 +147,7 @@ pub const Parser = struct {
                     return self.err(error.InvalidType, node.location);
                 }
             },
-            else => return error.ExpectedNode,
+            else => return self.err(error.ExpectedNode, node.location),
         };
     }
 
@@ -177,14 +186,14 @@ pub const Parser = struct {
         return switch (ast[0].node) {
             .Keyword => |k| b: {
                 if (mem.eql(u8, k, "word")) {
-                    const name = try expectNode(.Keyword, &ast[1]);
+                    const name = try self.expectNode(.Keyword, &ast[1]);
 
                     var arity: ?BlockAnalysis = null;
                     if (ast.len == 4)
                         arity = try self.parseArity(&ast[2]);
 
                     const body_ind: usize = if (ast.len == 4) @as(usize, 3) else 2;
-                    const ast_body = try expectNode(.Quote, &ast[body_ind]);
+                    const ast_body = try self.expectNode(.Quote, &ast[body_ind]);
                     const body = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{ .node = .{ .Decl = .{
@@ -193,9 +202,9 @@ pub const Parser = struct {
                         .body = body,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
-                    const name = try expectNode(.Keyword, &ast[1]);
+                    const name = try self.expectNode(.Keyword, &ast[1]);
 
-                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const body = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{
@@ -206,7 +215,7 @@ pub const Parser = struct {
                     try validateListLength(ast, 3);
 
                     const arity = try self.parseArity(&ast[1]);
-                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const block = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{
@@ -232,10 +241,10 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "until")) {
                     try validateListLength(ast, 3);
 
-                    const ast_cond = try expectNode(.Quote, &ast[1]);
+                    const ast_cond = try self.expectNode(.Quote, &ast[1]);
                     const cond = try self.parseStatements(ast_cond.items);
 
-                    const ast_body = try expectNode(.Quote, &ast[2]);
+                    const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const body = try self.parseStatements(ast_body.items);
 
                     break :b ASTNode{
@@ -246,8 +255,8 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "when")) {
-                    const yup = try self.parseStatements((try expectNode(.Quote, &ast[1])).items);
-                    const nah = if (ast.len > 2) try self.parseStatements((try expectNode(.Quote, &ast[2])).items) else null;
+                    const yup = try self.parseStatements((try self.expectNode(.Quote, &ast[1])).items);
+                    const nah = if (ast.len > 2) try self.parseStatements((try self.expectNode(.Quote, &ast[2])).items) else null;
                     break :b ASTNode{
                         .node = .{ .When = .{ .yup = yup, .nah = nah } },
                         .srcloc = ast[0].location,
@@ -262,7 +271,7 @@ pub const Parser = struct {
                     defer all_branches.deinit();
 
                     for (ast[1..]) |*node| {
-                        const q = try expectNode(.Quote, node);
+                        const q = try self.expectNode(.Quote, node);
                         try all_branches.append(try self.parseStatements(q.items));
                     }
 
@@ -291,22 +300,22 @@ pub const Parser = struct {
                     try validateListLength(ast, 3);
 
                     const asm_flags = try self.parseValue(&ast[1]);
-                    if (asm_flags.typ != .String)
+                    if (asm_flags.typ != .StaticPtr and
+                        self.program.statics.items[asm_flags.typ.StaticPtr].default != .String)
                         return error.ExpectedString;
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
                     var asm_short = false;
                     var asm_generic = false;
-                    if (asm_flags.typ == .String) {
-                        for (asm_flags.val.String.items) |char| switch (char) {
-                            'k' => asm_keep = true,
-                            'r' => asm_stack = RT_STACK,
-                            's' => asm_short = true,
-                            'g' => asm_generic = true,
-                            else => return error.InvalidAsmFlag,
-                        };
-                    }
+                    const str = self.program.statics.items[asm_flags.typ.StaticPtr].default.String;
+                    for (str.items) |char| switch (char) {
+                        'k' => asm_keep = true,
+                        'r' => asm_stack = RT_STACK,
+                        's' => asm_short = true,
+                        'g' => asm_generic = true,
+                        else => return error.InvalidAsmFlag,
+                    };
 
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd.typ != .AmbigEnumLit)

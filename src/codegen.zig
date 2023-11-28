@@ -65,6 +65,10 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
     });
     switch (node.node) {
         .Call => |c| try emit(buf, null, 0, false, true, if (c.goto) .Ojmp else .Ojsr),
+        .Value => |v| switch (v.typ) {
+            .StaticPtr => {},
+            else => unreachable,
+        },
         else => unreachable,
     }
 }
@@ -105,7 +109,9 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .None => {},
         .Value => |v| {
-            if (v.typ.bits(program).? == 16) {
+            if (v.typ == .StaticPtr) {
+                try emitUA(buf, ual, "", node);
+            } else if (v.typ.bits(program).? == 16) {
                 try emitIMM16(buf, node, WK_STACK, false, .Olit, v.toU16(program));
             } else {
                 try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program));
@@ -254,29 +260,56 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     try genNodeList(program, &buf, program.ast, &ual);
 
-    ual_search: for (ual.items) |ua| {
-        for (program.defs.items) |def| {
-            if (mem.eql(u8, def.node.Decl.name, ua.ident) and
-                ua.node.node.Call.ctyp.Decl == def.node.Decl.variant)
-            {
-                if (def.romloc == 0) {
-                    std.log.err("Def {s} (var {}) was never generated", .{
-                        def.node.Decl.name, def.node.Decl.variant,
-                    });
-                    unreachable;
-                }
-
-                const addr = def.romloc + 0x100;
-                buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
-                buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
-                continue :ual_search;
-            }
+    for (program.statics.items) |*data| {
+        data.romloc = buf.items.len;
+        switch (data.default) {
+            .String => |s| {
+                assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
+                for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
+                try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+            },
+            .None => {
+                const typsz = data.type.bits(program).? / 8;
+                const totalsz = typsz * data.count;
+                for (0..totalsz) |_| try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+            },
         }
-
-        // If we haven't matched a UA with a label by now, it's an invalid
-        // identifier
-        unreachable;
     }
+
+    ual_search: for (ual.items) |ua| switch (ua.node.node) {
+        .Value => |v| {
+            assert(v.typ == .StaticPtr);
+            const static = program.statics.items[v.typ.StaticPtr];
+
+            const addr = static.romloc + 0x100;
+            buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
+            buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+        },
+        .Call => |c| {
+            for (program.defs.items) |def| {
+                if (mem.eql(u8, def.node.Decl.name, ua.ident) and
+                    c.ctyp.Decl == def.node.Decl.variant)
+                {
+                    if (def.romloc == 0) {
+                        std.log.err("Def {s} (var {}) was never generated", .{
+                            def.node.Decl.name, def.node.Decl.variant,
+                        });
+                        unreachable;
+                    }
+
+                    const addr = def.romloc + 0x100;
+                    buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
+                    buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+                    continue :ual_search;
+                }
+            }
+
+            // If we haven't matched a UA with a label by now, it's an invalid
+            // identifier
+            unreachable;
+        },
+        else => unreachable,
+    };
 
     return buf;
 }

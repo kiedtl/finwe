@@ -46,13 +46,14 @@ pub const TypeInfo = union(enum) {
     Char16,
     EnumLit: usize,
     AnyPtr,
+    AnyPtr16,
     Ptr8: Ptr,
     Ptr16: Ptr,
     Any,
     Any8,
     Any16,
 
-    String,
+    StaticPtr: usize,
     Quote,
 
     AmbigEnumLit,
@@ -76,7 +77,7 @@ pub const TypeInfo = union(enum) {
 
     pub const Ptr = struct {
         typ: usize,
-        indirection: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
+        ind: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
     };
 
     pub const EnumLit = struct {
@@ -87,10 +88,17 @@ pub const TypeInfo = union(enum) {
     pub fn eq(a: @This(), b: @This()) bool {
         return switch (a) {
             .EnumLit => |e| b == .EnumLit and e == b.EnumLit,
-            .Ptr8 => |p| b == .Ptr8 and p.typ == b.Ptr8.typ and p.indirection == b.Ptr8.indirection,
-            .Ptr16 => |p| b == .Ptr16 and p.typ == b.Ptr16.typ and p.indirection == b.Ptr16.indirection,
+            .Ptr8 => |p| b == .Ptr8 and p.typ == b.Ptr8.typ and p.ind == b.Ptr8.ind,
+            .Ptr16 => |p| b == .Ptr16 and p.typ == b.Ptr16.typ and p.ind == b.Ptr16.ind,
             .AmbigEnumLit => unreachable,
             else => @as(Tag, a) == @as(Tag, b),
+        };
+    }
+
+    pub fn ptrize16(a: @This(), program: *Program) @This() {
+        return switch (a) {
+            .Ptr16 => |p| .{ .Ptr16 = .{ .typ = p.typ, .ind = p.ind + 1 } },
+            else => TypeInfo.ptr16(program, a, 1),
         };
     }
 
@@ -100,19 +108,19 @@ pub const TypeInfo = union(enum) {
             if (to.eq(typ)) break i;
         } else null;
         if (ind) |_ind| {
-            return .{ .Ptr16 = .{ .typ = _ind, .indirection = indirection } };
+            return .{ .Ptr16 = .{ .typ = _ind, .ind = indirection } };
         } else {
             program.builtin_types.append(to) catch unreachable;
             return .{ .Ptr16 = .{
                 .typ = program.builtin_types.items.len - 1,
-                .indirection = indirection,
+                .ind = indirection,
             } };
         }
     }
 
     pub fn isGeneric(self: @This()) bool {
         return switch (self) {
-            .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             else => false,
         };
     }
@@ -123,6 +131,7 @@ pub const TypeInfo = union(enum) {
             .Any8 => other.bits(program) != null and other.bits(program).? == 8,
             .Any16 => other.bits(program) != null and other.bits(program).? == 16,
             .AnyPtr => other == .Ptr8 or other == .Ptr16,
+            .AnyPtr16 => other == .Ptr16 or other == .StaticPtr,
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
             else => false, // self == other case already handled earlier
         };
@@ -131,10 +140,9 @@ pub const TypeInfo = union(enum) {
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
             .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
-            .U16, .Char16, .Ptr16, .Any16 => 16,
+            .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .String => unreachable, // TODO: remove string
             .Quote, .AmbigEnumLit, .TypeRef => unreachable,
         };
     }
@@ -147,7 +155,6 @@ pub const Value = struct {
     pub const V = union(enum) {
         u8: u8,
         u16: u16,
-        String: String,
         EnumLit: TypeInfo.EnumLit,
         AmbigEnumLit: lexer.Node.EnumLit,
         None,
@@ -162,7 +169,7 @@ pub const Value = struct {
             },
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,
-            .String => @panic("Free-standing strings are unimplemented"),
+            .StaticPtr => @panic("Codegen bug: string is static data, need UAL"),
             else => unreachable,
         };
     }
@@ -173,7 +180,7 @@ pub const Value = struct {
             .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field].value_a, // TODO: value_b
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,
-            .String => @panic("Free-standing strings are unimplemented"),
+            .StaticPtr => @panic("Codegen bug: string is static data, need UAL"),
             else => unreachable,
         };
     }
@@ -363,10 +370,23 @@ pub const Error = struct {
     pub const AList = std.ArrayList(@This());
 };
 
+pub const Static = struct {
+    type: TypeInfo,
+    count: usize,
+    default: union(enum) {
+        String: String,
+        None,
+    },
+    romloc: usize = 0,
+
+    pub const AList = std.ArrayList(@This());
+};
+
 pub const Program = struct {
     ast: ASTNodeList,
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
+    statics: Static.AList,
     types: Type.AList,
     builtin_types: std.ArrayList(TypeInfo),
 
@@ -384,6 +404,7 @@ pub const Program = struct {
             .ast = ASTNodeList.init(alloc),
             .defs = ASTNodePtrList.init(alloc),
             .macs = ASTNodePtrList.init(alloc),
+            .statics = Static.AList.init(alloc),
             .types = common.Type.AList.init(alloc),
             .builtin_types = std.ArrayList(TypeInfo).init(alloc),
             .errors = common.Error.AList.init(alloc),
@@ -451,6 +472,7 @@ pub const OpTag = enum(u16) {
     Oovr,
     Odup,
     Oroll,
+    Oinc,
     Odrop,
     Oeq,
     Oneq,
@@ -463,6 +485,9 @@ pub const OpTag = enum(u16) {
     Oadd,
     Osub,
     Ostash,
+    Olda,
+    Osta,
+    Odei,
     Odeo,
 };
 
@@ -482,6 +507,7 @@ pub const Op = union(OpTag) {
     Oovr,
     Odup,
     Oroll: ?u8,
+    Oinc,
     Odrop,
     Oeq,
     Oneq,
@@ -494,6 +520,9 @@ pub const Op = union(OpTag) {
     Oadd,
     Osub,
     Ostash,
+    Olda,
+    Osta,
+    Odei,
     Odeo,
 
     pub const Tag = meta.Tag(Op);
@@ -514,6 +543,7 @@ pub const Op = union(OpTag) {
             .Oovr => .Oovr,
             .Odup => .Odup,
             .Oroll => .{ .Oroll = null },
+            .Oinc => .Oinc,
             .Odrop => .Odrop,
             .Oeq => .Oeq,
             .Oneq => .Oneq,
@@ -526,6 +556,9 @@ pub const Op = union(OpTag) {
             .Oadd => .Oadd,
             .Osub => .Osub,
             .Ostash => .Ostash,
+            .Olda => .Olda,
+            .Osta => .Osta,
+            .Odei => .Odei,
             .Odeo => .Odeo,
         };
     }
