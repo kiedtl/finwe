@@ -56,6 +56,12 @@ fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op)
     _ = try emitRI(buf, node, stack, k, s, op);
 }
 
+fn reemitRaw16(buf: *Ins.List, ind: usize, value: usize) void {
+    const addr = @as(u16, @intCast(value)) + 0x100;
+    buf.items[ind + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
+    buf.items[ind + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+}
+
 fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
     try emitIMM16(buf, null, 0, false, .Olit, 0);
     try ual.append(.{
@@ -69,6 +75,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
             .StaticPtr => {},
             else => unreachable,
         },
+        .VRef, .VDeref => {},
         else => unreachable,
     }
 }
@@ -108,6 +115,16 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .None => {},
+        .VDecl => {},
+        .VRef => |v| try emitUA(buf, ual, v.name, node),
+        .VDeref => |v| {
+            try emitUA(buf, ual, v.name, node);
+            // LDA instruction
+            // Could do this in emitUA, but then we'd have to pass program
+            const t = program.statics.items[v.sind.?].type;
+            const is_short = t.bits(program).? == 16;
+            try emit(buf, null, 0, false, is_short, .Olda);
+        },
         .Value => |v| {
             if (v.typ == .StaticPtr) {
                 try emitUA(buf, ual, "", node);
@@ -277,13 +294,12 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     }
 
     ual_search: for (ual.items) |ua| switch (ua.node.node) {
+        .VRef => |v| reemitRaw16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
+        .VDeref => |v| reemitRaw16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
         .Value => |v| {
             assert(v.typ == .StaticPtr);
             const static = program.statics.items[v.typ.StaticPtr];
-
-            const addr = static.romloc + 0x100;
-            buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
-            buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+            reemitRaw16(&buf, ua.loc, static.romloc);
         },
         .Call => |c| {
             for (program.defs.items) |def| {
@@ -297,9 +313,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                         unreachable;
                     }
 
-                    const addr = def.romloc + 0x100;
-                    buf.items[ua.loc + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
-                    buf.items[ua.loc + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+                    reemitRaw16(&buf, ua.loc, def.romloc);
                     continue :ual_search;
                 }
             }

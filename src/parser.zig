@@ -37,6 +37,7 @@ pub const Parser = struct {
         ExpectedValue,
         ExpectedStatement,
         UnknownKeyword,
+        UnknownLocal,
         UnexpectedLabelDefinition,
         InvalidAsmOp,
         InvalidAsmFlag,
@@ -68,7 +69,7 @@ pub const Parser = struct {
         break :b ParserError!@TypeOf(@field(node.node, @tagName(nodetype)));
     } {
         if (node.node != nodetype) {
-            return self.err(error.ExpectedNode, node.location);
+            return self.program.perr(error.ExpectedNode, node.location);
         }
         return @field(node.node, @tagName(nodetype));
     }
@@ -140,14 +141,14 @@ pub const Parser = struct {
                     if (r) |ret| {
                         break :b ret;
                     } else {
-                        return self.err(error.InvalidType, node.location);
+                        return self.program.perr(error.InvalidType, node.location);
                     }
                 } else {
                     std.log.err("Invalid type in arity def: {s}", .{item});
-                    return self.err(error.InvalidType, node.location);
+                    return self.program.perr(error.InvalidType, node.location);
                 }
             },
-            else => return self.err(error.ExpectedNode, node.location),
+            else => return self.program.perr(error.ExpectedNode, node.location),
         };
     }
 
@@ -168,6 +169,14 @@ pub const Parser = struct {
                 break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
             },
             .Child => @panic("TODO"),
+            .Var => |s| ASTNode{
+                .node = .{ .VDeref = .{ .name = s } },
+                .srcloc = node.location,
+            },
+            .VarPtr => |s| ASTNode{
+                .node = .{ .VRef = .{ .name = s } },
+                .srcloc = node.location,
+            },
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
         };
     }
@@ -209,6 +218,21 @@ pub const Parser = struct {
 
                     break :b ASTNode{
                         .node = .{ .Mac = .{ .name = name, .body = body } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "local")) {
+                    try validateListLength(ast, 4);
+                    const name = try self.expectNode(.Keyword, &ast[1]);
+                    const ltyp = try self.parseType(&ast[2]);
+                    const llen = try self.expectNode(.U8, &ast[3]);
+
+                    break :b ASTNode{
+                        .node = .{ .VDecl = .{
+                            .name = name,
+                            .utyp = ltyp,
+                            .llen = llen,
+                            .lind = 0,
+                        } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "wild")) {
@@ -381,13 +405,13 @@ pub const Parser = struct {
     // Also check calls to determine what type they are.
     pub fn postProcess(self: *Parser) ParserError!void {
         const _S = struct {
-            pub fn walkNodes(parser: *Parser, nodes: ASTNodeList) ParserError!void {
+            pub fn walkNodes(parser: *Parser, parent: ?*ASTNode, nodes: ASTNodeList) ParserError!void {
                 var iter = nodes.iterator();
                 while (iter.next()) |node|
-                    try walkNode(parser, node);
+                    try walkNode(parser, parent, node);
             }
 
-            pub fn walkNode(parser: *Parser, node: *ASTNode) ParserError!void {
+            pub fn walkNode(parser: *Parser, parent: ?*ASTNode, node: *ASTNode) ParserError!void {
                 switch (node.node) {
                     .Value => |v| switch (v.typ) {
                         .AmbigEnumLit => {
@@ -396,27 +420,27 @@ pub const Parser = struct {
                         },
                         else => {},
                     },
-                    .Decl => |b| try walkNodes(parser, b.body),
-                    .Mac => |b| try walkNodes(parser, b.body),
-                    .Wild => |b| try walkNodes(parser, b.body),
-                    .Quote => |b| try walkNodes(parser, b.body),
+                    .Decl => |b| try walkNodes(parser, node, b.body),
+                    .Mac => |b| try walkNodes(parser, parent, b.body),
+                    .Wild => |b| try walkNodes(parser, parent, b.body),
+                    .Quote => |b| try walkNodes(parser, parent, b.body),
                     .Loop => |d| {
                         switch (d.loop) {
-                            .Until => |u| try walkNodes(parser, u.cond),
+                            .Until => |u| try walkNodes(parser, parent, u.cond),
                         }
-                        try walkNodes(parser, d.body);
+                        try walkNodes(parser, parent, d.body);
                     },
                     .When => |when| {
-                        try walkNodes(parser, when.yup);
-                        if (when.nah) |n| try walkNodes(parser, n);
+                        try walkNodes(parser, parent, when.yup);
+                        if (when.nah) |n| try walkNodes(parser, parent, n);
                     },
                     .Cond => |cond| {
                         for (cond.branches.items) |branch| {
-                            try walkNodes(parser, branch.cond);
-                            try walkNodes(parser, branch.body);
+                            try walkNodes(parser, parent, branch.cond);
+                            try walkNodes(parser, parent, branch.body);
                         }
                         if (cond.else_branch) |branch|
-                            try walkNodes(parser, branch);
+                            try walkNodes(parser, parent, branch);
                     },
                     .Call => |c| if (c.ctyp == .Unchecked) {
                         if (for (parser.program.macs.items) |mac| {
@@ -431,14 +455,35 @@ pub const Parser = struct {
                             node.node.Call.ctyp = .{ .Decl = 0 };
                         } else {
                             std.log.info("Unknown ident {s}", .{c.name});
-                            return error.UnknownIdent;
+                            return parser.program.perr(error.UnknownIdent, node.srcloc);
                         }
+                    },
+                    .VDecl => |*vd| {
+                        parent.?.node.Decl.locals.append(.{
+                            .name = vd.name,
+                            .rtyp = vd.utyp,
+                            .llen = vd.llen,
+                            .ind = 0,
+                        }) catch unreachable;
+                        vd.lind = parent.?.node.Decl.locals.len - 1;
+                    },
+                    .VRef => |*v| {
+                        v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
+                            if (mem.eql(u8, v.name, local.name))
+                                break i;
+                        } else return parser.program.perr(error.UnknownLocal, node.srcloc);
+                    },
+                    .VDeref => |*v| {
+                        v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
+                            if (mem.eql(u8, v.name, local.name))
+                                break i;
+                        } else return parser.program.perr(error.UnknownLocal, node.srcloc);
                     },
                     else => {},
                 }
             }
         };
-        try _S.walkNodes(self, self.program.ast);
+        try _S.walkNodes(self, null, self.program.ast);
     }
 
     // Setup the entry function
@@ -476,14 +521,5 @@ pub const Parser = struct {
         try self.setupMainFunc();
         try self.extractDefs();
         try self.postProcess();
-    }
-
-    pub fn err(self: *Parser, e: ParserError!void, srcloc: common.Srcloc) ParserError {
-        if (e) {
-            unreachable;
-        } else |er| {
-            self.program.errors.append(.{ .e = er, .l = srcloc }) catch unreachable;
-            return er;
-        }
     }
 };

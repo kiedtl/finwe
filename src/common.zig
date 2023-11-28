@@ -85,6 +85,10 @@ pub const TypeInfo = union(enum) {
         field: usize,
     };
 
+    pub fn resolveTypeRef(a: *@This(), arity: *const analyser.BlockAnalysis) TypeInfo {
+        return arity.args.constSlice()[arity.args.len - a.*.TypeRef - 1];
+    }
+
     pub fn eq(a: @This(), b: @This()) bool {
         return switch (a) {
             .EnumLit => |e| b == .EnumLit and e == b.EnumLit,
@@ -209,6 +213,9 @@ pub const ASTNode = struct {
         Value: Value,
         Quote: Quote,
         Cast: Cast,
+        VDecl: VDecl,
+        VRef: VRef,
+        VDeref: VDeref,
         Return,
 
         pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -237,6 +244,25 @@ pub const ASTNode = struct {
         if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
         try writer.print("{}", .{self.node});
     }
+
+    pub const VDecl = struct {
+        name: []const u8,
+        lind: usize,
+        utyp: TypeInfo,
+        llen: usize,
+    };
+
+    pub const VRef = struct {
+        name: []const u8,
+        lind: ?usize = null, // Into decl.locals
+        sind: ?usize = null, // Into program.statics, set in analysis postProcess
+    };
+
+    pub const VDeref = struct {
+        name: []const u8,
+        lind: ?usize = null, // Into decl.locals
+        sind: ?usize = null, // Into program.statics, set in analysis postProcess
+    };
 
     pub const Wild = struct {
         arity: analyser.BlockAnalysis,
@@ -297,6 +323,14 @@ pub const ASTNode = struct {
         is_analysed: bool = false,
         variant: usize = 0,
         calls: usize = 0,
+        locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
+
+        pub const Local = struct {
+            name: []const u8,
+            ind: usize,
+            rtyp: TypeInfo,
+            llen: usize,
+        };
     };
 
     pub const Mac = struct {
@@ -310,41 +344,43 @@ pub const ASTNode = struct {
         body: ASTNodeList,
     };
 
-    fn _deepcloneASTList(lst: ASTNodeList) ASTNodeList {
+    fn _deepcloneASTList(lst: ASTNodeList, parent: ?*Decl, program: *Program) ASTNodeList {
         var new = ASTNodeList.init(gpa.allocator());
         var itr = lst.iterator();
         while (itr.next()) |item| {
-            new.append(item.deepclone()) catch unreachable;
+            new.append(item.deepclone(parent, program)) catch unreachable;
         }
         return new;
     }
 
-    pub fn deepclone(self: @This()) @This() {
+    pub fn deepclone(self: @This(), parent: ?*Decl, program: *Program) @This() {
         var new = self.node;
         switch (new) {
             .When => {
-                new.When.yup = _deepcloneASTList(new.When.yup);
+                new.When.yup = _deepcloneASTList(new.When.yup, parent, program);
                 if (new.When.nah) |n|
-                    new.When.nah = _deepcloneASTList(n);
+                    new.When.nah = _deepcloneASTList(n, parent, program);
             },
             .Cond => |*c| {
                 if (c.else_branch != null)
-                    c.else_branch = _deepcloneASTList(c.else_branch.?);
+                    c.else_branch = _deepcloneASTList(c.else_branch.?, parent, program);
                 for (c.branches.items, 0..) |br, i| {
-                    c.branches.items[i].body = _deepcloneASTList(br.body);
-                    c.branches.items[i].cond = _deepcloneASTList(br.cond);
+                    c.branches.items[i].body = _deepcloneASTList(br.body, parent, program);
+                    c.branches.items[i].cond = _deepcloneASTList(br.cond, parent, program);
                 }
             },
             .Loop => {
-                new.Loop.body = _deepcloneASTList(new.Loop.body);
+                new.Loop.body = _deepcloneASTList(new.Loop.body, parent, program);
                 switch (new.Loop.loop) {
-                    .Until => |u| new.Loop.loop.Until.cond = _deepcloneASTList(u.cond),
+                    .Until => |u| new.Loop.loop.Until.cond = _deepcloneASTList(u.cond, parent, program),
                 }
             },
-            .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body),
-            .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body),
-            .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body),
-            .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body),
+            .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program),
+            .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body, parent, program),
+            .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
+            .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
+            .VDecl => {},
+            .VDeref, .VRef => {},
             .None, .Call, .Asm, .Value, .Cast, .Return => {},
         }
 
@@ -429,6 +465,15 @@ pub const Program = struct {
                 self.types.append(t) catch unreachable;
             },
             else => @compileError("TODO"),
+        }
+    }
+
+    pub fn perr(self: *Program, e: parser.Parser.ParserError!void, srcloc: common.Srcloc) parser.Parser.ParserError {
+        if (e) {
+            unreachable;
+        } else |er| {
+            self.errors.append(.{ .e = er, .l = srcloc }) catch unreachable;
+            return er;
         }
     }
 };

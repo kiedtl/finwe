@@ -61,7 +61,7 @@ pub fn main() anyerror!void {
             }
         };
 
-        analyser.analyse(&program);
+        try analyser.analyse(&program);
 
         if (args.args.@"debug-inf" != 0)
             for (program.defs.items) |def| {

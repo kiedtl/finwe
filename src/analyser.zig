@@ -25,14 +25,14 @@ pub const BlockAnalysis = struct {
         var r = self;
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef) {
-                // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
-                stack.* = arity.args.constSlice()[arity.args.len - stack.*.TypeRef - 1];
+                stack.* = stack.resolveTypeRef(arity);
             };
+        // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
             if (arg.* == .TypeRef) {
-                // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
-                arg.* = arity.args.constSlice()[arity.args.len - arg.*.TypeRef - 1];
+                arg.* = arg.resolveTypeRef(arity);
             };
+        // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
         return r;
     }
 
@@ -147,7 +147,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
 
     const args_needed: usize = switch (i.op) {
         .Ohalt => 0,
-        .Odeo, .Odup, .Odrop => 1,
+        .Olda, .Odeo, .Odup, .Odrop => 1,
         .Orot => 3,
         else => 2,
     };
@@ -169,6 +169,8 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         (args_needed == 1 and a1b != null)))
     {
         i.short = switch (i.op) {
+            .Osta => a2b.? == 16,
+            .Olda => if (prog.builtin_types.items[a1.?.Ptr16.typ].bits(prog)) |b| b == 16 else false,
             .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
@@ -222,6 +224,13 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         },
         .Olda => {
             a.args.append(a1 orelse .AnyPtr16) catch unreachable;
+            a.stack.append(
+                if (a1) |t| prog.builtin_types.items[t.Ptr16.typ] else .Any,
+            ) catch unreachable;
+        },
+        .Osta => {
+            a.args.append(a1 orelse .AnyPtr16) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
             a.stack.append(
                 if (a1) |t| prog.builtin_types.items[t.Ptr16.typ] else .Any,
             ) catch unreachable;
@@ -318,7 +327,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             ungenericified.mergeInto(a);
 
                             if (var_ind == null) {
-                                const newdef_ = d.deepclone();
+                                const newdef_ = d.deepclone(null, program);
                                 const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
                                 program.defs.append(newdef) catch unreachable;
 
@@ -358,7 +367,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     }
                     m.node.Mac.analysis.mergeInto(a);
                 },
-                .Unchecked => unreachable, // parser.postProcess missed something
+                .Unchecked => unreachable, // program.postProcess missed something
             },
             .Loop => |*l| {
                 switch (l.loop) {
@@ -423,6 +432,17 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 ) catch unreachable,
                 else => a.stack.append(v.typ) catch unreachable,
             },
+            .VDecl => |*vd| {
+                parent.locals.slice()[vd.lind].rtyp = vd.utyp.resolveTypeRef(&parent.arity.?);
+            },
+            .VRef => |v| {
+                const t = parent.locals.slice()[v.lind.?].rtyp;
+                a.stack.append(t.ptrize16(program)) catch unreachable;
+            },
+            .VDeref => |v| {
+                const t = parent.locals.slice()[v.lind.?].rtyp;
+                a.stack.append(t) catch unreachable;
+            },
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
             .Cast => |*c| {
                 if (c.ref) |r| {
@@ -446,7 +466,83 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
     return info;
 }
 
-pub fn analyse(program: *Program) void {
+pub fn postProcess(self: *Program) Error!void {
+    const _S = struct {
+        pub fn walkNodes(program: *Program, parent: ?*ASTNode, nodes: ASTNodeList) Error!void {
+            var iter = nodes.iterator();
+            while (iter.next()) |node|
+                try walkNode(program, parent, node);
+        }
+
+        pub fn walkNode(program: *Program, parent: ?*ASTNode, node: *ASTNode) Error!void {
+            switch (node.node) {
+                .Decl => unreachable,
+                .Mac => |b| try walkNodes(program, parent, b.body),
+                .Wild => |b| try walkNodes(program, parent, b.body),
+                .Quote => |b| try walkNodes(program, parent, b.body),
+                .Loop => |d| {
+                    switch (d.loop) {
+                        .Until => |u| try walkNodes(program, parent, u.cond),
+                    }
+                    try walkNodes(program, parent, d.body);
+                },
+                .When => |when| {
+                    try walkNodes(program, parent, when.yup);
+                    if (when.nah) |n| try walkNodes(program, parent, n);
+                },
+                .Cond => |cond| {
+                    for (cond.branches.items) |branch| {
+                        try walkNodes(program, parent, branch.cond);
+                        try walkNodes(program, parent, branch.body);
+                    }
+                    if (cond.else_branch) |branch|
+                        try walkNodes(program, parent, branch);
+                },
+                .VDecl => |vd| {
+                    // FIXME: we should do all this in one shot, after before
+                    // walking over decls
+
+                    // std.log.info("{}: added static of type {} from parent {s}", .{
+                    //     program.statics.items.len,
+                    //     parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
+                    //     parent.?.node.Decl.name,
+                    // });
+
+                    program.statics.append(.{
+                        .type = parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
+                        .count = vd.llen,
+                        .default = .None,
+                    }) catch unreachable;
+                    parent.?.node.Decl.locals.slice()[vd.lind].ind = program.statics.items.len - 1;
+                },
+                .VRef => |*v| {
+                    v.sind = for (parent.?.node.Decl.locals.constSlice()) |local| {
+                        if (mem.eql(u8, v.name, local.name))
+                            break local.ind;
+                    } else unreachable;
+                    // std.log.info("{s}: @{s}: linked to {?}", .{
+                    //     parent.?.node.Decl.name, v.name, v.sind,
+                    // });
+                },
+                .VDeref => |*v| {
+                    v.sind = for (parent.?.node.Decl.locals.constSlice()) |local| {
+                        if (mem.eql(u8, v.name, local.name))
+                            break local.ind;
+                    } else unreachable;
+                    // std.log.info("{s}: ${s}: linked to {?}", .{
+                    //     parent.?.node.Decl.name, v.name, v.sind,
+                    // });
+                },
+                else => {},
+            }
+        }
+    };
+    for (self.defs.items) |def|
+        if (def.node.Decl.calls > 0)
+            try _S.walkNodes(self, def, def.node.Decl.body);
+}
+
+pub fn analyse(program: *Program) Error!void {
     // for (program.defs.items) |decl_node| {
     //     const decl = &decl_node.node.Decl;
     //     if (!decl.is_analysed) {
@@ -464,4 +560,6 @@ pub fn analyse(program: *Program) void {
     assert(!entrypoint.is_analysed);
     entrypoint.is_analysed = true;
     _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
+
+    try postProcess(program);
 }
