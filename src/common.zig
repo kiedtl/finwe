@@ -56,11 +56,47 @@ pub const TypeInfo = union(enum) {
     StaticPtr: usize,
     Quote,
 
+    Expr: Expr,
+
     AmbigEnumLit,
     TypeRef: usize,
 
     pub const Tag = meta.Tag(@This());
     pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
+
+    pub const Expr = union(enum) {
+        AnySz: usize,
+        // Child: usize,
+        // Ptr8: usize,
+        // Ptr16: usize,
+
+        pub const Tag = meta.Tag(@This());
+
+        pub fn eq(a: @This(), b: @This()) bool {
+            if (@as(Expr.Tag, a) != @as(Expr.Tag, b)) return false;
+            return switch (a) {
+                .AnySz => |ar| ar == b.AnySz,
+            };
+        }
+
+        pub fn resolveTypeRef(
+            self: @This(),
+            arity: *const analyser.BlockAnalysis,
+            program: *Program,
+        ) TypeInfo {
+            return switch (self) {
+                .AnySz => |s| b: {
+                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    if (arg_t.bits(program)) |b| {
+                        break :b if (b == 16) .Any16 else .Any8;
+                    } else {
+                        //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
+                        break :b .Any;
+                    }
+                },
+            };
+        }
+    };
 
     pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         if (comptime !mem.eql(u8, f, "")) {
@@ -78,6 +114,10 @@ pub const TypeInfo = union(enum) {
     pub const Ptr = struct {
         typ: usize,
         ind: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
+
+        pub fn eq(a: Ptr, b: Ptr) bool {
+            return a.typ == b.typ and a.ind == b.ind;
+        }
     };
 
     pub const EnumLit = struct {
@@ -85,18 +125,23 @@ pub const TypeInfo = union(enum) {
         field: usize,
     };
 
-    pub fn resolveTypeRef(a: *@This(), arity: *const analyser.BlockAnalysis) TypeInfo {
-        return arity.args.constSlice()[arity.args.len - a.*.TypeRef - 1];
+    pub fn resolveTypeRef(a: *@This(), arity: *const analyser.BlockAnalysis, program: *Program) TypeInfo {
+        return switch (a.*) {
+            .TypeRef => |r| arity.args.constSlice()[arity.args.len - r - 1],
+            .Expr => |e| e.resolveTypeRef(arity, program),
+            else => a.*,
+        };
     }
 
     pub fn eq(a: @This(), b: @This()) bool {
-        return switch (a) {
-            .EnumLit => |e| b == .EnumLit and e == b.EnumLit,
-            .Ptr8 => |p| b == .Ptr8 and p.typ == b.Ptr8.typ and p.ind == b.Ptr8.ind,
-            .Ptr16 => |p| b == .Ptr16 and p.typ == b.Ptr16.typ and p.ind == b.Ptr16.ind,
-            .AmbigEnumLit => unreachable,
-            else => @as(Tag, a) == @as(Tag, b),
-        };
+        if (@as(Tag, a) != @as(Tag, b)) return false;
+        inline for (meta.fields(@This())) |field|
+            if (mem.eql(u8, field.name, @tagName(a)))
+                if (field.type == usize or field.type == void)
+                    return @field(a, field.name) != @field(b, field.name)
+                else
+                    return @field(a, field.name).eq(@field(b, field.name));
+        unreachable;
     }
 
     pub fn ptrize16(a: @This(), program: *Program) @This() {
@@ -147,7 +192,7 @@ pub const TypeInfo = union(enum) {
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .Quote, .AmbigEnumLit, .TypeRef => unreachable,
+            .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
         };
     }
 };
@@ -468,13 +513,24 @@ pub const Program = struct {
         }
     }
 
-    pub fn perr(self: *Program, e: parser.Parser.ParserError!void, srcloc: common.Srcloc) parser.Parser.ParserError {
-        if (e) {
-            unreachable;
-        } else |er| {
-            self.errors.append(.{ .e = er, .l = srcloc }) catch unreachable;
-            return er;
-        }
+    // Record type in builtin_types if not there otherwise find existing record
+    pub fn btype(self: *Program, typ: TypeInfo) usize {
+        return for (self.builtin_types.items, 0..) |t, i| {
+            if (t.eq(typ)) break i;
+        } else b: {
+            self.builtin_types.append(typ) catch unreachable;
+            break :b self.builtin_types.items.len - 1;
+        };
+    }
+
+    pub fn perr(self: *Program, e: parser.Parser.ParserError, srcloc: common.Srcloc) parser.Parser.ParserError {
+        self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
+        return e;
+    }
+
+    pub fn aerr(self: *Program, e: analyser.Error, srcloc: common.Srcloc) analyser.Error {
+        self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
+        return e;
     }
 };
 

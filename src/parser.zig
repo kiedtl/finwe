@@ -144,9 +144,31 @@ pub const Parser = struct {
                         return self.program.perr(error.InvalidType, node.location);
                     }
                 } else {
-                    std.log.err("Invalid type in arity def: {s}", .{item});
                     return self.program.perr(error.InvalidType, node.location);
                 }
+            },
+            .List => |lst| {
+                if (lst.items.len == 0)
+                    return error.EmptyList;
+
+                return switch (lst.items[0].node) {
+                    .Keyword => |k| if (meta.stringToEnum(TypeInfo.Expr.Tag, k)) |p| b: {
+                        var r: ?TypeInfo = null;
+                        inline for (meta.fields(TypeInfo.Expr)) |field|
+                            if (mem.eql(u8, field.name, @tagName(p))) {
+                                const arg = self.program.btype(try self.parseType(&lst.items[1]));
+                                r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
+                            };
+                        if (r) |ret| {
+                            break :b ret;
+                        } else {
+                            return self.program.perr(error.InvalidType, node.location);
+                        }
+                    } else {
+                        return self.program.perr(error.InvalidType, node.location);
+                    },
+                    else => return self.program.perr(error.ExpectedKeyword, node.location),
+                };
             },
             else => return self.program.perr(error.ExpectedNode, node.location),
         };

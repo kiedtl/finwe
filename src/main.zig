@@ -61,7 +61,14 @@ pub fn main() anyerror!void {
             }
         };
 
-        try analyser.analyse(&program);
+        analyser.analyse(&program) catch |e| {
+            if (program.errors.items.len > 0) {
+                errors.printErrors(&program, buf);
+                std.os.exit(1);
+            } else {
+                @panic(@errorName(e));
+            }
+        };
 
         if (args.args.@"debug-inf" != 0)
             for (program.defs.items) |def| {

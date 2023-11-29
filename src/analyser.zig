@@ -12,7 +12,9 @@ const TypeInfo = common.TypeInfo;
 const Value = common.Value;
 const VTList32 = TypeInfo.List32;
 
-pub const Error = error{};
+pub const Error = error{
+    GenericNotMatching,
+};
 
 pub const BlockAnalysis = struct {
     args: VTList32 = VTList32.init(null),
@@ -20,23 +22,25 @@ pub const BlockAnalysis = struct {
     rargs: VTList32 = VTList32.init(null),
     rstack: VTList32 = VTList32.init(null),
 
-    pub fn resolveTypeRefs(self: @This(), arity: *const @This()) @This() {
+    pub fn resolveTypeRefs(self: @This(), arity: *const @This(), program: *Program) @This() {
         // std.log.info("resolving {}\n with {}", .{ self, arity });
         var r = self;
         for (r.stack.slice()) |*stack|
-            if (stack.* == .TypeRef) {
-                stack.* = stack.resolveTypeRef(arity);
+            if (stack.* == .TypeRef or stack.* == .Expr) {
+                stack.* = stack.resolveTypeRef(arity, program);
+                assert(stack.* != .TypeRef and stack.* != .Expr);
             };
         // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
-            if (arg.* == .TypeRef) {
-                arg.* = arg.resolveTypeRef(arity);
+            if (arg.* == .TypeRef or arg.* == .Expr) {
+                arg.* = arg.resolveTypeRef(arity, program);
+                assert(arg.* != .TypeRef and arg.* != .Expr);
             };
         // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
         return r;
     }
 
-    pub fn conformGenericTo(generic: @This(), caller: *const @This(), p: *const Program) @This() {
+    pub fn conformGenericTo(generic: @This(), caller: *const @This(), call_node: *ASTNode, p: *Program) Error!@This() {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
@@ -50,8 +54,8 @@ pub const BlockAnalysis = struct {
         while (i > 0) : (j += 1) {
             i -= 1;
             const arg = &r.args.slice()[i];
-            if (arg.* == .TypeRef)
-                arg.* = r.args.constSlice()[r.args.len - arg.*.TypeRef - 1];
+            if (arg.* == .TypeRef or arg.* == .Expr)
+                arg.* = arg.resolveTypeRef(&r, p);
 
             const calleritem = if (j < caller.stack.len)
                 caller.stack.constSlice()[caller.stack.len - j - 1]
@@ -62,15 +66,15 @@ pub const BlockAnalysis = struct {
             if (arg.isGeneric()) {
                 if (!arg.doesInclude(calleritem, p)) {
                     std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
-                    @panic("whoopsies");
+                    return p.aerr(error.GenericNotMatching, call_node.srcloc);
                 }
                 arg.* = calleritem;
             }
         }
 
         for (r.stack.slice()) |*stack|
-            if (stack.* == .TypeRef) {
-                stack.* = r.args.constSlice()[r.args.len - stack.*.TypeRef - 1];
+            if (stack.* == .TypeRef or stack.* == .Expr) {
+                stack.* = stack.resolveTypeRef(&r, p);
             };
 
         // std.log.info("RESULTS {}\n\n", .{r});
@@ -289,7 +293,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
-                w.arity.resolveTypeRefs(&(parent.arity orelse BlockAnalysis{})).mergeInto(a);
+                w.arity.resolveTypeRefs(&(parent.arity orelse BlockAnalysis{}), program).mergeInto(a);
             },
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
@@ -301,7 +305,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                     if (cdecl.arity) |d_arity| {
                         if (!cdecl.is_analysed) {
-                            const ungenericified = d_arity.conformGenericTo(a, program);
+                            const ungenericified = try d_arity.conformGenericTo(a, node, program);
                             assert(a.isGeneric() or !ungenericified.isGeneric());
                             for (ungenericified.args.constSlice()) |arg|
                                 cdecl.analysis.stack.append(arg) catch unreachable;
@@ -310,11 +314,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
 
                         if (a.isGeneric() or !d_arity.isGeneric()) {
-                            d_arity.resolveTypeRefs(&d_arity).mergeInto(a);
+                            d_arity.resolveTypeRefs(&d_arity, program).mergeInto(a);
                             if (!d_arity.isGeneric())
                                 cdecl.calls += 1;
                         } else if (d_arity.isGeneric()) {
-                            const ungenericified = d_arity.conformGenericTo(a, program);
+                            const ungenericified = try d_arity.conformGenericTo(a, node, program);
                             assert(!ungenericified.isGeneric());
                             const var_ind: ?usize = for (cdecl.variations.slice(), 0..) |an, i| {
                                 if (ungenericified.eqExact(an)) break i;
@@ -433,7 +437,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 else => a.stack.append(v.typ) catch unreachable,
             },
             .VDecl => |*vd| {
-                parent.locals.slice()[vd.lind].rtyp = vd.utyp.resolveTypeRef(&parent.arity.?);
+                parent.locals.slice()[vd.lind].rtyp = vd.utyp.resolveTypeRef(&parent.arity.?, program);
             },
             .VRef => |v| {
                 const t = parent.locals.slice()[v.lind.?].rtyp;
