@@ -64,40 +64,6 @@ pub const TypeInfo = union(enum) {
     pub const Tag = meta.Tag(@This());
     pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
 
-    pub const Expr = union(enum) {
-        AnySz: usize,
-        // Child: usize,
-        // Ptr8: usize,
-        // Ptr16: usize,
-
-        pub const Tag = meta.Tag(@This());
-
-        pub fn eq(a: @This(), b: @This()) bool {
-            if (@as(Expr.Tag, a) != @as(Expr.Tag, b)) return false;
-            return switch (a) {
-                .AnySz => |ar| ar == b.AnySz,
-            };
-        }
-
-        pub fn resolveTypeRef(
-            self: @This(),
-            arity: *const analyser.BlockAnalysis,
-            program: *Program,
-        ) TypeInfo {
-            return switch (self) {
-                .AnySz => |s| b: {
-                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
-                    if (arg_t.bits(program)) |b| {
-                        break :b if (b == 16) .Any16 else .Any8;
-                    } else {
-                        //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
-                        break :b .Any;
-                    }
-                },
-            };
-        }
-    };
-
     pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         if (comptime !mem.eql(u8, f, "")) {
             @compileError("Unknown format string: '" ++ f ++ "'");
@@ -123,6 +89,49 @@ pub const TypeInfo = union(enum) {
     pub const EnumLit = struct {
         type: usize, // index into Program.types
         field: usize,
+    };
+
+    pub const Expr = union(enum) {
+        AnySz: usize,
+        Child: usize,
+        // Ptr8: usize,
+        // Ptr16: usize,
+
+        pub const Tag = meta.Tag(@This());
+
+        pub fn eq(a: @This(), b: @This()) bool {
+            if (@as(Expr.Tag, a) != @as(Expr.Tag, b)) return false;
+            return switch (a) {
+                .AnySz => |ar| ar == b.AnySz,
+                .Child => |ar| ar == b.Child,
+            };
+        }
+
+        pub fn resolveTypeRef(
+            self: @This(),
+            arity: *const analyser.BlockAnalysis,
+            program: *Program,
+        ) TypeInfo {
+            return switch (self) {
+                .AnySz => |s| b: {
+                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    if (arg_t.bits(program)) |b| {
+                        break :b if (b == 16) .Any16 else .Any8;
+                    } else {
+                        //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
+                        break :b .Any;
+                    }
+                },
+                .Child => |s| b: {
+                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    break :b switch (arg_t) {
+                        .AnyPtr, .AnyPtr16 => .Any,
+                        .Ptr8, .Ptr16 => |p| program.builtin_types.items[p.typ],
+                        else => unreachable,
+                    };
+                },
+            };
+        }
     };
 
     pub fn resolveTypeRef(a: *@This(), arity: *const analyser.BlockAnalysis, program: *Program) TypeInfo {
