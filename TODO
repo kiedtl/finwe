@@ -3,18 +3,28 @@ Roadmap
 
 x Basic analyzer (keep track of stack count)
 x Basic analyzer (keep track of types)
-- Memory opcodes
-- HERE
-- String literals
-- Variables
+x Memory opcodes
+- Devices (same as enums?)
+x String literals
+x Variables
 - Arity conformity checks
-- Streams
-- Devices (@streams)
 - Imports
 x If statement
-- Metadata
-  - Always/never inline
-  - Always/never use variable stack
-- Auto-inlining
-- Tail recursion
+- Structs
+- HERE
 - Malloc
+
+Optimizations
+-------------
+
+- Eliminate duplicate decls (from generics)
+  - E.g. 0 1 swap and 0 (as ptr) 1 (as ptr) swap -> two different functions,
+    which is unnecessary (only one needs to be generated)
+  - Solution: after spouting out decl at codegen time, check if the generated
+    output is exactly the same as another variant, and delete if that's the
+    case (and set romloc to that other function's romloc)
+    - Change variants field of decl to ASTNodePtrList to make this easy
+- Auto-inlining
+  - Metadata: always/never inline
+- Tail recursion
+  - (recurse) builtin
