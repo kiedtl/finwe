@@ -123,12 +123,12 @@ pub const Lexer = struct {
                             }
                             const a = try self.alloc.alloc(u8, word.len - enum_clarifier.? - 1);
                             const b = try self.alloc.alloc(u8, word.len - (word.len - enum_clarifier.?));
-                            mem.copy(u8, a, word[enum_clarifier.? + 1 ..]);
-                            mem.copy(u8, b, word[0..enum_clarifier.?]);
+                            @memcpy(a, word[enum_clarifier.? + 1 ..]);
+                            @memcpy(b, word[0..enum_clarifier.?]);
                             break :blk Node.NodeType{ .EnumLit = .{ .v = a, .of = b } };
                         } else {
                             const s = try self.alloc.alloc(u8, word.len);
-                            mem.copy(u8, s, word);
+                            @memcpy(s, word);
                             break :blk switch (vtype) {
                                 'k' => Node.NodeType{ .Keyword = s },
                                 '.' => Node.NodeType{ .EnumLit = .{ .v = s, .of = null } },
@@ -274,7 +274,7 @@ pub const Lexer = struct {
         while (self.index < self.input.len) : (self.moar()) {
             const ch = self.input[self.index];
 
-            var v: Node.NodeType = switch (ch) {
+            const v: Node.NodeType = switch (ch) {
                 '#' => {
                     while (self.index < self.input.len and self.input[self.index] != 0x0a)
                         self.moar();
@@ -314,7 +314,7 @@ const testing = std.testing;
 test "basic lexing" {
     const input = "0xfe 0xf1 0xf0 fum (test :foo bar 0xAB) (12 ['ë] :0)";
     var lexer = Lexer.init(input, std.testing.allocator);
-    var result = try lexer.lex(.Root);
+    const result = try lexer.lex(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -372,7 +372,7 @@ test "basic lexing" {
 test "enum literals" {
     const input = ".foo .bar/baz";
     var lexer = Lexer.init(input, std.testing.allocator);
-    var result = try lexer.lex(.Root);
+    const result = try lexer.lex(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -390,7 +390,7 @@ test "enum literals" {
 test "string literals" {
     const input = "\"foo\"";
     var lexer = Lexer.init(input, std.testing.allocator);
-    var result = try lexer.lex(.Root);
+    const result = try lexer.lex(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 

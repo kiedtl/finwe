@@ -76,7 +76,7 @@ pub fn main() anyerror!void {
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
-        var assembled = try codegen.generate(&program);
+        const assembled = try codegen.generate(&program);
         if (args.args.@"debug-asm" != 0)
             for (assembled.items, 0..) |asmstmt, i| {
                 std.log.info("{} -\t{}", .{ i, asmstmt });
@@ -90,4 +90,6 @@ pub fn main() anyerror!void {
             // try vm.execute();
         }
     }
+
+    // FIXME: all memory is leaked lol
 }

@@ -16,6 +16,8 @@ const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
 const Op = @import("common.zig").Op;
+const ErrorSet = @import("common.zig").Error.Set;
+const UserType = @import("common.zig").UserType;
 
 const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
@@ -42,8 +44,9 @@ pub const Parser = struct {
         InvalidAsmOp,
         InvalidAsmFlag,
         InvalidType,
+        InvalidDeviceFieldType,
         MissingEnumType,
-        NotAnEnum,
+        NotAnEnumOrDevice,
         InvalidEnumField,
         NoSuchType,
         UnknownIdent,
@@ -125,7 +128,6 @@ pub const Parser = struct {
         return arity;
     }
 
-    // TODO: (AnySz) (PtrSz) (Ptr8) (Ptr16) etc
     fn parseType(self: *Parser, node: *const lexer.Node) ParserError!TypeInfo {
         return switch (node.node) {
             .VarNum => |n| .{ .TypeRef = n },
@@ -366,12 +368,20 @@ pub const Parser = struct {
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd.typ != .AmbigEnumLit)
                         return error.ExpectedEnumLit;
-                    const asm_op_lowered = try self.lowerEnumValue(asm_op_kwd.val.AmbigEnumLit);
-                    const asm_op_e = meta.stringToEnum(
-                        Op.Tag,
-                        self.program.types.items[asm_op_lowered.type].def.Enum.fields.items[asm_op_lowered.field].name,
-                    ) orelse return error.InvalidAsmOp;
-                    const asm_op = Op.fromTag(asm_op_e) catch return error.InvalidAsmOp;
+                    const asm_val = try self.lowerEnumValue(asm_op_kwd.val.AmbigEnumLit);
+                    const asm_typ = self.program.types.items[asm_val.Value.typ.EnumLit];
+                    const asm_name = asm_typ.def.Enum.fields.items[asm_val.Value.val.EnumLit].name;
+                    var asm_op_e: ?Op.Tag = null;
+                    // meta.stringToEnum causes stack corruption in certain case
+                    // I really should file an issue about this...
+                    inline for (@typeInfo(Op.Tag).Enum.fields) |enumField| {
+                        if (mem.eql(u8, asm_name, enumField.name)) {
+                            asm_op_e = @field(Op.Tag, enumField.name);
+                        }
+                    }
+                    const asm_op = Op.fromTag(
+                        asm_op_e orelse return error.InvalidAsmOp,
+                    ) catch return error.InvalidAsmOp;
                     break :b ASTNode{
                         .node = .{ .Asm = .{
                             .stack = asm_stack,
@@ -379,6 +389,26 @@ pub const Parser = struct {
                             .generic = asm_generic,
                             .keep = asm_keep,
                             .op = asm_op,
+                        } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "device")) {
+                    const name = try self.expectNode(.Keyword, &ast[1]);
+                    const addr = try self.expectNode(.U8, &ast[2]);
+                    var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
+                    for (ast[3..]) |node| {
+                        const fielddef = try self.expectNode(.Quote, &node);
+                        try validateListLength(fielddef.items, 2);
+                        const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
+                        const fieldtype = try self.parseType(&fielddef.items[1]);
+                        if (fieldtype.bits(self.program) == null)
+                            return self.program.perr(error.InvalidDeviceFieldType, node.location);
+                        fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
+                    }
+                    break :b ASTNode{
+                        .node = .{ .TypeDef = .{
+                            .name = name,
+                            .def = .{ .Device = .{ .start = addr, .fields = fields } },
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -403,81 +433,87 @@ pub const Parser = struct {
             };
     }
 
-    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!TypeInfo.EnumLit {
+    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.Type {
         if (lit.of == null)
             return error.MissingEnumType;
         for (self.program.types.items, 0..) |t, i| {
-            if (mem.eql(u8, t.name, lit.of.?)) {
-                if (t.def != .Enum)
-                    return error.NotAnEnum;
-                for (t.def.Enum.fields.items, 0..) |field, field_i| {
-                    if (mem.eql(u8, field.name, lit.v)) {
-                        return TypeInfo.EnumLit{ .type = i, .field = field_i };
+            if (mem.eql(u8, t.name, lit.of.?)) switch (t.def) {
+                .Enum => |edef| {
+                    for (edef.fields.items, 0..) |field, field_i| {
+                        if (mem.eql(u8, field.name, lit.v)) {
+                            return .{ .Value = .{
+                                .typ = .{ .EnumLit = i },
+                                .val = .{ .EnumLit = field_i },
+                            } };
+                        }
                     }
-                }
-                return error.InvalidEnumField;
-            }
+                    return error.InvalidEnumField;
+                },
+                .Device => |ddef| {
+                    for (ddef.fields.items, 0..) |field, field_i| {
+                        if (mem.eql(u8, field.name, lit.v)) {
+                            const bit = field.type.bits(self.program).?;
+                            const typ: TypeInfo = if (bit == 16) .Dev16 else .Dev8;
+                            return .{ .Value = .{ .typ = typ, .val = .{ .Device = .{
+                                .dev_i = i,
+                                .field = field_i,
+                            } } } };
+                        }
+                    }
+                    return error.InvalidEnumField;
+                },
+                //else => return error.NotAnEnumOrDevice,
+            };
         }
         return error.NoSuchType;
     }
 
-    // Earlier we couldn't know what type an Enum literal belonged to. At this
-    // stage we find and set that information.
-    //
-    // Also check calls to determine what type they are.
-    pub fn postProcess(self: *Parser) ParserError!void {
-        const _S = struct {
-            pub fn walkNodes(parser: *Parser, parent: ?*ASTNode, nodes: ASTNodeList) ParserError!void {
-                var iter = nodes.iterator();
-                while (iter.next()) |node|
-                    try walkNode(parser, parent, node);
+    pub fn postProcess(parser_: *Parser) ErrorSet!void {
+        // Add typedefs
+        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
+            pub fn f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+                // FIXME: check for name collisions
+                if (node.node == .TypeDef) switch (node.node.TypeDef.def) {
+                    .Device => |devdef| {
+                        var fields = UserType.DeviceField.AList.init(parser.alloc);
+                        for (devdef.fields.items) |field| {
+                            fields.append(.{ .name = field.name, .type = field.type }) catch unreachable;
+                        }
+                        self.types.append(UserType{
+                            .node = node,
+                            .name = node.node.TypeDef.name,
+                            .def = .{ .Device = .{ .start = devdef.start, .fields = fields } },
+                        }) catch unreachable;
+                    },
+                };
             }
+        }.f);
 
-            pub fn walkNode(parser: *Parser, parent: ?*ASTNode, node: *ASTNode) ParserError!void {
+        // Earlier we couldn't know what type an Enum literal belonged to. At this
+        // stage we find and set that information.
+        //
+        // Also check calls to determine what type they are.
+        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
+            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 switch (node.node) {
                     .Value => |v| switch (v.typ) {
-                        .AmbigEnumLit => {
-                            const lowered = try parser.lowerEnumValue(v.val.AmbigEnumLit);
-                            node.node = .{ .Value = .{ .typ = .{ .EnumLit = lowered.type }, .val = .{ .EnumLit = lowered } } };
-                        },
+                        .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit),
                         else => {},
                     },
-                    .Decl => |b| try walkNodes(parser, node, b.body),
-                    .Mac => |b| try walkNodes(parser, parent, b.body),
-                    .Wild => |b| try walkNodes(parser, parent, b.body),
-                    .Quote => |b| try walkNodes(parser, parent, b.body),
-                    .Loop => |d| {
-                        switch (d.loop) {
-                            .Until => |u| try walkNodes(parser, parent, u.cond),
-                        }
-                        try walkNodes(parser, parent, d.body);
-                    },
-                    .When => |when| {
-                        try walkNodes(parser, parent, when.yup);
-                        if (when.nah) |n| try walkNodes(parser, parent, n);
-                    },
-                    .Cond => |cond| {
-                        for (cond.branches.items) |branch| {
-                            try walkNodes(parser, parent, branch.cond);
-                            try walkNodes(parser, parent, branch.body);
-                        }
-                        if (cond.else_branch) |branch|
-                            try walkNodes(parser, parent, branch);
-                    },
                     .Call => |c| if (c.ctyp == .Unchecked) {
-                        if (for (parser.program.macs.items) |mac| {
+                        if (for (self.macs.items) |mac| {
                             if (mem.eql(u8, mac.node.Mac.name, c.name))
                                 break true;
                         } else false) {
                             node.node.Call.ctyp = .Mac;
-                        } else if (for (parser.program.defs.items) |decl| {
+                        } else if (for (self.defs.items) |decl| {
                             if (mem.eql(u8, decl.node.Decl.name, c.name))
                                 break true;
                         } else false) {
                             node.node.Call.ctyp = .{ .Decl = 0 };
                         } else {
                             std.log.info("Unknown ident {s}", .{c.name});
-                            return parser.program.perr(error.UnknownIdent, node.srcloc);
+                            return self.perr(error.UnknownIdent, node.srcloc);
                         }
                     },
                     .VDecl => |*vd| {
@@ -493,19 +529,18 @@ pub const Parser = struct {
                         v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
                             if (mem.eql(u8, v.name, local.name))
                                 break i;
-                        } else return parser.program.perr(error.UnknownLocal, node.srcloc);
+                        } else return self.perr(error.UnknownLocal, node.srcloc);
                     },
                     .VDeref => |*v| {
                         v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
                             if (mem.eql(u8, v.name, local.name))
                                 break i;
-                        } else return parser.program.perr(error.UnknownLocal, node.srcloc);
+                        } else return self.perr(error.UnknownLocal, node.srcloc);
                     },
                     else => {},
                 }
             }
-        };
-        try _S.walkNodes(self, null, self.program.ast);
+        }.f);
     }
 
     // Setup the entry function
@@ -534,7 +569,7 @@ pub const Parser = struct {
         });
     }
 
-    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ParserError!void {
+    pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ErrorSet!void {
         for (lexed.items) |*node| switch (node.node) {
             .List => |l| try self.program.ast.append(try self.parseList(l.items)),
             else => try self.program.ast.append(try self.parseStatement(node)),

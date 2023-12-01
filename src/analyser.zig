@@ -289,6 +289,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
         //}
         switch (node.node) {
             .None => {},
+            .TypeDef => {},
             .Mac, .Decl => unreachable,
             .Wild => |w| {
                 var wa = a.*;

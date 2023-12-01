@@ -98,6 +98,7 @@ fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
+        .TypeDef => {},
         .Return => {
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },

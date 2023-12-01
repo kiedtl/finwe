@@ -4,16 +4,22 @@ Roadmap
 x Basic analyzer (keep track of stack count)
 x Basic analyzer (keep track of types)
 x Memory opcodes
-- Devices (same as enums?)
+x Devices (same as enums?)
 x String literals
 x Variables
-- Arity conformity checks
-- Imports
 x If statement
 - Structs
-- Enums
 - HERE
 - Malloc
+- Arity conformity checks
+- Imports
+- Enums
+- Shadowcaster
+- Test suite
+- Refactoring
+  - Scopes
+  - Explicit main function
+  - Decls within decls
 
 Optimizations
 -------------

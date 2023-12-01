@@ -52,6 +52,9 @@ pub const TypeInfo = union(enum) {
     Any,
     Any8,
     Any16,
+    AnyDev,
+    Dev8,
+    Dev16,
 
     StaticPtr: usize,
     Quote,
@@ -84,11 +87,6 @@ pub const TypeInfo = union(enum) {
         pub fn eq(a: Ptr, b: Ptr) bool {
             return a.typ == b.typ and a.ind == b.ind;
         }
-    };
-
-    pub const EnumLit = struct {
-        type: usize, // index into Program.types
-        field: usize,
     };
 
     pub const Expr = union(enum) {
@@ -178,7 +176,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn isGeneric(self: @This()) bool {
         return switch (self) {
-            .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             else => false,
         };
     }
@@ -186,6 +184,7 @@ pub const TypeInfo = union(enum) {
     pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
         return (self != .EnumLit and @as(Tag, self) == @as(Tag, other)) or switch (self) {
             .Any => true,
+            .AnyDev => other == .Dev8 or other == .Dev16,
             .Any8 => other.bits(program) != null and other.bits(program).? == 8,
             .Any16 => other.bits(program) != null and other.bits(program).? == 16,
             .AnyPtr => other == .Ptr8 or other == .Ptr16,
@@ -197,11 +196,12 @@ pub const TypeInfo = union(enum) {
 
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
-            .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
+            .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
+            // .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
+            .Expr, .Quote, .AmbigEnumLit, .TypeRef => null,
         };
     }
 };
@@ -213,7 +213,8 @@ pub const Value = struct {
     pub const V = union(enum) {
         u8: u8,
         u16: u16,
-        EnumLit: TypeInfo.EnumLit,
+        EnumLit: usize,
+        Device: struct { dev_i: usize, field: usize },
         AmbigEnumLit: lexer.Node.EnumLit,
         None,
     };
@@ -222,11 +223,11 @@ pub const Value = struct {
         return switch (self.typ) {
             .U16, .Char16, .Ptr16 => self.val.u16,
             .EnumLit => |e| b: {
-                const v = program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field];
+                const v = program.types.items[e].def.Enum.fields.items[self.val.EnumLit];
                 break :b v.value_b.? << 4 | v.value_a;
             },
             .AmbigEnumLit => unreachable,
-            .Any, .Any8, .Any16, .AnyPtr => unreachable,
+            .Any, .Any8, .Any16, .AnyPtr, .AnyDev => unreachable,
             .StaticPtr => @panic("Codegen bug: string is static data, need UAL"),
             else => unreachable,
         };
@@ -234,8 +235,15 @@ pub const Value = struct {
 
     pub fn toU8(self: Value, program: *Program) u8 {
         return switch (self.typ) {
+            .Dev8, .Dev16 => b: {
+                const t = program.types.items[self.val.Device.dev_i].def.Device;
+                var v: u8 = t.start;
+                for (0..self.val.Device.field) |i|
+                    v += t.fields.items[i].type.bits(program).? / 8;
+                break :b v;
+            },
             .Bool, .U8, .Char8, .Ptr8 => self.val.u8,
-            .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit.field].value_a, // TODO: value_b
+            .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit].value_a, // TODO: value_b
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,
             .StaticPtr => @panic("Codegen bug: string is static data, need UAL"),
@@ -270,6 +278,7 @@ pub const ASTNode = struct {
         VDecl: VDecl,
         VRef: VRef,
         VDeref: VDeref,
+        TypeDef: TypeDef,
         Return,
 
         pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -298,6 +307,25 @@ pub const ASTNode = struct {
         if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
         try writer.print("{}", .{self.node});
     }
+
+    pub const TypeDef = struct {
+        name: []const u8,
+        def: union(enum) {
+            Device: DeviceDef,
+        },
+
+        pub const Field = struct {
+            name: []const u8,
+            type: TypeInfo,
+
+            pub const AList = std.ArrayList(Field);
+        };
+
+        pub const DeviceDef = struct {
+            start: u8,
+            fields: Field.AList,
+        };
+    };
 
     pub const VDecl = struct {
         name: []const u8,
@@ -410,6 +438,7 @@ pub const ASTNode = struct {
     pub fn deepclone(self: @This(), parent: ?*Decl, program: *Program) @This() {
         var new = self.node;
         switch (new) {
+            .TypeDef => unreachable,
             .When => {
                 new.When.yup = _deepcloneASTList(new.When.yup, parent, program);
                 if (new.When.nah) |n|
@@ -477,7 +506,7 @@ pub const Program = struct {
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
     statics: Static.AList,
-    types: Type.AList,
+    types: UserType.AList,
     builtin_types: std.ArrayList(TypeInfo),
 
     errors: Error.AList,
@@ -495,11 +524,46 @@ pub const Program = struct {
             .defs = ASTNodePtrList.init(alloc),
             .macs = ASTNodePtrList.init(alloc),
             .statics = Static.AList.init(alloc),
-            .types = common.Type.AList.init(alloc),
+            .types = UserType.AList.init(alloc),
             .builtin_types = std.ArrayList(TypeInfo).init(alloc),
             .errors = common.Error.AList.init(alloc),
             //.defs = ASTNodeList.init(alloc),
         };
+    }
+
+    pub fn walkNodes(self: *Program, parent: ?*ASTNode, nodes: ASTNodeList, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
+        var iter = nodes.iterator();
+        while (iter.next()) |node|
+            try walkNode(self, parent, node, ctx, func);
+    }
+
+    pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
+        try func(node, parent, self, ctx);
+        switch (node.node) {
+            .None, .Asm, .Cast, .Return, .Call, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
+            .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
+            .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
+            .Quote => |b| try walkNodes(self, parent, b.body, ctx, func),
+            .Loop => |d| {
+                switch (d.loop) {
+                    .Until => |u| try walkNodes(self, parent, u.cond, ctx, func),
+                }
+                try walkNodes(self, parent, d.body, ctx, func);
+            },
+            .When => |when| {
+                try walkNodes(self, parent, when.yup, ctx, func);
+                if (when.nah) |n| try walkNodes(self, parent, n, ctx, func);
+            },
+            .Cond => |cond| {
+                for (cond.branches.items) |branch| {
+                    try walkNodes(self, parent, branch.cond, ctx, func);
+                    try walkNodes(self, parent, branch.body, ctx, func);
+                }
+                if (cond.else_branch) |branch|
+                    try walkNodes(self, parent, branch, ctx, func);
+            },
+        }
     }
 
     pub fn addNativeType(self: *Program, comptime T: type, name: []const u8) void {
@@ -507,9 +571,9 @@ pub const Program = struct {
             .Enum => |info| {
                 if (info.tag_type != u16 and info.tag_type != u8)
                     @compileError("Enum type must be either u8 or u16");
-                var t = Type{ .node = null, .name = name, .def = .{ .Enum = .{
+                var t = UserType{ .node = null, .name = name, .def = .{ .Enum = .{
                     .is_short = info.tag_type == u16,
-                    .fields = std.ArrayList(Type.EnumField).init(gpa.allocator()),
+                    .fields = std.ArrayList(UserType.EnumField).init(gpa.allocator()),
                 } } };
                 inline for (info.fields) |field| {
                     const va: u8 = if (info.tag_type == u16) @as(u16, @intCast(field.value)) & 0xFF else @intCast(field.value);
@@ -543,15 +607,28 @@ pub const Program = struct {
     }
 };
 
-pub const Type = struct {
-    node: ?usize, // null means native (i.e. compiler internal)
+pub const UserType = struct {
+    node: ?*ASTNode, // null means native (i.e. compiler internal)
     name: []const u8,
     def: Def,
 
-    pub const AList = std.ArrayList(Type);
+    pub const AList = std.ArrayList(UserType);
 
     pub const Def = union(enum) {
         Enum: Enum,
+        Device: Device,
+    };
+
+    pub const Device = struct {
+        start: u8,
+        fields: DeviceField.AList,
+    };
+
+    pub const DeviceField = struct {
+        name: []const u8,
+        type: TypeInfo,
+
+        pub const AList = std.ArrayList(DeviceField);
     };
 
     pub const Enum = struct {
