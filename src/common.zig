@@ -312,6 +312,7 @@ pub const ASTNode = struct {
         name: []const u8,
         def: union(enum) {
             Device: DeviceDef,
+            Struct: StructDef,
         },
 
         pub const Field = struct {
@@ -323,6 +324,10 @@ pub const ASTNode = struct {
 
         pub const DeviceDef = struct {
             start: u8,
+            fields: Field.AList,
+        };
+
+        pub const StructDef = struct {
             fields: Field.AList,
         };
     };
@@ -617,6 +622,7 @@ pub const UserType = struct {
     pub const Def = union(enum) {
         Enum: Enum,
         Device: Device,
+        Struct: Struct,
     };
 
     pub const Device = struct {
@@ -625,6 +631,19 @@ pub const UserType = struct {
     };
 
     pub const DeviceField = struct {
+        name: []const u8,
+        type: TypeInfo,
+        // rw: RW,
+        // pub const RW = enum { R, W, RW };
+
+        pub const AList = std.ArrayList(DeviceField);
+    };
+
+    pub const Struct = struct {
+        fields: StructField.AList,
+    };
+
+    pub const StructField = struct {
         name: []const u8,
         type: TypeInfo,
 

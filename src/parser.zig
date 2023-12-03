@@ -178,7 +178,10 @@ pub const Parser = struct {
 
     fn parseStatement(self: *Parser, node: *const lexer.Node) ParserError!ASTNode {
         return switch (node.node) {
-            .List => |l| try self.parseList(l.items),
+            .List => |l| {
+                const lst = l.items;
+                return self.parseList(lst);
+            },
             .Quote => |q| blk: {
                 const body = try self.parseStatements(q.items);
                 break :blk ASTNode{
@@ -210,6 +213,51 @@ pub const Parser = struct {
         for (nodes) |node|
             try ast.append(try self.parseStatement(&node));
         return ast;
+    }
+
+    fn parseTypeDecl(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
+        assert(ast[0].node == .Keyword);
+        const k = ast[0].node.Keyword;
+
+        if (mem.eql(u8, k, "device")) {
+            const name = try self.expectNode(.Keyword, &ast[1]);
+            const addr = try self.expectNode(.U8, &ast[2]);
+            var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
+            for (ast[3..]) |node| {
+                const fielddef = try self.expectNode(.Quote, &node);
+                try validateListLength(fielddef.items, 2);
+                const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
+                const fieldtype = try self.parseType(&fielddef.items[1]);
+                if (fieldtype.bits(self.program) == null)
+                    return self.program.perr(error.InvalidDeviceFieldType, node.location);
+                fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
+            }
+            return ASTNode{
+                .node = .{ .TypeDef = .{
+                    .name = name,
+                    .def = .{ .Device = .{ .start = addr, .fields = fields } },
+                } },
+                .srcloc = ast[0].location,
+            };
+        } else if (mem.eql(u8, k, "struct")) {
+            const name = try self.expectNode(.Keyword, &ast[1]);
+            // for zig compiler bug
+            var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
+            for (ast[3..]) |node| {
+                const fielddef = try self.expectNode(.Quote, &node);
+                try validateListLength(fielddef.items, 2);
+                const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
+                const fieldtype = try self.parseType(&fielddef.items[1]);
+                fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
+            }
+            return ASTNode{
+                .node = .{ .TypeDef = .{
+                    .name = name,
+                    .def = .{ .Struct = .{ .fields = fields } },
+                } },
+                .srcloc = ast[0].location,
+            };
+        } else unreachable;
     }
 
     fn parseList(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
@@ -273,16 +321,18 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "as")) {
                     try validateListLength(ast, 2);
 
+                    var ref: ?usize = null;
+                    var to: TypeInfo = .Any;
+
                     switch (ast[1].node) {
-                        .VarNum => |n| break :b ASTNode{
-                            .node = .{ .Cast = .{ .to = .Any, .ref = n } },
-                            .srcloc = ast[0].location,
-                        },
-                        else => break :b ASTNode{
-                            .node = .{ .Cast = .{ .to = try self.parseType(&ast[1]) } },
-                            .srcloc = ast[0].location,
-                        },
+                        .VarNum => |n| ref = n,
+                        else => to = try self.parseType(&ast[1]),
                     }
+
+                    break :b ASTNode{
+                        .node = .{ .Cast = .{ .to = to, .ref = ref } },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "return")) {
                     try validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
@@ -303,8 +353,12 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "when")) {
-                    const yup = try self.parseStatements((try self.expectNode(.Quote, &ast[1])).items);
-                    const nah = if (ast.len > 2) try self.parseStatements((try self.expectNode(.Quote, &ast[2])).items) else null;
+                    const yup_n = try self.expectNode(.Quote, &ast[1]);
+                    const yup = try self.parseStatements(yup_n.items);
+                    const nah = if (ast.len > 2) ifb: {
+                        const nah_n = try self.expectNode(.Quote, &ast[2]);
+                        break :ifb try self.parseStatements(nah_n.items);
+                    } else null;
                     break :b ASTNode{
                         .node = .{ .When = .{ .yup = yup, .nah = nah } },
                         .srcloc = ast[0].location,
@@ -392,26 +446,10 @@ pub const Parser = struct {
                         } },
                         .srcloc = ast[0].location,
                     };
-                } else if (mem.eql(u8, k, "device")) {
-                    const name = try self.expectNode(.Keyword, &ast[1]);
-                    const addr = try self.expectNode(.U8, &ast[2]);
-                    var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
-                    for (ast[3..]) |node| {
-                        const fielddef = try self.expectNode(.Quote, &node);
-                        try validateListLength(fielddef.items, 2);
-                        const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
-                        const fieldtype = try self.parseType(&fielddef.items[1]);
-                        if (fieldtype.bits(self.program) == null)
-                            return self.program.perr(error.InvalidDeviceFieldType, node.location);
-                        fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
-                    }
-                    break :b ASTNode{
-                        .node = .{ .TypeDef = .{
-                            .name = name,
-                            .def = .{ .Device = .{ .start = addr, .fields = fields } },
-                        } },
-                        .srcloc = ast[0].location,
-                    };
+                } else if (mem.eql(u8, k, "device") or
+                    mem.eql(u8, k, "struct"))
+                {
+                    break :b try self.parseTypeDecl(ast);
                 } else {
                     std.log.info("Unknown keyword: {s}", .{k});
                     break :b error.UnknownKeyword;
@@ -462,7 +500,7 @@ pub const Parser = struct {
                     }
                     return error.InvalidEnumField;
                 },
-                //else => return error.NotAnEnumOrDevice,
+                else => return error.NotAnEnumOrDevice,
             };
         }
         return error.NoSuchType;
@@ -474,6 +512,17 @@ pub const Parser = struct {
             pub fn f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 // FIXME: check for name collisions
                 if (node.node == .TypeDef) switch (node.node.TypeDef.def) {
+                    .Struct => |strdef| {
+                        var fields = UserType.StructField.AList.init(parser.alloc);
+                        for (strdef.fields.items) |field| {
+                            fields.append(.{ .name = field.name, .type = field.type }) catch unreachable;
+                        }
+                        self.types.append(UserType{
+                            .node = node,
+                            .name = node.node.TypeDef.name,
+                            .def = .{ .Struct = .{ .fields = fields } },
+                        }) catch unreachable;
+                    },
                     .Device => |devdef| {
                         var fields = UserType.DeviceField.AList.init(parser.alloc);
                         for (devdef.fields.items) |field| {
