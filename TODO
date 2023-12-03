@@ -20,6 +20,10 @@ x If statement
   - Scopes
   - Explicit main function
   - Decls within decls
+- Static analysis pt 2
+  - New analyser pass: track comptime-known vals
+  - Devices
+    - Chk: is port readable/writeable when calling deo/dei
 
 Optimizations
 -------------
