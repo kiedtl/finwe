@@ -1,48 +1,159 @@
-#0x00 0x0A 0x21 0x64
-#0x6C 0x72 0x6F 0x77
-#0x20 0x2C 0x6F 0x6C
-#0x6C 0x65 0x48
+(device System 0x00
+	[_unused   U16]
+	[expansion U16] # (Ptr16 ExpansionCmd)
+	[wst        U8]
+	[rst        U8]
+	[metadata  U16] # (Ptr16 Metadata)
+	[red       U16]
+	[green     U16]
+	[blue      U16]
+	[debug      U8]
+	[state      U8]
+)
 
-(mac  ret  [ (asm "sr" .Op/Ojmp)     ])
+(device Console 0x10
+	[vector U16] #[vector (Fn u8 --)]
+	[read U8]
+	[exec U8]          # ? (not documented)
+	[mode U8]          # ? (not documented)
+	[dead U8]          # ? (not documented)
+	[exit U8]          # ? (not documented)
+	[type U8] #[type ConsoleType] # enum
+	[write U8]         # ? (not documented)
+	[error U8]         # ? (not documented)
+)
 
-(word 2dup (Any Any -- $0 $1 $0 $1) [ over over ])
+(word 2dup ((AnySz $0) Any -- $0 $1 $0 $1) [ over over ])
 
-(word deo   (    Any  U8 --         ) [ (asm "g" .Op/Odeo)      ])
-(word emit  (         U8 --         ) [ 0x18 (asm "g" .Op/Odeo) ])
-(word dup   (        Any -- $0 $0   ) [ (asm "g" .Op/Odup)      ])
-(word swap  (    Any Any -- $0 $1   ) [ (asm "g" .Op/Oswp)      ])
-(word drop  (        Any --         ) [ (asm "g" .Op/Odrop)     ])
-(word over  (        Any --         ) [ (asm "g" .Op/Oovr)      ])
-(word rot   (Any Any Any -- $2 $1 $0) [ (asm "g" .Op/Orot)      ])
-(word rot>  (Any Any Any -- $1 $2 $0) [ rot rot                 ])
-(word tuck  (    Any Any -- $0 $1 $0) [ swap over               ])
-(word tuck> (    Any Any -- $1 $1 $0) [ over swap               ])
-(word not   (        Any -- $0      ) [ (when [ nil ] [ t ])    ])
-(word =     (    $0  Any -- Bool    ) [ (asm "g" .Op/Oeq)       ])
-(word <     (        Any -- $0      ) [ (asm "g" .Op/Olt)       ])
-(word >     (        Any -- $0      ) [ (asm "g" .Op/Ogt)       ])
-(word -     (        Any -- $0      ) [ (asm "g" .Op/Oadd)      ])
-(word +     (        Any -- $0      ) [ (asm "g" .Op/Osub)      ])
-(word /     (        Any -- $0      ) [ (asm "g" .Op/Odiv)      ])
-(word mod   (    $0  Any -- $0      ) [ 2dup / * -              ])
-(word /mod  (    $0  Any -- $0 $0   ) [ 2dup / rot> mod         ])
-(word *     (        Any -- $0      ) [ (asm "g" .Op/Omul)      ])
-(word 0=    (        Any -- Bool    ) [ 0 (as $0) =             ])
-(word 0<    (        Any -- Bool    ) [ 0 (as $0) <             ])
-(word 0>    (        Any -- Bool    ) [ 0 (as $0) >             ])
+(word lda  (    AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)       ])
+(word ldak (    AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)      ])
+(word sta  (Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
 
-(word print16 (U16 --) [
-	dup 0= (when [ drop '0 emit ret ])
+(word deo   ( Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
+(word dbg   (            --              ) [ 0x0 .System/debug deo    ])
+(word emit  (         U8 --              ) [ .Console/write deo       ])
+(word nl    (            --              ) [ 0x0a emit                ])
+
+(word dup   (        Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
+(word swap  (    Any Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
+(word drop  (        Any --              ) [ (asm "g" .Op/Odrop)      ])
+(word over  (    Any Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
+
+# TODO
+#(word rot   (Any Any Any -- $2 $1 $0    ) [ (asm "g" .Op/Orot)      ])
+#(word rot>  (Any Any Any -- $1 $2 $0    ) [ rot rot                 ])
+
+(word rot   ( $0  $0 Any -- $0 $0 $0     ) [ (asm "g" .Op/Orot)      ])
+(word rot>  ( $0  $0 Any -- $0 $0 $0     ) [ rot rot                 ])
+(word tuck  (    Any Any -- $0 $1 $0     ) [ swap over               ])
+(word tuck> (    Any Any -- $1 $1 $0     ) [ over swap               ])
+
+(word =     (    $0  Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
+(word <     (    $0  Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
+(word >     (    $0  Any -- Bool         ) [ (asm "g" .Op/Ogt)       ])
+(word +     (    $0  Any -- $0           ) [ (asm "g" .Op/Oadd)      ])
+(word 1+    (        Any -- $0           ) [ (asm "g" .Op/Oinc)      ])
+(word -     (    $0  Any -- $0           ) [ (asm "g" .Op/Osub)      ])
+(word /     (    $0  Any -- $0           ) [ (asm "g" .Op/Odiv)      ])
+(word mod   (    $0  Any -- $0           ) [ 2dup / * -              ])
+(word /mod  (    $0  Any -- $0 $0        ) [ 2dup / rot> mod         ])
+(word *     (    $0  Any -- $0           ) [ (asm "g" .Op/Omul)      ])
+(word 0=    (        Any -- Bool         ) [ 0 (as $0) =             ])
+(word 0<    (        Any -- Bool         ) [ 0 (as $0) <             ])
+(word 0>    (        Any -- Bool         ) [ 0 (as $0) >             ])
+(word not   (        Any -- $0           ) [ (when [ nil ] [ t ])    ])
+
+(word print8 (U8 --) [
+	dup 0= (when [ drop '0 emit return ])
 
 	0x99 swap # stop indicator
+	
 	(until [ 0= ] [
-		10 /mod swap
+		16 /mod
 		dup 9 > (when [ 10 - 'a + ] [ '0 + ])
-		swap 0= (when [ dup ]) not
+		swap
 	])
+# TODO: drop null byte?
 	(until [ 0x99 = ] [ emit ])
-	drop
+
+	drop # drop stop indicator
 ])
 
-#(until [ 0= ] [ 0x18 deo ])
-24 print16
+(word print16 (U16 --) [
+	dup 0= (when [ drop '0 emit return ])
+
+	0x99s swap # stop indicator
+	
+	(wild (U16 U16 -- U16) [
+		(until [ 0= ] [
+			16s /mod
+			dup 9s > (when [ 10s - 'as + ] [ '0s + ])
+			swap
+		])
+
+		(until [ 0x99s = ] [ (as U8) emit ])
+	])
+
+	drop # drop stop indicator
+])
+
+(word print (Any --) [
+	dup 0= (when [ drop '0 emit return ])
+
+	0x99 (as $0) swap # stop indicator
+
+	(wild ($0 $0 -- $0) [
+		(until [ 0= ] [
+			16 (as $0) /mod
+			dup 9 (as $0) > (when
+				[ 10 (as $0) - 'a (as $0) + ]
+				[ '0 (as $0) + ]
+			)
+			swap
+		])
+
+		(until [ 0x99 (as $0) = ] [ (as U8) emit ])
+	])
+
+	drop # drop stop indicator
+])
+
+#0xbeefs print nl
+#0x3b    print nl
+#0x0d    print
+#0xef    print
+#0xaceds print
+#0xcafes print nl
+
+#"Hello, world!\n"
+#ldak (until [ 0= ] [ emit 1+ ldak ])
+#drop drop
+#dbg
+
+#(word foobar (Any -- $0) [
+#	(local baz $0 1)
+#	1+ @baz sta
+#	$baz
+#])
+
+#0 foobar foobar foobar print nl
+#0s foobar foobar foobar foobar print nl
+
+#(word variable (Any -- $0) [
+#	(local _S $0 1)
+#	drop
+#	@_S
+#])
+#
+#0  variable dbg
+#0s variable dbg drop
+
+#(struct Foo
+#	[bar U8]
+#	[baz U8]
+#)
+
+#(local foo Foo 0)
+#8 @foo :bar sta
+#  @foo :bar lda print nl
+8 print nl
