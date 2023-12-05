@@ -44,7 +44,7 @@ pub const Parser = struct {
         InvalidAsmOp,
         InvalidAsmFlag,
         InvalidType,
-        InvalidDeviceFieldType,
+        InvalidFieldType,
         MissingEnumType,
         NotAnEnumOrDevice,
         InvalidEnumField,
@@ -63,9 +63,11 @@ pub const Parser = struct {
         self.program.addNativeType(common.Op.Tag, "Op");
     }
 
-    fn validateListLength(ast: []const lexer.Node, require: usize) ParserError!void {
-        if (ast.len < require) return error.ExpectedItems;
-        if (ast.len > require) return error.UnexpectedItems;
+    fn validateListLength(self: *Parser, ast: []const lexer.Node, require: usize) ParserError!void {
+        if (ast.len < require)
+            return self.program.perr(error.ExpectedItems, ast[0].location);
+        if (ast.len > require)
+            return self.program.perr(error.UnexpectedItems, ast[0].location);
     }
 
     fn expectNode(self: *Parser, comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) b: {
@@ -108,7 +110,7 @@ pub const Parser = struct {
 
         const ast_arity = try self.expectNode(.List, node);
         for (ast_arity.items) |*arity_item| {
-            var dst: *TypeInfo.List32 = undefined;
+            var dst: *TypeInfo.List16 = undefined;
             if (before) {
                 dst = if (norm_stack) &arity.args else &arity.rargs;
             } else {
@@ -146,7 +148,7 @@ pub const Parser = struct {
                         return self.program.perr(error.InvalidType, node.location);
                     }
                 } else {
-                    return self.program.perr(error.InvalidType, node.location);
+                    break :b TypeInfo{ .Unresolved = item };
                 }
             },
             .List => |lst| {
@@ -195,7 +197,10 @@ pub const Parser = struct {
                 }
                 break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
             },
-            .Child => @panic("TODO"),
+            .Child => |s| ASTNode{
+                .node = .{ .GetChild = .{ .name = s } },
+                .srcloc = node.location,
+            },
             .Var => |s| ASTNode{
                 .node = .{ .VDeref = .{ .name = s } },
                 .srcloc = node.location,
@@ -225,11 +230,11 @@ pub const Parser = struct {
             var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
             for (ast[3..]) |node| {
                 const fielddef = try self.expectNode(.Quote, &node);
-                try validateListLength(fielddef.items, 2);
+                try self.validateListLength(fielddef.items, 2);
                 const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
                 const fieldtype = try self.parseType(&fielddef.items[1]);
                 if (fieldtype.bits(self.program) == null)
-                    return self.program.perr(error.InvalidDeviceFieldType, node.location);
+                    return self.program.perr(error.InvalidFieldType, node.location);
                 fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
             }
             return ASTNode{
@@ -243,9 +248,9 @@ pub const Parser = struct {
             const name = try self.expectNode(.Keyword, &ast[1]);
             // for zig compiler bug
             var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
-            for (ast[3..]) |node| {
+            for (ast[2..]) |node| {
                 const fielddef = try self.expectNode(.Quote, &node);
-                try validateListLength(fielddef.items, 2);
+                try self.validateListLength(fielddef.items, 2);
                 const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
                 const fieldtype = try self.parseType(&fielddef.items[1]);
                 fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
@@ -293,7 +298,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "local")) {
-                    try validateListLength(ast, 4);
+                    try self.validateListLength(ast, 4);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);
                     const llen = try self.expectNode(.U8, &ast[3]);
@@ -308,7 +313,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "wild")) {
-                    try validateListLength(ast, 3);
+                    try self.validateListLength(ast, 3);
 
                     const arity = try self.parseArity(&ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
@@ -319,7 +324,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "as")) {
-                    try validateListLength(ast, 2);
+                    try self.validateListLength(ast, 2);
 
                     var ref: ?usize = null;
                     var to: TypeInfo = .Any;
@@ -334,10 +339,10 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "return")) {
-                    try validateListLength(ast, 1);
+                    try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until")) {
-                    try validateListLength(ast, 3);
+                    try self.validateListLength(ast, 3);
 
                     const ast_cond = try self.expectNode(.Quote, &ast[1]);
                     const cond = try self.parseStatements(ast_cond.items);
@@ -399,7 +404,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "asm")) {
-                    try validateListLength(ast, 3);
+                    try self.validateListLength(ast, 3);
 
                     const asm_flags = try self.parseValue(&ast[1]);
                     if (asm_flags.typ != .StaticPtr and
@@ -514,8 +519,16 @@ pub const Parser = struct {
                 if (node.node == .TypeDef) switch (node.node.TypeDef.def) {
                     .Struct => |strdef| {
                         var fields = UserType.StructField.AList.init(parser.alloc);
+                        var offset: u8 = 0;
                         for (strdef.fields.items) |field| {
-                            fields.append(.{ .name = field.name, .type = field.type }) catch unreachable;
+                            const bits = field.type.bits(self) orelse
+                                return self.perr(error.InvalidFieldType, node.srcloc);
+                            fields.append(.{
+                                .name = field.name,
+                                .type = field.type,
+                                .offset = offset,
+                            }) catch unreachable;
+                            offset += bits / 8;
                         }
                         self.types.append(UserType{
                             .node = node,

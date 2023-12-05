@@ -45,6 +45,7 @@ pub const TypeInfo = union(enum) {
     Char8,
     Char16,
     EnumLit: usize,
+    Struct: usize,
     AnyPtr,
     AnyPtr16,
     Ptr8: Ptr,
@@ -63,9 +64,10 @@ pub const TypeInfo = union(enum) {
 
     AmbigEnumLit,
     TypeRef: usize,
+    Unresolved: []const u8,
 
     pub const Tag = meta.Tag(@This());
-    pub const List32 = @import("buffer.zig").StackBuffer(@This(), 32);
+    pub const List16 = @import("buffer.zig").StackBuffer(@This(), 16);
 
     pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         if (comptime !mem.eql(u8, f, "")) {
@@ -107,12 +109,12 @@ pub const TypeInfo = union(enum) {
 
         pub fn resolveTypeRef(
             self: @This(),
-            arity: *const analyser.BlockAnalysis,
+            arity: ?analyser.BlockAnalysis,
             program: *Program,
-        ) TypeInfo {
+        ) analyser.Error!TypeInfo {
             return switch (self) {
                 .AnySz => |s| b: {
-                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
                     if (arg_t.bits(program)) |b| {
                         break :b if (b == 16) .Any16 else .Any8;
                     } else {
@@ -121,7 +123,7 @@ pub const TypeInfo = union(enum) {
                     }
                 },
                 .Child => |s| b: {
-                    const arg_t = program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
                     break :b switch (arg_t) {
                         .AnyPtr, .AnyPtr16 => .Any,
                         .Ptr8, .Ptr16 => |p| program.builtin_types.items[p.typ],
@@ -132,12 +134,27 @@ pub const TypeInfo = union(enum) {
         }
     };
 
-    pub fn resolveTypeRef(a: *@This(), arity: *const analyser.BlockAnalysis, program: *Program) TypeInfo {
-        return switch (a.*) {
-            .TypeRef => |r| arity.args.constSlice()[arity.args.len - r - 1],
-            .Expr => |e| e.resolveTypeRef(arity, program),
-            else => a.*,
+    pub fn isResolvable(self: @This()) bool {
+        return switch (self) {
+            .TypeRef, .Expr, .Unresolved => true,
+            else => false,
         };
+    }
+
+    pub fn resolveTypeRef(a: @This(), arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
+        const r: TypeInfo = switch (a) {
+            .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
+            .Expr => |e| try e.resolveTypeRef(arity, program),
+            .Unresolved => |k| for (program.types.items, 0..) |t, i| {
+                if (mem.eql(u8, t.name, k)) break switch (t.def) {
+                    .Enum => .{ .EnumLit = i },
+                    .Struct => .{ .Struct = i },
+                    .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
+                };
+            } else return error.NoSuchType,
+            else => a,
+        };
+        return if (r.isResolvable()) try r.resolveTypeRef(arity, program) else r;
     }
 
     pub fn eq(a: @This(), b: @This()) bool {
@@ -146,6 +163,8 @@ pub const TypeInfo = union(enum) {
             if (mem.eql(u8, field.name, @tagName(a)))
                 if (field.type == usize or field.type == void)
                     return @field(a, field.name) != @field(b, field.name)
+                else if (field.type == []const u8)
+                    return mem.eql(u8, @field(a, field.name), @field(b, field.name))
                 else
                     return @field(a, field.name).eq(@field(b, field.name));
         unreachable;
@@ -194,14 +213,27 @@ pub const TypeInfo = union(enum) {
         };
     }
 
+    pub fn size(self: @This(), program: *const Program) ?usize {
+        return switch (self) {
+            .Struct => |s| b: {
+                const tstruct = program.types.items[s].def.Struct;
+                const last = tstruct.fields.items[tstruct.fields.items.len - 1];
+                break :b last.offset + last.type.size(program).?;
+            },
+            else => return if (self.bits(program)) |b| b / 8 else null,
+        };
+    }
+
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
             .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
+            .Struct => null, // TODO: 16/8 if allowable
             // .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
-            .Expr, .Quote, .AmbigEnumLit, .TypeRef => null,
+            .Unresolved, .Expr, .Quote, .TypeRef => null,
+            .AmbigEnumLit => unreachable,
         };
     }
 };
@@ -278,6 +310,7 @@ pub const ASTNode = struct {
         VDecl: VDecl,
         VRef: VRef,
         VDeref: VDeref,
+        GetChild: GetChild,
         TypeDef: TypeDef,
         Return,
 
@@ -330,6 +363,12 @@ pub const ASTNode = struct {
         pub const StructDef = struct {
             fields: Field.AList,
         };
+    };
+
+    pub const GetChild = struct {
+        name: []const u8,
+        type: TypeInfo = .Any,
+        offset: u8 = 0,
     };
 
     pub const VDecl = struct {
@@ -469,7 +508,7 @@ pub const ASTNode = struct {
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .None, .Call, .Asm, .Value, .Cast, .Return => {},
+            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Return => {},
         }
 
         return .{
@@ -545,7 +584,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Return, .Call, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
@@ -636,7 +675,7 @@ pub const UserType = struct {
         // rw: RW,
         // pub const RW = enum { R, W, RW };
 
-        pub const AList = std.ArrayList(DeviceField);
+        pub const AList = std.ArrayList(@This());
     };
 
     pub const Struct = struct {
@@ -646,8 +685,9 @@ pub const UserType = struct {
     pub const StructField = struct {
         name: []const u8,
         type: TypeInfo,
+        offset: u8 = 0,
 
-        pub const AList = std.ArrayList(DeviceField);
+        pub const AList = std.ArrayList(@This());
     };
 
     pub const Enum = struct {

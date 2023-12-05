@@ -10,31 +10,32 @@ const ASTNode = common.ASTNode;
 const ASTNodeList = common.ASTNodeList;
 const TypeInfo = common.TypeInfo;
 const Value = common.Value;
-const VTList32 = TypeInfo.List32;
+const VTList16 = TypeInfo.List16;
 
 pub const Error = error{
+    NoSuchType,
     GenericNotMatching,
 };
 
 pub const BlockAnalysis = struct {
-    args: VTList32 = VTList32.init(null),
-    stack: VTList32 = VTList32.init(null),
-    rargs: VTList32 = VTList32.init(null),
-    rstack: VTList32 = VTList32.init(null),
+    args: VTList16 = VTList16.init(null),
+    stack: VTList16 = VTList16.init(null),
+    rargs: VTList16 = VTList16.init(null),
+    rstack: VTList16 = VTList16.init(null),
 
-    pub fn resolveTypeRefs(self: @This(), arity: *const @This(), program: *Program) @This() {
+    pub fn resolveTypeRefs(self: @This(), arity: ?@This(), program: *Program) !@This() {
         // std.log.info("resolving {}\n with {}", .{ self, arity });
         var r = self;
         for (r.stack.slice()) |*stack|
-            if (stack.* == .TypeRef or stack.* == .Expr) {
-                stack.* = stack.resolveTypeRef(arity, program);
-                assert(stack.* != .TypeRef and stack.* != .Expr);
+            if (stack.isResolvable()) {
+                stack.* = try stack.resolveTypeRef(arity, program);
+                assert(!stack.isResolvable());
             };
         // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
-            if (arg.* == .TypeRef or arg.* == .Expr) {
-                arg.* = arg.resolveTypeRef(arity, program);
-                assert(arg.* != .TypeRef and arg.* != .Expr);
+            if (arg.isResolvable()) {
+                arg.* = try arg.resolveTypeRef(arity, program);
+                assert(!arg.isResolvable());
             };
         // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
         return r;
@@ -55,7 +56,7 @@ pub const BlockAnalysis = struct {
             i -= 1;
             const arg = &r.args.slice()[i];
             if (arg.* == .TypeRef or arg.* == .Expr)
-                arg.* = arg.resolveTypeRef(&r, p);
+                arg.* = try arg.resolveTypeRef(r, p);
 
             const calleritem = if (j < caller.stack.len)
                 caller.stack.constSlice()[caller.stack.len - j - 1]
@@ -74,7 +75,7 @@ pub const BlockAnalysis = struct {
 
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef or stack.* == .Expr) {
-                stack.* = stack.resolveTypeRef(&r, p);
+                stack.* = try stack.resolveTypeRef(r, p);
             };
 
         // std.log.info("RESULTS {}\n\n", .{r});
@@ -84,7 +85,7 @@ pub const BlockAnalysis = struct {
 
     pub fn eqExact(a: @This(), b: @This()) bool {
         const S = struct {
-            pub fn f(_a: VTList32, _b: VTList32) bool {
+            pub fn f(_a: VTList16, _b: VTList16) bool {
                 if (_a.len != _b.len) return false;
                 return for (_a.constSlice(), 0..) |item, i| {
                     if (!item.eq(_b.constSlice()[i])) break false;
@@ -97,7 +98,7 @@ pub const BlockAnalysis = struct {
 
     pub fn isGeneric(self: @This()) bool {
         const S = struct {
-            pub fn f(list: VTList32) bool {
+            pub fn f(list: VTList16) bool {
                 return for (list.constSlice()) |item| {
                     if (item.isGeneric()) break true;
                 } else false;
@@ -173,7 +174,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         (args_needed == 1 and a1b != null)))
     {
         i.short = switch (i.op) {
-            .Osta => a2b.? == 16,
+            .Osta => if (prog.builtin_types.items[a1.?.Ptr16.typ].bits(prog)) |b| b == 16 else false,
             .Olda => if (prog.builtin_types.items[a1.?.Ptr16.typ].bits(prog)) |b| b == 16 else false,
             .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
@@ -235,9 +236,6 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         .Osta => {
             a.args.append(a1 orelse .AnyPtr16) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
-            a.stack.append(
-                if (a1) |t| prog.builtin_types.items[t.Ptr16.typ] else .Any,
-            ) catch unreachable;
         },
         .Ohalt => {},
         else => {
@@ -294,7 +292,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
-                w.arity.resolveTypeRefs(&(parent.arity orelse BlockAnalysis{}), program).mergeInto(a);
+                (try w.arity.resolveTypeRefs(parent.arity, program)).mergeInto(a);
             },
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
@@ -315,7 +313,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
 
                         if (a.isGeneric() or !d_arity.isGeneric()) {
-                            d_arity.resolveTypeRefs(&d_arity, program).mergeInto(a);
+                            (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a);
                             if (!d_arity.isGeneric())
                                 cdecl.calls += 1;
                         } else if (d_arity.isGeneric()) {
@@ -438,7 +436,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 else => a.stack.append(v.typ) catch unreachable,
             },
             .VDecl => |*vd| {
-                parent.locals.slice()[vd.lind].rtyp = vd.utyp.resolveTypeRef(&parent.arity.?, program);
+                parent.locals.slice()[vd.lind].rtyp = try vd.utyp.resolveTypeRef(parent.arity, program);
             },
             .VRef => |v| {
                 const t = parent.locals.slice()[v.lind.?].rtyp;
@@ -449,6 +447,31 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 a.stack.append(t) catch unreachable;
             },
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
+            .GetChild => |*gch| {
+                // error message: (replacing nuh uh)
+                // Error: Need to know type at this point
+                //  Hint: Try explicit cast.
+                switch (a.stack.last() orelse @panic("nuh uh")) {
+                    // TODO: Ptr8 (it's easy, just change ptrize16 to be more generic)
+                    .Ptr16 => |ptr| switch (program.builtin_types.items[ptr.typ]) {
+                        .Struct => |s| {
+                            if (ptr.ind > 1) {
+                                @panic("idiot");
+                            }
+                            const tstruct = program.types.items[s].def.Struct;
+                            const i = for (tstruct.fields.items, 0..) |f, i| {
+                                if (mem.eql(u8, f.name, gch.name)) break i;
+                            } else @panic("no such field");
+                            gch.offset = tstruct.fields.items[i].offset;
+                            gch.type = tstruct.fields.items[i].type;
+                            a.stack.append(gch.type.ptrize16(program)) catch unreachable;
+                        },
+                        else => @panic("can't get a child from that"),
+                    },
+                    .Struct => @panic("need protection (ptr)"),
+                    else => @panic("can't get a child from that"),
+                }
+            },
             .Cast => |*c| {
                 if (c.ref) |r| {
                     c.to = parent.arity.?.args.constSlice()[r];

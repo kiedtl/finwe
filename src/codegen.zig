@@ -116,6 +116,15 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .None => {},
+        .GetChild => |gch| {
+            const is_short = gch.type.bits(program).? == 16;
+            if (is_short) {
+                try emitIMM16(buf, node, WK_STACK, false, .Olit, gch.offset);
+            } else {
+                try emitIMM(buf, node, WK_STACK, false, .Olit, gch.offset);
+            }
+            try emit(buf, null, 0, false, is_short, .Oadd);
+        },
         .VDecl => {},
         .VRef => |v| try emitUA(buf, ual, v.name, node),
         .VDeref => |v| {
@@ -287,7 +296,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
             },
             .None => {
-                const typsz = data.type.bits(program).? / 8;
+                const typsz = data.type.size(program).?;
                 const totalsz = typsz * data.count;
                 for (0..totalsz) |_| try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
             },
