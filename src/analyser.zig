@@ -64,7 +64,7 @@ pub const BlockAnalysis = struct {
                 caller.args.constSlice()[caller.args.len - (j - caller.stack.len) - 1]
             else
                 arg.*;
-            if (arg.isGeneric()) {
+            if (arg.isGeneric(p)) {
                 if (!arg.doesInclude(calleritem, p)) {
                     std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
                     return p.aerr(error.GenericNotMatching, call_node.srcloc);
@@ -96,16 +96,16 @@ pub const BlockAnalysis = struct {
             S.f(a.stack, b.stack) and S.f(a.rstack, b.rstack);
     }
 
-    pub fn isGeneric(self: @This()) bool {
+    pub fn isGeneric(self: @This(), program: *Program) bool {
         const S = struct {
-            pub fn f(list: VTList16) bool {
+            pub fn f(list: VTList16, p: *Program) bool {
                 return for (list.constSlice()) |item| {
-                    if (item.isGeneric()) break true;
+                    if (item.isGeneric(p)) break true;
                 } else false;
             }
         };
-        return S.f(self.args) or S.f(self.rargs) or
-            S.f(self.stack) or S.f(self.rstack);
+        return S.f(self.args, program) or S.f(self.rargs, program) or
+            S.f(self.stack, program) or S.f(self.rstack, program);
     }
 
     pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -305,20 +305,20 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (cdecl.arity) |d_arity| {
                         if (!cdecl.is_analysed) {
                             const ungenericified = try d_arity.conformGenericTo(a, node, program);
-                            assert(a.isGeneric() or !ungenericified.isGeneric());
+                            assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
                             for (ungenericified.args.constSlice()) |arg|
                                 cdecl.analysis.stack.append(arg) catch unreachable;
                             _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
                             cdecl.is_analysed = true;
                         }
 
-                        if (a.isGeneric() or !d_arity.isGeneric()) {
+                        if (a.isGeneric(program) or !d_arity.isGeneric(program)) {
                             (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a);
-                            if (!d_arity.isGeneric())
+                            if (!d_arity.isGeneric(program))
                                 cdecl.calls += 1;
-                        } else if (d_arity.isGeneric()) {
+                        } else if (d_arity.isGeneric(program)) {
                             const ungenericified = try d_arity.conformGenericTo(a, node, program);
-                            assert(!ungenericified.isGeneric());
+                            assert(!ungenericified.isGeneric(program));
                             const var_ind: ?usize = for (cdecl.variations.slice(), 0..) |an, i| {
                                 if (ungenericified.eqExact(an)) break i;
                             } else null;
@@ -351,7 +351,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
                             cdecl.is_analysed = true;
                         }
-                        if (cdecl.analysis.isGeneric()) {
+                        if (cdecl.analysis.isGeneric(program)) {
                             std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
                             unreachable;
                         }
@@ -484,7 +484,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 casta.stack.append(c.to) catch unreachable;
                 casta.mergeInto(a);
 
-                if (!into.isGeneric()) c.of = into;
+                if (!into.isGeneric(program)) c.of = into;
 
                 // std.log.info("{s}_{}: casting {} -> {}", .{ parent.name, parent.variant, c.of, c.to });
             },

@@ -237,7 +237,7 @@ pub const Parser = struct {
             var buff = TypeInfo.List16.init(null);
             for (list.items) |item| {
                 const t = try self.parseType(&item);
-                if (!t.isGeneric())
+                if (!t.isGeneric(self.program))
                     @panic("you put this as an arg? really?");
                 buff.append(t) catch unreachable;
             }

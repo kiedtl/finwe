@@ -96,7 +96,7 @@ pub const TypeInfo = union(enum) {
         Child: usize,
         Of: Of,
         // Ptr8: usize,
-        // Ptr16: usize,
+        Ptr16: usize,
 
         pub const Tag = meta.Tag(@This());
 
@@ -113,8 +113,45 @@ pub const TypeInfo = union(enum) {
             return switch (a) {
                 .Of => |ar| ar.of == b.Of.of and
                     mem.eql(usize, ar.args.constSlice(), b.Of.args.constSlice()),
+                .Ptr16 => |ar| ar == b.Ptr16,
                 .AnySz => |ar| ar == b.AnySz,
                 .Child => |ar| ar == b.Child,
+            };
+        }
+
+        pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
+            return switch (self) {
+                .Of => |of| b: {
+                    var new = of;
+                    new.of = program.btype(
+                        program.builtin_types.items[new.of].resolveGeneric(with, program),
+                    );
+                    for (new.args.slice()) |*arg| {
+                        arg.* = program.btype(
+                            program.builtin_types.items[arg.*].resolveGeneric(with, program),
+                        );
+                    }
+                    break :b .{ .Of = of };
+                },
+                .Ptr16 => |ar| .{ .Ptr16 = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .AnySz => |ar| .{ .AnySz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+            };
+        }
+
+        pub fn isGeneric(self: @This(), program: *Program) bool {
+            return switch (self) {
+                .Of => |of| b: {
+                    if (program.builtin_types.items[of.of].isGeneric(program))
+                        break :b true;
+                    for (of.args.constSlice()) |arg|
+                        if (program.builtin_types.items[arg].isGeneric(program))
+                            break :b true;
+                    break :b false;
+                },
+                .Ptr16 => |ar| program.builtin_types.items[ar].isGeneric(program),
+                .AnySz => |ar| program.builtin_types.items[ar].isGeneric(program),
+                .Child => |ar| program.builtin_types.items[ar].isGeneric(program),
             };
         }
 
@@ -124,6 +161,10 @@ pub const TypeInfo = union(enum) {
             program: *Program,
         ) analyser.Error!TypeInfo {
             return switch (self) {
+                .Ptr16 => |s| b: {
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    break :b .{ .Ptr16 = arg_t.ptrize16(program).Ptr16 };
+                },
                 .AnySz => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
                     if (arg_t.bits(program)) |b| {
@@ -148,12 +189,12 @@ pub const TypeInfo = union(enum) {
                     var new = strct_def;
                     var calculate_offset = true;
                     for (new.def.Struct.args.?.slice(), 0..) |*arg, i| {
-                        assert(arg.isGeneric());
+                        assert(arg.isGeneric(program));
                         const val = program.builtin_types.items[of.args.slice()[i]];
                         if (val.size(program) == null)
                             calculate_offset = false;
                         if (arg.doesInclude(val, program)) {
-                            arg.* = val;
+                            arg.* = try val.resolveTypeRef(arity, program);
                         } else {
                             std.log.err("Generic {} does not include {}", .{ arg, val });
                             @panic("whups");
@@ -244,9 +285,28 @@ pub const TypeInfo = union(enum) {
         }
     }
 
-    pub fn isGeneric(self: @This()) bool {
+    pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
+        return switch (self) {
+            .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
+            .Expr => |e| e.resolveGeneric(with, program),
+            .Struct => @panic("uh oh"), // (Of) expr resolved too soon
+            else => unreachable,
+        };
+    }
+
+    pub fn isGeneric(self: @This(), program: *Program) bool {
         return switch (self) {
             .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .Expr => |e| e.isGeneric(program),
+            .Struct => |s| b: {
+                const fields = program.types.items[s].def.Struct.fields;
+                var generic = false;
+                for (fields.items) |field|
+                    if (field.type.isGeneric(program)) {
+                        generic = true;
+                    };
+                break :b generic;
+            },
             else => false,
         };
     }
