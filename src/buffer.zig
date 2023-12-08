@@ -22,11 +22,16 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
         pub fn init(data: ?[]const T) Self {
             if (data) |d| {
                 var b: Self = .{ .len = d.len };
-                mem.copy(T, &b.data, d);
+                @memcpy(&b.data, d);
                 return b;
             } else {
                 return .{};
             }
+        }
+
+        pub fn reinit(self: *Self, data: ?[]const T) void {
+            self.clear();
+            self.* = Self.init(data);
         }
 
         pub fn slice(self: *Self) []T {

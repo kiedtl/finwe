@@ -8,6 +8,7 @@ const common = @import("common.zig");
 const lexer = @import("lexer.zig");
 const utils = @import("utils.zig");
 
+const StackBuffer = @import("buffer.zig").StackBuffer;
 const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
 const TypeInfo = common.TypeInfo;
@@ -155,24 +156,33 @@ pub const Parser = struct {
                 if (lst.items.len == 0)
                     return error.EmptyList;
 
-                return switch (lst.items[0].node) {
-                    .Keyword => |k| if (meta.stringToEnum(TypeInfo.Expr.Tag, k)) |p| b: {
-                        var r: ?TypeInfo = null;
-                        inline for (meta.fields(TypeInfo.Expr)) |field|
-                            if (mem.eql(u8, field.name, @tagName(p))) {
-                                const arg = self.program.btype(try self.parseType(&lst.items[1]));
-                                r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
-                            };
-                        if (r) |ret| {
-                            break :b ret;
+                if (lst.items[0].node != .Keyword)
+                    return self.program.perr(error.ExpectedKeyword, node.location);
+
+                const k = lst.items[0].node.Keyword;
+                const p = meta.stringToEnum(TypeInfo.Expr.Tag, k) orelse
+                    return self.program.perr(error.InvalidType, node.location);
+                var r: ?TypeInfo = null;
+                inline for (meta.fields(TypeInfo.Expr)) |field|
+                    if (mem.eql(u8, field.name, @tagName(p)))
+                        if (@field(TypeInfo.Expr.Tag, field.name) == .Of) {
+                            const of = self.program.btype(try self.parseType(&lst.items[1]));
+                            const buf = common.gpa.allocator()
+                                .create(StackBuffer(usize, 16)) catch unreachable;
+                            buf.reinit(null);
+                            for (lst.items[2..]) |item|
+                                buf.append(
+                                    self.program.btype(try self.parseType(&item)),
+                                ) catch unreachable;
+                            r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
+                                .of = of,
+                                .args = buf,
+                            }) };
                         } else {
-                            return self.program.perr(error.InvalidType, node.location);
-                        }
-                    } else {
-                        return self.program.perr(error.InvalidType, node.location);
-                    },
-                    else => return self.program.perr(error.ExpectedKeyword, node.location),
-                };
+                            const arg = self.program.btype(try self.parseType(&lst.items[1]));
+                            r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
+                        };
+                return r orelse self.program.perr(error.InvalidType, node.location);
             },
             else => return self.program.perr(error.ExpectedNode, node.location),
         };
@@ -220,6 +230,40 @@ pub const Parser = struct {
         return ast;
     }
 
+    fn parseStructDecl(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
+        const name = try self.expectNode(.Keyword, &ast[1]);
+        const args = if (ast[2].node == .List) b: {
+            const list = self.expectNode(.List, &ast[2]) catch unreachable;
+            var buff = TypeInfo.List16.init(null);
+            for (list.items) |item| {
+                const t = try self.parseType(&item);
+                if (!t.isGeneric())
+                    @panic("you put this as an arg? really?");
+                buff.append(t) catch unreachable;
+            }
+            break :b buff;
+        } else null;
+        var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
+        for (if (args == null) ast[2..] else ast[3..]) |node| {
+            const fielddef = try self.expectNode(.Quote, &node);
+            try self.validateListLength(fielddef.items, 2);
+            const fieldnam = try self.expectNode(.Keyword, &fielddef.items[0]);
+            const fieldtyp = try self.parseType(&fielddef.items[1]);
+            fields.append(.{
+                .name = fieldnam,
+                .type = fieldtyp,
+                .srcloc = node.location,
+            }) catch unreachable;
+        }
+        return ASTNode{
+            .node = .{ .TypeDef = .{
+                .name = name,
+                .def = .{ .Struct = .{ .args = args, .fields = fields } },
+            } },
+            .srcloc = ast[0].location,
+        };
+    }
+
     fn parseTypeDecl(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
         assert(ast[0].node == .Keyword);
         const k = ast[0].node.Keyword;
@@ -235,7 +279,11 @@ pub const Parser = struct {
                 const fieldtype = try self.parseType(&fielddef.items[1]);
                 if (fieldtype.bits(self.program) == null)
                     return self.program.perr(error.InvalidFieldType, node.location);
-                fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
+                fields.append(.{
+                    .name = fieldname,
+                    .type = fieldtype,
+                    .srcloc = node.location,
+                }) catch unreachable;
             }
             return ASTNode{
                 .node = .{ .TypeDef = .{
@@ -245,23 +293,7 @@ pub const Parser = struct {
                 .srcloc = ast[0].location,
             };
         } else if (mem.eql(u8, k, "struct")) {
-            const name = try self.expectNode(.Keyword, &ast[1]);
-            // for zig compiler bug
-            var fields = ASTNode.TypeDef.Field.AList.init(self.alloc);
-            for (ast[2..]) |node| {
-                const fielddef = try self.expectNode(.Quote, &node);
-                try self.validateListLength(fielddef.items, 2);
-                const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
-                const fieldtype = try self.parseType(&fielddef.items[1]);
-                fields.append(.{ .name = fieldname, .type = fieldtype }) catch unreachable;
-            }
-            return ASTNode{
-                .node = .{ .TypeDef = .{
-                    .name = name,
-                    .def = .{ .Struct = .{ .fields = fields } },
-                } },
-                .srcloc = ast[0].location,
-            };
+            return self.parseStructDecl(ast);
         } else unreachable;
     }
 
@@ -521,19 +553,28 @@ pub const Parser = struct {
                         var fields = UserType.StructField.AList.init(parser.alloc);
                         var offset: u8 = 0;
                         for (strdef.fields.items) |field| {
-                            const bits = field.type.bits(self) orelse
-                                return self.perr(error.InvalidFieldType, node.srcloc);
-                            fields.append(.{
-                                .name = field.name,
-                                .type = field.type,
-                                .offset = offset,
-                            }) catch unreachable;
-                            offset += bits / 8;
+                            if (strdef.args == null) {
+                                const bits = field.type.bits(self) orelse
+                                    return self.perr(error.InvalidFieldType, field.srcloc);
+                                fields.append(.{
+                                    .name = field.name,
+                                    .type = field.type,
+                                    .offset = offset,
+                                }) catch unreachable;
+                                offset += bits / 8;
+                            } else {
+                                fields.append(
+                                    .{ .name = field.name, .type = field.type },
+                                ) catch unreachable;
+                            }
                         }
                         self.types.append(UserType{
                             .node = node,
                             .name = node.node.TypeDef.name,
-                            .def = .{ .Struct = .{ .fields = fields } },
+                            .def = .{ .Struct = .{
+                                .args = strdef.args,
+                                .fields = fields,
+                            } },
                         }) catch unreachable;
                     },
                     .Device => |devdef| {

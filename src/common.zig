@@ -94,14 +94,25 @@ pub const TypeInfo = union(enum) {
     pub const Expr = union(enum) {
         AnySz: usize,
         Child: usize,
+        Of: Of,
         // Ptr8: usize,
         // Ptr16: usize,
 
         pub const Tag = meta.Tag(@This());
 
+        pub const Of = struct {
+            of: usize,
+            // ptr because zig miscompiles otherwise
+            // TODO: remove ptr after a few releases
+            args: *StackBuffer(usize, 16),
+        };
+
         pub fn eq(a: @This(), b: @This()) bool {
-            if (@as(Expr.Tag, a) != @as(Expr.Tag, b)) return false;
+            if (@as(Expr.Tag, a) != @as(Expr.Tag, b))
+                return false;
             return switch (a) {
+                .Of => |ar| ar.of == b.Of.of and
+                    mem.eql(usize, ar.args.constSlice(), b.Of.args.constSlice()),
                 .AnySz => |ar| ar == b.AnySz,
                 .Child => |ar| ar == b.Child,
             };
@@ -121,6 +132,46 @@ pub const TypeInfo = union(enum) {
                         //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
                         break :b .Any;
                     }
+                },
+                .Of => |of| b: {
+                    const strct_typ = try program.builtin_types.items[of.of]
+                        .resolveTypeRef(arity, program);
+                    if (strct_typ != .Struct)
+                        @panic("invalid argument to Of()");
+
+                    const strct_def = program.types.items[strct_typ.Struct];
+                    if (strct_def.def.Struct.args == null)
+                        @panic("invalid argument to Of()");
+                    if (of.args.len != strct_def.def.Struct.args.?.len)
+                        @panic("invalid argument count to Of()");
+
+                    var new = strct_def;
+                    var calculate_offset = true;
+                    for (new.def.Struct.args.?.slice(), 0..) |*arg, i| {
+                        assert(arg.isGeneric());
+                        const val = program.builtin_types.items[of.args.slice()[i]];
+                        if (val.size(program) == null)
+                            calculate_offset = false;
+                        if (arg.doesInclude(val, program)) {
+                            arg.* = val;
+                        } else {
+                            std.log.err("Generic {} does not include {}", .{ arg, val });
+                            @panic("whups");
+                        }
+                    }
+                    const arglist = analyser.BlockAnalysis{ .args = new.def.Struct.args.? };
+                    for (new.def.Struct.fields.items) |*field| {
+                        field.type = try field.type.resolveTypeRef(arglist, program);
+                    }
+                    if (calculate_offset) {
+                        var offset: u8 = 0;
+                        for (new.def.Struct.fields.items) |*field| {
+                            field.offset = offset;
+                            offset += field.type.size(program).?;
+                        }
+                    }
+                    program.types.append(new) catch unreachable;
+                    break :b .{ .Struct = program.types.items.len - 1 };
                 },
                 .Child => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
@@ -213,7 +264,7 @@ pub const TypeInfo = union(enum) {
         };
     }
 
-    pub fn size(self: @This(), program: *const Program) ?usize {
+    pub fn size(self: @This(), program: *const Program) ?u8 {
         return switch (self) {
             .Struct => |s| b: {
                 const tstruct = program.types.items[s].def.Struct;
@@ -351,6 +402,7 @@ pub const ASTNode = struct {
         pub const Field = struct {
             name: []const u8,
             type: TypeInfo,
+            srcloc: Srcloc,
 
             pub const AList = std.ArrayList(Field);
         };
@@ -361,6 +413,7 @@ pub const ASTNode = struct {
         };
 
         pub const StructDef = struct {
+            args: ?TypeInfo.List16 = null,
             fields: Field.AList,
         };
     };
@@ -679,6 +732,7 @@ pub const UserType = struct {
     };
 
     pub const Struct = struct {
+        args: ?TypeInfo.List16 = null,
         fields: StructField.AList,
     };
 
