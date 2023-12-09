@@ -118,7 +118,7 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             return self.len == self.capacity;
         }
 
-        pub inline fn last(self: *Self) ?T {
+        pub inline fn last(self: *const Self) ?T {
             return if (self.len > 0) self.data[self.len - 1] else null;
         }
     };

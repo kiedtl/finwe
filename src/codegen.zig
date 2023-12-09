@@ -297,6 +297,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             },
             .None => {
                 const typsz = data.type.size(program).?;
+                assert(data.count > 0);
                 const totalsz = typsz * data.count;
                 for (0..totalsz) |_| try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
             },

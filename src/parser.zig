@@ -160,11 +160,9 @@ pub const Parser = struct {
                     return self.program.perr(error.ExpectedKeyword, node.location);
 
                 const k = lst.items[0].node.Keyword;
-                const p = meta.stringToEnum(TypeInfo.Expr.Tag, k) orelse
-                    return self.program.perr(error.InvalidType, node.location);
                 var r: ?TypeInfo = null;
                 inline for (meta.fields(TypeInfo.Expr)) |field|
-                    if (mem.eql(u8, field.name, @tagName(p)))
+                    if (mem.eql(u8, field.name, k))
                         if (@field(TypeInfo.Expr.Tag, field.name) == .Of) {
                             const of = self.program.btype(try self.parseType(&lst.items[1]));
                             const buf = common.gpa.allocator()
@@ -177,6 +175,13 @@ pub const Parser = struct {
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
                                 .of = of,
                                 .args = buf,
+                            }) };
+                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .FieldType) {
+                            const of = self.program.btype(try self.parseType(&lst.items[1]));
+                            const fld = try self.expectNode(.Keyword, &lst.items[2]);
+                            r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
+                                .of = of,
+                                .field = fld,
                             }) };
                         } else {
                             const arg = self.program.btype(try self.parseType(&lst.items[1]));

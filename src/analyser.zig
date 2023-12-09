@@ -27,15 +27,15 @@ pub const BlockAnalysis = struct {
         // std.log.info("resolving {}\n with {}", .{ self, arity });
         var r = self;
         for (r.stack.slice()) |*stack|
-            if (stack.isResolvable()) {
+            if (stack.isResolvable(program)) {
                 stack.* = try stack.resolveTypeRef(arity, program);
-                assert(!stack.isResolvable());
+                assert(!stack.isResolvable(program));
             };
         // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
-            if (arg.isResolvable()) {
+            if (arg.isResolvable(program)) {
                 arg.* = try arg.resolveTypeRef(arity, program);
-                assert(!arg.isResolvable());
+                assert(!arg.isResolvable(program));
             };
         // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
         return r;
@@ -54,22 +54,32 @@ pub const BlockAnalysis = struct {
         var j: usize = 0;
         while (i > 0) : (j += 1) {
             i -= 1;
-            const arg = &r.args.slice()[i];
-            if (arg.* == .TypeRef or arg.* == .Expr)
-                arg.* = try arg.resolveTypeRef(r, p);
 
             const calleritem = if (j < caller.stack.len)
                 caller.stack.constSlice()[caller.stack.len - j - 1]
             else if ((j - caller.stack.len) < caller.args.len)
                 caller.args.constSlice()[caller.args.len - (j - caller.stack.len) - 1]
             else
-                arg.*;
+                @panic("can't call generic func from non-arity func"); // arg.*
+
+            const arg = &r.args.slice()[i];
+            if (arg.isResolvable(p)) {
+                if (arg.isGeneric(p)) {
+                    if (!arg.doesInclude(calleritem, p)) {
+                        std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
+                        return p.aerr(error.GenericNotMatching, call_node.srcloc);
+                    }
+                    arg.* = arg.resolveGeneric(calleritem, p);
+                }
+                arg.* = try arg.resolveTypeRef(r, p);
+            }
+
             if (arg.isGeneric(p)) {
                 if (!arg.doesInclude(calleritem, p)) {
                     std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
                     return p.aerr(error.GenericNotMatching, call_node.srcloc);
                 }
-                arg.* = calleritem;
+                arg.* = arg.resolveGeneric(calleritem, p);
             }
         }
 
@@ -114,13 +124,13 @@ pub const BlockAnalysis = struct {
         }
 
         try writer.print("\n    args:   ", .{});
-        for (self.args.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        for (self.args.constSlice()) |i| try writer.print("{}, ", .{i});
         try writer.print("\n    stack:  ", .{});
-        for (self.stack.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        for (self.stack.constSlice()) |i| try writer.print("{}, ", .{i});
         try writer.print("\n    rargs:  ", .{});
-        for (self.rargs.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        for (self.rargs.constSlice()) |i| try writer.print("{}, ", .{i});
         try writer.print("\n    rstack: ", .{});
-        for (self.rstack.constSlice()) |i| try writer.print("{s}, ", .{@tagName(i)});
+        for (self.rstack.constSlice()) |i| try writer.print("{}, ", .{i});
     }
 
     pub fn mergeInto(self: @This(), b: *@This()) void {
@@ -281,10 +291,19 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
     var info = AnalyserInfo{};
     var iter = block.iterator();
     while (iter.next()) |node| {
-        // if (mem.eql(u8, parent.name, "print") and parent.variant == 2) {
-        // std.log.info("{s}_{}: node: {}", .{ parent.name, parent.variant, node.node });
-        // std.log.info("analysis: {}\n", .{a});
-        //}
+        // if (mem.eql(u8, parent.name, "_Start")) {
+        //     std.log.info("{s}_{}: node: {}", .{ parent.name, parent.variant, node.node });
+        //     std.log.info("analysis: {}\n", .{a});
+        //     if (a.stack.len > 0) {
+        //         const tos = a.stack.last().?;
+        //         if (tos == .Ptr16) {
+        //             const t = program.builtin_types.items[tos.Ptr16.typ];
+        //             std.log.info("*** TOS: (Ptr16) {}\n", .{t});
+        //             if (t == .Struct)
+        //                 std.log.info("      1: {}\n", .{program.types.items[t.Struct].def.Struct.fields.items[0].type});
+        //         } else std.log.info("*** TOS: {}\n", .{tos});
+        //     } else std.log.info("*** TOS:\n", .{});
+        // }
         switch (node.node) {
             .None => {},
             .TypeDef => {},
@@ -322,11 +341,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             const var_ind: ?usize = for (cdecl.variations.slice(), 0..) |an, i| {
                                 if (ungenericified.eqExact(an)) break i;
                             } else null;
-                            // std.log.info("{s}: searching for variant (result: {?}) {}", .{ cdecl.name, var_ind, ungenericified });
                             if (var_ind == null)
                                 cdecl.variations.append(ungenericified) catch unreachable;
                             c.ctyp.Decl = (var_ind orelse cdecl.variations.len - 1) + 1;
 
+                            // if (mem.eql(u8, parent.name, "_Start"))
+                            //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
                             ungenericified.mergeInto(a);
 
                             if (var_ind == null) {

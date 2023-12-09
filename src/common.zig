@@ -57,6 +57,9 @@ pub const TypeInfo = union(enum) {
     Dev8,
     Dev16,
 
+    // A bit unique, it's like an Expr but it's a generic
+    AnyOf: usize,
+
     StaticPtr: usize,
     Quote,
 
@@ -75,8 +78,8 @@ pub const TypeInfo = union(enum) {
         }
 
         switch (self) {
-            .EnumLit, .TypeRef => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
-            .Ptr8, .Ptr16 => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
+            .Struct, .EnumLit, .TypeRef => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
+            .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ @tagName(self), n.typ, n.ind }),
             else => try writer.print("{s}", .{@tagName(self)}),
         }
         try writer.print("", .{});
@@ -93,12 +96,19 @@ pub const TypeInfo = union(enum) {
 
     pub const Expr = union(enum) {
         AnySz: usize,
+        AnyOf: usize,
         Child: usize,
         Of: Of,
         // Ptr8: usize,
         Ptr16: usize,
+        FieldType: FieldType,
 
         pub const Tag = meta.Tag(@This());
+
+        pub const FieldType = struct {
+            of: usize,
+            field: []const u8,
+        };
 
         pub const Of = struct {
             of: usize,
@@ -113,34 +123,52 @@ pub const TypeInfo = union(enum) {
             return switch (a) {
                 .Of => |ar| ar.of == b.Of.of and
                     mem.eql(usize, ar.args.constSlice(), b.Of.args.constSlice()),
+                .FieldType => |ft| ft.of == b.FieldType.of and
+                    mem.eql(u8, ft.field, b.FieldType.field),
                 .Ptr16 => |ar| ar == b.Ptr16,
                 .AnySz => |ar| ar == b.AnySz,
+                .AnyOf => |ar| ar == b.AnyOf,
                 .Child => |ar| ar == b.Child,
             };
         }
 
-        pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
+        pub fn resolveGeneric(self: @This(), with: TypeInfo, program: *Program) @This() {
             return switch (self) {
+                .FieldType => |ft| .{ .FieldType = .{
+                    .of = program.btype(program.builtin_types.items[ft.of].resolveGeneric(with, program)),
+                    .field = ft.field,
+                } },
                 .Of => |of| b: {
                     var new = of;
                     new.of = program.btype(
                         program.builtin_types.items[new.of].resolveGeneric(with, program),
                     );
                     for (new.args.slice()) |*arg| {
-                        arg.* = program.btype(
-                            program.builtin_types.items[arg.*].resolveGeneric(with, program),
-                        );
+                        arg.* = program.btype(program.builtin_types.items[arg.*].resolveGeneric(with, program));
                     }
-                    break :b .{ .Of = of };
+                    break :b .{ .Of = new };
                 },
                 .Ptr16 => |ar| .{ .Ptr16 = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnySz => |ar| .{ .AnySz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
             };
         }
 
+        // test {
+        //     var p = Program.init(std.testing.allocator);
+        //     const a = std.testing.allocator.create(StackBuffer(usize, 8));
+        //     a.reinit();
+        //     a.append(p.btype(
+        //     (TypeInfo{ .Expr = .{ .Ptr16 = p.btype(
+        //         .{ .Expr = .{ .Of = .{
+        //             .of = .Any,
+        //             .args = kk
+        // }
+
         pub fn isGeneric(self: @This(), program: *Program) bool {
             return switch (self) {
+                .FieldType => |f| program.builtin_types.items[f.of].isGeneric(program),
                 .Of => |of| b: {
                     if (program.builtin_types.items[of.of].isGeneric(program))
                         break :b true;
@@ -151,6 +179,7 @@ pub const TypeInfo = union(enum) {
                 },
                 .Ptr16 => |ar| program.builtin_types.items[ar].isGeneric(program),
                 .AnySz => |ar| program.builtin_types.items[ar].isGeneric(program),
+                .AnyOf => |ar| program.builtin_types.items[ar].isGeneric(program),
                 .Child => |ar| program.builtin_types.items[ar].isGeneric(program),
             };
         }
@@ -161,9 +190,29 @@ pub const TypeInfo = union(enum) {
             program: *Program,
         ) analyser.Error!TypeInfo {
             return switch (self) {
+                .FieldType => |ft| b: {
+                    const arg_t = try program.builtin_types.items[ft.of].resolveTypeRef(arity, program);
+                    if (arg_t != .Struct)
+                        @panic("invalid argument to FieldType()");
+                    const strct_def = program.types.items[arg_t.Struct];
+
+                    break :b for (strct_def.def.Struct.fields.items) |f| {
+                        if (mem.eql(u8, ft.field, f.name)) break f.type;
+                    } else @panic("no such field");
+                },
                 .Ptr16 => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
-                    break :b .{ .Ptr16 = arg_t.ptrize16(program).Ptr16 };
+                    break :b arg_t.ptrize16(program);
+                },
+                .AnyOf => |anyof| b: {
+                    const arg_t = try program.builtin_types.items[anyof].resolveTypeRef(arity, program);
+                    if (arg_t != .Struct or
+                        program.types.items[arg_t.Struct].def.Struct.args == null)
+                    {
+                        @panic("bruh");
+                    }
+
+                    break :b .{ .AnyOf = program.btype(arg_t) };
                 },
                 .AnySz => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
@@ -186,7 +235,7 @@ pub const TypeInfo = union(enum) {
                     if (of.args.len != strct_def.def.Struct.args.?.len)
                         @panic("invalid argument count to Of()");
 
-                    var new = strct_def;
+                    var new = strct_def.deepclone();
                     var calculate_offset = true;
                     for (new.def.Struct.args.?.slice(), 0..) |*arg, i| {
                         assert(arg.isGeneric(program));
@@ -226,8 +275,9 @@ pub const TypeInfo = union(enum) {
         }
     };
 
-    pub fn isResolvable(self: @This()) bool {
+    pub fn isResolvable(self: @This(), p: *Program) bool {
         return switch (self) {
+            .AnyOf => |anyof| p.ztype(anyof).isResolvable(p),
             .TypeRef, .Expr, .Unresolved => true,
             else => false,
         };
@@ -236,6 +286,7 @@ pub const TypeInfo = union(enum) {
     pub fn resolveTypeRef(a: @This(), arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
         const r: TypeInfo = switch (a) {
             .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
+            .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(arity, program)) },
             .Expr => |e| try e.resolveTypeRef(arity, program),
             .Unresolved => |k| for (program.types.items, 0..) |t, i| {
                 if (mem.eql(u8, t.name, k)) break switch (t.def) {
@@ -246,7 +297,7 @@ pub const TypeInfo = union(enum) {
             } else return error.NoSuchType,
             else => a,
         };
-        return if (r.isResolvable()) try r.resolveTypeRef(arity, program) else r;
+        return if (r.isResolvable(program)) try r.resolveTypeRef(arity, program) else r;
     }
 
     pub fn eq(a: @This(), b: @This()) bool {
@@ -254,7 +305,7 @@ pub const TypeInfo = union(enum) {
         inline for (meta.fields(@This())) |field|
             if (mem.eql(u8, field.name, @tagName(a)))
                 if (field.type == usize or field.type == void)
-                    return @field(a, field.name) != @field(b, field.name)
+                    return @field(a, field.name) == @field(b, field.name)
                 else if (field.type == []const u8)
                     return mem.eql(u8, @field(a, field.name), @field(b, field.name))
                 else
@@ -287,16 +338,19 @@ pub const TypeInfo = union(enum) {
 
     pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
         return switch (self) {
-            .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
-            .Expr => |e| e.resolveGeneric(with, program),
-            .Struct => @panic("uh oh"), // (Of) expr resolved too soon
-            else => unreachable,
+            .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
+
+            .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
+            .Ptr16 => |p| .{ .Ptr16 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
+            .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
+            //.Struct => @panic("uh oh"), // (Of) expr resolved too soon
+            else => self,
         };
     }
 
     pub fn isGeneric(self: @This(), program: *Program) bool {
         return switch (self) {
-            .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             .Expr => |e| e.isGeneric(program),
             .Struct => |s| b: {
                 const fields = program.types.items[s].def.Struct.fields;
@@ -312,7 +366,18 @@ pub const TypeInfo = union(enum) {
     }
 
     pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
-        return (self != .EnumLit and @as(Tag, self) == @as(Tag, other)) or switch (self) {
+        switch (self) {
+            .EnumLit, .AnyOf => {},
+            else => if (@as(Tag, self) == @as(Tag, other)) return true,
+        }
+        return switch (self) {
+            .AnyOf => |anyof| mem.eql(
+                u8,
+                program.types.items[
+                    program.ztype(anyof).Struct
+                ].name,
+                program.types.items[other.Struct].name,
+            ),
             .Any => true,
             .AnyDev => other == .Dev8 or other == .Dev16,
             .Any8 => other.bits(program) != null and other.bits(program).? == 8,
@@ -341,7 +406,7 @@ pub const TypeInfo = union(enum) {
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .Struct => null, // TODO: 16/8 if allowable
+            .AnyOf, .Struct => null, // TODO: 16/8 if allowable
             // .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
             .Unresolved, .Expr, .Quote, .TypeRef => null,
             .AmbigEnumLit => unreachable,
@@ -743,6 +808,10 @@ pub const Program = struct {
         }
     }
 
+    pub inline fn ztype(self: *const Program, ind: usize) TypeInfo {
+        return self.builtin_types.items[ind];
+    }
+
     // Record type in builtin_types if not there otherwise find existing record
     pub fn btype(self: *Program, typ: TypeInfo) usize {
         return for (self.builtin_types.items, 0..) |t, i| {
@@ -814,6 +883,20 @@ pub const UserType = struct {
         value_a: u8,
         value_b: ?u8,
     };
+
+    pub fn deepclone(self: @This()) @This() {
+        var new = self;
+        switch (new.def) {
+            .Struct => |*s| {
+                var new_fields = StructField.AList.init(gpa.allocator());
+                for (s.fields.items) |f| new_fields.append(f) catch unreachable;
+                s.fields = new_fields;
+            },
+            .Device => @panic("TODO"),
+            .Enum => {},
+        }
+        return new;
+    }
 };
 
 pub const OpTag = enum(u16) {
