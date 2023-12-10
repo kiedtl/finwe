@@ -38,6 +38,32 @@ pub const ASTNodeList = LinkedList(ASTNode);
 pub const ASTNodePtrList = std.ArrayList(*ASTNode);
 //pub const ASTNodePtrList = LinkedList(*ASTNode);
 //
+
+pub const TypeFmt = struct {
+    typ: TypeInfo,
+    prog: *const Program,
+
+    pub fn from(t: TypeInfo, p: *const Program) @This() {
+        return .{ .typ = t, .prog = p };
+    }
+
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (comptime !mem.eql(u8, f, "")) {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        const s = @tagName(self.typ);
+
+        switch (self.typ) {
+            .TypeRef => |n| try writer.print("{s}<{}>", .{ s, n }),
+            .Struct, .EnumLit => |n| try writer.print("{s}<{s}>", .{ s, self.prog.types.items[n].name }),
+            .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
+            .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ s, TypeFmt.from(self.prog.ztype(n.typ), self.prog), n.ind }),
+            else => try writer.print("{s}", .{s}),
+        }
+    }
+};
+
 pub const TypeInfo = union(enum) {
     Bool,
     U8,
@@ -192,8 +218,10 @@ pub const TypeInfo = union(enum) {
             return switch (self) {
                 .FieldType => |ft| b: {
                     const arg_t = try program.builtin_types.items[ft.of].resolveTypeRef(arity, program);
-                    if (arg_t != .Struct)
-                        @panic("invalid argument to FieldType()");
+                    if (arg_t != .Struct) {
+                        std.log.err("{}: invalid argument to FieldType()", .{TypeFmt.from(arg_t, program)});
+                        @panic("whups");
+                    }
                     const strct_def = program.types.items[arg_t.Struct];
 
                     break :b for (strct_def.def.Struct.fields.items) |f| {
@@ -341,7 +369,8 @@ pub const TypeInfo = union(enum) {
             .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
 
             .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
-            .Ptr16 => |p| .{ .Ptr16 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
+            //.Ptr16 => |p| program.ztype(p.typ).resolveGeneric(with, program).ptrize16(program),
+            .Ptr16 => |p| program.ztype(p.typ).resolveGeneric(program.ztype(with.Ptr16.typ), program).ptrize16(program),
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
             //.Struct => @panic("uh oh"), // (Of) expr resolved too soon
             else => self,
@@ -352,6 +381,7 @@ pub const TypeInfo = union(enum) {
         return switch (self) {
             .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             .Expr => |e| e.isGeneric(program),
+            .Ptr8, .Ptr16 => |ptr| program.ztype(ptr.typ).isGeneric(program),
             .Struct => |s| b: {
                 const fields = program.types.items[s].def.Struct.fields;
                 var generic = false;

@@ -9,6 +9,7 @@ const Program = common.Program;
 const ASTNode = common.ASTNode;
 const ASTNodeList = common.ASTNodeList;
 const TypeInfo = common.TypeInfo;
+const TypeFmt = common.TypeFmt;
 const Value = common.Value;
 const VTList16 = TypeInfo.List16;
 
@@ -63,23 +64,29 @@ pub const BlockAnalysis = struct {
                 @panic("can't call generic func from non-arity func"); // arg.*
 
             const arg = &r.args.slice()[i];
-            if (arg.isResolvable(p)) {
+
+            std.log.info("\n", .{});
+            std.log.info("*** {}:{}: doing {} <- {}", .{ call_node.srcloc.line, call_node.srcloc.column, TypeFmt.from(arg.*, p), TypeFmt.from(calleritem, p) });
+
+            while (!arg.eq(calleritem) and (arg.isResolvable(p) or arg.isGeneric(p))) {
                 if (arg.isGeneric(p)) {
                     if (!arg.doesInclude(calleritem, p)) {
-                        std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
-                        return p.aerr(error.GenericNotMatching, call_node.srcloc);
+                        if (!arg.isResolvable(p)) {
+                            std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
+                            return p.aerr(error.GenericNotMatching, call_node.srcloc);
+                        }
+                    } else {
+                        arg.* = arg.resolveGeneric(calleritem, p);
                     }
-                    arg.* = arg.resolveGeneric(calleritem, p);
                 }
-                arg.* = try arg.resolveTypeRef(r, p);
-            }
+                std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
 
-            if (arg.isGeneric(p)) {
-                if (!arg.doesInclude(calleritem, p)) {
-                    std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
-                    return p.aerr(error.GenericNotMatching, call_node.srcloc);
+                if (arg.isResolvable(p)) {
+                    arg.* = try arg.resolveTypeRef(r, p);
                 }
-                arg.* = arg.resolveGeneric(calleritem, p);
+                std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
+
+                std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
             }
         }
 
