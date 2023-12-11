@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
+const TypeFmt = @import("common.zig").TypeFmt;
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Program = @import("common.zig").Program;
@@ -56,7 +57,7 @@ fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op)
     _ = try emitRI(buf, node, stack, k, s, op);
 }
 
-fn reemitRaw16(buf: *Ins.List, ind: usize, value: usize) void {
+fn reemitAddr16(buf: *Ins.List, ind: usize, value: usize) void {
     const addr = @as(u16, @intCast(value)) + 0x100;
     buf.items[ind + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
     buf.items[ind + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
@@ -75,7 +76,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
             .StaticPtr => {},
             else => unreachable,
         },
-        .VRef, .VDeref => {},
+        .Here, .VRef, .VDeref => {},
         else => unreachable,
     }
 }
@@ -102,6 +103,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Return => {
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
+        .Debug => {},
+        .Here => try emitUA(buf, ual, "", node),
         .Cast => |c| {
             // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
             const from = c.of.bits(program).?;
@@ -117,13 +120,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .None => {},
         .GetChild => |gch| {
-            const is_short = gch.type.bits(program).? == 16;
-            if (is_short) {
+            if (gch.is_short) {
                 try emitIMM16(buf, node, WK_STACK, false, .Olit, gch.offset);
             } else {
                 try emitIMM(buf, node, WK_STACK, false, .Olit, gch.offset);
             }
-            try emit(buf, null, 0, false, is_short, .Oadd);
+            try emit(buf, null, 0, false, gch.is_short, .Oadd);
         },
         .VDecl => {},
         .VRef => |v| try emitUA(buf, ual, v.name, node),
@@ -170,10 +172,30 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             // buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
         },
         .Loop => |l| {
-            const loop_begin: u16 = @intCast(buf.items.len);
-            try genNodeList(program, buf, l.body, ual);
             switch (l.loop) {
+                .While => |u| {
+                    const begin: u16 = @intCast(buf.items.len);
+
+                    assert(u.cond_prep != .Unchecked);
+                    try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
+                    try genNodeList(program, buf, u.cond, ual);
+
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                    try emit(buf, node, WK_STACK, false, false, .Oeq);
+
+                    try emit(buf, node, WK_STACK, false, true, .Olit);
+                    const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                    try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                    try emit(buf, node, WK_STACK, false, true, .Ojcn);
+
+                    try genNodeList(program, buf, l.body, ual);
+                    try emitARG16(buf, node, WK_STACK, false, .Ojmp, 0x0100 + begin);
+                    reemitAddr16(buf, addr_slot, buf.items.len);
+                },
                 .Until => |u| {
+                    const loop_begin: u16 = @intCast(buf.items.len);
+                    try genNodeList(program, buf, l.body, ual);
+
                     assert(u.cond_prep != .Unchecked);
                     try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
                     try genNodeList(program, buf, u.cond, ual);
@@ -304,13 +326,16 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
+    const here = buf.items.len;
+
     ual_search: for (ual.items) |ua| switch (ua.node.node) {
-        .VRef => |v| reemitRaw16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
-        .VDeref => |v| reemitRaw16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
+        .Here => reemitAddr16(&buf, ua.loc, here),
+        .VRef => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
+        .VDeref => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
         .Value => |v| {
             assert(v.typ == .StaticPtr);
             const static = program.statics.items[v.typ.StaticPtr];
-            reemitRaw16(&buf, ua.loc, static.romloc);
+            reemitAddr16(&buf, ua.loc, static.romloc);
         },
         .Call => |c| {
             for (program.defs.items) |def| {
@@ -324,7 +349,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                         unreachable;
                     }
 
-                    reemitRaw16(&buf, ua.loc, def.romloc);
+                    reemitAddr16(&buf, ua.loc, def.romloc);
                     continue :ual_search;
                 }
             }

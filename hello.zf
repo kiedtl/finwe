@@ -23,45 +23,51 @@
 	[error U8]         # ? (not documented)
 )
 
-(word 2dup ((AnySz $0) Any -- $0 $1 $0 $1) [ over over ])
+(word 2dup ( (AnySz $0) Any -- $0 $1 $0 $1) [ over over ])
 
-(word lda  (    AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)       ])
-(word ldak (    AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)      ])
-(word sta  (Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
+(word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)       ])
+(word ldak (       AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)      ])
+(word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
 
-(word deo   ( Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
-(word dbg   (            --              ) [ 0x0 .System/debug deo    ])
-(word emit  (         U8 --              ) [ .Console/write deo       ])
-(word nl    (            --              ) [ 0x0a emit                ])
+(word deo   (    Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
+(word dbg   (               --              ) [ 0x0 .System/debug deo    ])
+(word emit  (          Any8 --              ) [ .Console/write deo       ])
+(word nl    (               --              ) [ 0x0a emit                ])
 
-(word dup   (        Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
-(word swap  (    Any Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
-(word drop  (        Any --              ) [ (asm "g" .Op/Odrop)      ])
-(word over  (    Any Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
+(word dup   (           Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
+(word swap  ((AnySz $0) Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
+(word drop  (           Any --              ) [ (asm "g" .Op/Odrop)      ])
+(word over  ((AnySz $0) Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
 
 # TODO
 #(word rot   (Any Any Any -- $2 $1 $0    ) [ (asm "g" .Op/Orot)      ])
 #(word rot>  (Any Any Any -- $1 $2 $0    ) [ rot rot                 ])
 
-(word rot   ( $0  $0 Any -- $0 $0 $0     ) [ (asm "g" .Op/Orot)      ])
-(word rot>  ( $0  $0 Any -- $0 $0 $0     ) [ rot rot                 ])
-(word tuck  (    Any Any -- $0 $1 $0     ) [ swap over               ])
-(word tuck> (    Any Any -- $1 $1 $0     ) [ over swap               ])
+(word rot   ((AnySz $0) (AnySz $0) Any -- $2 $1 $0) [ (asm "g" .Op/Orot)      ])
+(word rot>  (    $0  $0 Any -- $0 $0 $0     ) [ rot rot                 ])
+(word tuck  (       Any Any -- $0 $1 $0     ) [ swap over               ])
+(word tuck> (       Any Any -- $1 $1 $0     ) [ over swap               ])
 
-(word =     (    $0  Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
-(word <     (    $0  Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
-(word >     (    $0  Any -- Bool         ) [ (asm "g" .Op/Ogt)       ])
-(word +     (    $0  Any -- $0           ) [ (asm "g" .Op/Oadd)      ])
-(word 1+    (        Any -- $0           ) [ (asm "g" .Op/Oinc)      ])
-(word -     (    $0  Any -- $0           ) [ (asm "g" .Op/Osub)      ])
-(word /     (    $0  Any -- $0           ) [ (asm "g" .Op/Odiv)      ])
-(word mod   (    $0  Any -- $0           ) [ 2dup / * -              ])
-(word /mod  (    $0  Any -- $0 $0        ) [ 2dup / rot> mod         ])
-(word *     (    $0  Any -- $0           ) [ (asm "g" .Op/Omul)      ])
-(word 0=    (        Any -- Bool         ) [ 0 (as $0) =             ])
-(word 0<    (        Any -- Bool         ) [ 0 (as $0) <             ])
-(word 0>    (        Any -- Bool         ) [ 0 (as $0) >             ])
-(word not   (        Any -- $0           ) [ (when [ nil ] [ t ])    ])
+(word =     (       $0  Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
+(word <>    (       $0  Any -- Bool         ) [ (asm "g" .Op/Oneq)      ])
+(word nil?  (          Bool -- Bool         ) [ nil =                   ])
+(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
+(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)       ])
+(word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)      ])
+(word 1+    (           Any -- $0           ) [ (asm "g" .Op/Oinc)      ])
+(word -     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Osub)      ])
+(word /     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Odiv)      ])
+(word mod   ((AnySz $0) Any -- $0           ) [ 2dup / * -              ])
+(word /mod  ((AnySz $0) Any -- $0 $0        ) [ 2dup / rot> mod         ])
+(word *     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Omul)      ])
+(word 0=    (           Any -- Bool         ) [ 0 (as $0) =             ])
+(word 0<>   (           Any -- Bool         ) [ 0 (as $0) <>            ])
+(word 0<    (           Any -- Bool         ) [ 0 (as $0) <             ])
+(word 0>    (           Any -- Bool         ) [ 0 (as $0) >             ])
+(word not   (          Bool -- Bool         ) [ (when [ nil ] [ t ])    ])
+
+# TODO: this is stupid
+(word and   (  Bool Bool -- Bool         ) [ (when [ (when [ t ] [ nil ]) ] [ nil ]) ])
 
 (word print8 (U8 --) [
 	dup 0= (when [ drop '0 emit return ])
@@ -97,14 +103,17 @@
 	drop # drop stop indicator
 ])
 
-(word print (Any --) [
+(word print-base (Any (AnySz $1) --) [
+	(local base $0 1)
+	@base <-
+
 	dup 0= (when [ drop '0 emit return ])
 
 	0x99 (as $0) swap # stop indicator
 
 	(wild ($0 $0 -- $0) [
 		(until [ 0= ] [
-			16 (as $0) /mod
+			$base (as $0) /mod
 			dup 9 (as $0) > (when
 				[ 10 (as $0) - 'a (as $0) + ]
 				[ '0 (as $0) + ]
@@ -118,12 +127,22 @@
 	drop # drop stop indicator
 ])
 
+(word print (Any --) [
+	16 (as $0) print-base
+])
+
+(word print-dec (Any --) [
+	10 (as $0) print-base
+])
+
 #0xbeefs print nl
 #0x3b    print nl
 #0x0d    print
 #0xef    print
 #0xaceds print
 #0xcafes print nl
+
+(word print-string ((Ptr16 U8) -- ) [ ldak (until [ 0= ] [ emit 1+ ldak ]) drop drop ])
 
 #"Hello, world!\n"
 #ldak (until [ 0= ] [ emit 1+ ldak ])
@@ -139,21 +158,151 @@
 #0 foobar foobar foobar print nl
 #0s foobar foobar foobar foobar print nl
 
-#(word variable (Any -- $0) [
+#(word variable (Any -- (Ptr16 $0)) [
 #	(local _S $0 1)
 #	drop
 #	@_S
 #])
 #
-#0  variable dbg
 #0s variable dbg drop
+#0  variable dbg drop
+#nl
 
 #(struct Foo
-#	[bar U8]
+#	[bar U16]
 #	[baz U8]
 #)
 
 #(local foo Foo 0)
-#8 @foo :bar sta
-#  @foo :bar lda print nl
-8 print nl
+
+#@foo :bar
+#@foo :baz
+#dbg
+
+#0xffffs @foo :bar sta
+#     9  @foo :baz sta
+#        @foo :bar lda print nl
+
+(struct ChunkHeader
+	[prev (Ptr16 ChunkHeader)]
+	[next (Ptr16 ChunkHeader)]
+	[free Bool]
+)
+
+(word <- ((Child $0) AnyPtr16 -- ) [ sta ])
+(word -> (AnyPtr16 -- (Child $0)) [ lda ])
+
+(word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
+
+(word over-short (Any16 Any8 -- $1 $0 $1) [
+	(wild ($1 $0 -- $1 $0 $1) [
+		(asm "" .Op/Orot)
+		(asm "" .Op/Orot)
+	])
+])
+
+(word alloc-init ( -- ) [
+	0s (as (Ptr16 ChunkHeader))
+		first :prev <-
+	0xFFFFs (as (Ptr16 ChunkHeader))
+		first :next <-
+	T
+		first :free <-
+])
+
+# ( bytes -- *ptr )
+(word alloc ( U16 -- (Ptr16 U8) ) [
+	(local size U16 1)
+	@size <-
+
+	"Allocating " print-string
+	$size         print-dec
+	" bytes\n"    print-string
+
+	first
+	(while [
+		      :free -> nil?
+		first :next first - $size <
+		and
+	] [
+		dup :next -> 0= (when [ "Out of memory\n" print-string return ])
+		    :next ->
+	])
+
+	(local chosen (Ptr16 ChunkHeader) 1)
+	@chosen <-
+
+	nil $chosen :free <-
+
+	# ( addr addr->next-addr )
+	$chosen :next -> $chosen - $size - 5s < not (when [
+		(local next (Ptr16 ChunkHeader) 1)
+		5s $size $chosen + + @next <-
+
+		$chosen          $next   :prev <-
+		$chosen :next -> $next   :next <-
+		T                $next   :free <-
+		$next            $chosen :next -> :prev <-
+		$next            $chosen :next <-
+	])
+
+	$chosen
+])
+
+(word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
+
+(word alloc-print-chunk ((Ptr16 ChunkHeader) -- ) [
+	"Chunk: " print-string
+		dup print
+	" \t" print-string
+	dup :free -> print-bool "\t" print-string
+	"Prev: " print-string
+		dup :prev -> print
+	" \t" print-string
+	"Next: " print-string
+		dup :next -> print
+	" \t" print-string
+	"Size: " print-string
+		dup :next -> over - 5s - print-dec
+	nl
+	drop
+])
+
+(word alloc-print-chunks (--) [
+	first
+	(while [ :next -> 0<> ] [
+		dup alloc-print-chunk
+		:next ->
+	])
+])
+
+alloc-init
+
+10s  alloc
+107s alloc
+2s   alloc
+34s  alloc
+
+alloc-print-chunks
+
+#"Hello, world!\n"
+#ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop
+
+#(struct Box (Any) [value $0])
+
+#(word box (Any -- (Ptr16 (Of Box $0))) [
+#	(local retval (Of Box $0) 1)
+#	@retval :value sta
+#	@retval
+#])
+
+#(word unbox ((Ptr16 (AnyOf Box)) -- (FieldType (Child $0) value)) [
+#	:value lda
+#])
+
+#0xffffs box
+#0x02    box
+
+#unbox print nl
+#unbox print nl
+

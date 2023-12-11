@@ -209,6 +209,10 @@ pub const Parser = struct {
             .Keyword => |i| b: {
                 if (mem.eql(u8, i, "return")) {
                     break :b ASTNode{ .node = .Return, .srcloc = node.location };
+                } else if (mem.eql(u8, i, "here")) {
+                    break :b ASTNode{ .node = .Here, .srcloc = node.location };
+                } else if (mem.eql(u8, i, "debug")) {
+                    break :b ASTNode{ .node = .Debug, .srcloc = node.location };
                 }
                 break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
             },
@@ -378,7 +382,11 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "return")) {
                     try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
-                } else if (mem.eql(u8, k, "until")) {
+                } else if (mem.eql(u8, k, "here")) {
+                    break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "debug")) {
+                    break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {
                     try self.validateListLength(ast, 3);
 
                     const ast_cond = try self.expectNode(.Quote, &ast[1]);
@@ -389,7 +397,10 @@ pub const Parser = struct {
 
                     break :b ASTNode{
                         .node = .{ .Loop = .{
-                            .loop = .{ .Until = .{ .cond = cond, .cond_prep = .Unchecked } },
+                            .loop = if (mem.eql(u8, k, "while"))
+                                .{ .While = .{ .cond = cond, .cond_prep = .Unchecked } }
+                            else
+                                .{ .Until = .{ .cond = cond, .cond_prep = .Unchecked } },
                             .body = body,
                         } },
                         .srcloc = ast[0].location,
@@ -551,19 +562,29 @@ pub const Parser = struct {
     pub fn postProcess(parser_: *Parser) ErrorSet!void {
         // Add typedefs
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+            pub fn _f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 // FIXME: check for name collisions
                 if (node.node == .TypeDef) switch (node.node.TypeDef.def) {
                     .Struct => |strdef| {
-                        var fields = UserType.StructField.AList.init(parser.alloc);
+                        self.types.append(UserType{
+                            .node = node,
+                            .name = node.node.TypeDef.name,
+                            .def = .{ .Struct = .{
+                                .args = strdef.args,
+                                .fields = UserType.StructField.AList.init(parser.alloc),
+                            } },
+                        }) catch unreachable;
+                        const fields = &self.types.items[self.types.items.len - 1].def.Struct.fields;
+
                         var offset: u8 = 0;
                         for (strdef.fields.items) |field| {
                             if (strdef.args == null) {
-                                const bits = field.type.bits(self) orelse
+                                const f = try field.type.resolveTypeRef(null, self);
+                                const bits = f.bits(self) orelse
                                     return self.perr(error.InvalidFieldType, field.srcloc);
                                 fields.append(.{
                                     .name = field.name,
-                                    .type = field.type,
+                                    .type = f,
                                     .offset = offset,
                                 }) catch unreachable;
                                 offset += bits / 8;
@@ -573,14 +594,6 @@ pub const Parser = struct {
                                 ) catch unreachable;
                             }
                         }
-                        self.types.append(UserType{
-                            .node = node,
-                            .name = node.node.TypeDef.name,
-                            .def = .{ .Struct = .{
-                                .args = strdef.args,
-                                .fields = fields,
-                            } },
-                        }) catch unreachable;
                     },
                     .Device => |devdef| {
                         var fields = UserType.DeviceField.AList.init(parser.alloc);
@@ -595,7 +608,7 @@ pub const Parser = struct {
                     },
                 };
             }
-        }.f);
+        }._f);
 
         // Earlier we couldn't know what type an Enum literal belonged to. At this
         // stage we find and set that information.

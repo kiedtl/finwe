@@ -295,7 +295,7 @@ pub const TypeInfo = union(enum) {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
                     break :b switch (arg_t) {
                         .AnyPtr, .AnyPtr16 => .Any,
-                        .Ptr8, .Ptr16 => |p| program.builtin_types.items[p.typ],
+                        .Ptr8, .Ptr16 => arg_t.deptrize(program),
                         else => unreachable,
                     };
                 },
@@ -348,6 +348,18 @@ pub const TypeInfo = union(enum) {
         };
     }
 
+    pub fn deptrize(a: @This(), program: *Program) @This() {
+        const r: TypeInfo = switch (a) {
+            .Ptr8 => |p| .{ .Ptr8 = .{ .typ = p.typ, .ind = p.ind - 1 } },
+            .Ptr16 => |p| .{ .Ptr16 = .{ .typ = p.typ, .ind = p.ind - 1 } },
+            else => unreachable,
+        };
+        return if (r.Ptr16.ind == 0) switch (r) {
+            .Ptr8, .Ptr16 => |p| program.ztype(p.typ),
+            else => unreachable,
+        } else r;
+    }
+
     pub fn ptr16(program: *Program, to: TypeInfo, indirection: usize) TypeInfo {
         assert(indirection >= 1);
         const ind: ?usize = for (program.builtin_types.items, 0..) |typ, i| {
@@ -382,15 +394,17 @@ pub const TypeInfo = union(enum) {
             .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             .Expr => |e| e.isGeneric(program),
             .Ptr8, .Ptr16 => |ptr| program.ztype(ptr.typ).isGeneric(program),
-            .Struct => |s| b: {
-                const fields = program.types.items[s].def.Struct.fields;
-                var generic = false;
-                for (fields.items) |field|
-                    if (field.type.isGeneric(program)) {
-                        generic = true;
-                    };
-                break :b generic;
-            },
+            .Struct => |s| program.types.items[s].def.Struct.args != null,
+            // Stack overflow when struct references itself (via Ptr etc)
+            // .Struct => |s| b: {
+            //     const fields = program.types.items[s].def.Struct.fields;
+            //     var generic = false;
+            //     for (fields.items) |field|
+            //         if (field.type.isGeneric(program)) {
+            //             generic = true;
+            //         };
+            //     break :b generic;
+            // },
             else => false,
         };
     }
@@ -518,6 +532,8 @@ pub const ASTNode = struct {
         VDeref: VDeref,
         GetChild: GetChild,
         TypeDef: TypeDef,
+        Here,
+        Debug,
         Return,
 
         pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -533,6 +549,7 @@ pub const ASTNode = struct {
                 .Wild => |w| try writer.print("Wild<{}>", .{w.arity}),
                 .Loop => |l| switch (l.loop) {
                     .Until => |u| try writer.print("Until<{s}>", .{@tagName(u.cond_prep)}),
+                    .While => |u| try writer.print("While<{s}>", .{@tagName(u.cond_prep)}),
                 },
                 .Asm => |a| try writer.print("Asm<{}>", .{a}),
                 .Value => |v| try writer.print("Val<{}, {}>", .{ v.typ, v.val }),
@@ -575,7 +592,7 @@ pub const ASTNode = struct {
 
     pub const GetChild = struct {
         name: []const u8,
-        type: TypeInfo = .Any,
+        is_short: bool = true,
         offset: u8 = 0,
     };
 
@@ -645,6 +662,10 @@ pub const ASTNode = struct {
                 cond: ASTNodeList,
                 cond_prep: enum { Unchecked, Dup, DupShort }, // TODO: Dup2, DupShort2, etc
             },
+            While: struct {
+                cond: ASTNodeList,
+                cond_prep: enum { Unchecked, Dup, DupShort }, // TODO: Dup2, DupShort2, etc
+            },
         };
     };
 
@@ -708,6 +729,7 @@ pub const ASTNode = struct {
                 new.Loop.body = _deepcloneASTList(new.Loop.body, parent, program);
                 switch (new.Loop.loop) {
                     .Until => |u| new.Loop.loop.Until.cond = _deepcloneASTList(u.cond, parent, program),
+                    .While => |u| new.Loop.loop.While.cond = _deepcloneASTList(u.cond, parent, program),
                 }
             },
             .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program),
@@ -716,7 +738,7 @@ pub const ASTNode = struct {
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Return => {},
+            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Here, .Return => {},
         }
 
         return .{
@@ -792,7 +814,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
@@ -800,6 +822,7 @@ pub const Program = struct {
             .Loop => |d| {
                 switch (d.loop) {
                     .Until => |u| try walkNodes(self, parent, u.cond, ctx, func),
+                    .While => |u| try walkNodes(self, parent, u.cond, ctx, func),
                 }
                 try walkNodes(self, parent, d.body, ctx, func);
             },
@@ -952,6 +975,7 @@ pub const OpTag = enum(u16) {
     Olt,
     Ogt,
     Oeor,
+    //Oand,
     Odmod,
     Omul,
     Odiv,

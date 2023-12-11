@@ -16,6 +16,10 @@ const VTList16 = TypeInfo.List16;
 pub const Error = error{
     NoSuchType,
     GenericNotMatching,
+    TypeNotMatching,
+    CannotGetFieldMultiPtr,
+    CannotGetField,
+    CannotGetChild,
 };
 
 pub const BlockAnalysis = struct {
@@ -60,13 +64,15 @@ pub const BlockAnalysis = struct {
                 caller.stack.constSlice()[caller.stack.len - j - 1]
             else if ((j - caller.stack.len) < caller.args.len)
                 caller.args.constSlice()[caller.args.len - (j - caller.stack.len) - 1]
-            else
+            else {
+                std.log.info("{}:{}", .{ call_node.srcloc.line, call_node.srcloc.column });
                 @panic("can't call generic func from non-arity func"); // arg.*
+            };
 
             const arg = &r.args.slice()[i];
 
-            std.log.info("\n", .{});
-            std.log.info("*** {}:{}: doing {} <- {}", .{ call_node.srcloc.line, call_node.srcloc.column, TypeFmt.from(arg.*, p), TypeFmt.from(calleritem, p) });
+            // std.log.info("\n", .{});
+            // std.log.info("*** {}:{}: doing {} <- {}", .{ call_node.srcloc.line, call_node.srcloc.column, TypeFmt.from(arg.*, p), TypeFmt.from(calleritem, p) });
 
             while (!arg.eq(calleritem) and (arg.isResolvable(p) or arg.isGeneric(p))) {
                 if (arg.isGeneric(p)) {
@@ -79,14 +85,19 @@ pub const BlockAnalysis = struct {
                         arg.* = arg.resolveGeneric(calleritem, p);
                     }
                 }
-                std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
+                //std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
 
                 if (arg.isResolvable(p)) {
                     arg.* = try arg.resolveTypeRef(r, p);
                 }
-                std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
+                //std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
 
-                std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
+                //std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
+            }
+
+            if (!arg.doesInclude(calleritem, p)) {
+                std.log.err("Type {} (arg ${}) does not encompass {}", .{ arg, i, calleritem });
+                return p.aerr(error.TypeNotMatching, call_node.srcloc);
             }
         }
 
@@ -191,15 +202,15 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         (args_needed == 1 and a1b != null)))
     {
         i.short = switch (i.op) {
-            .Osta => if (prog.builtin_types.items[a1.?.Ptr16.typ].bits(prog)) |b| b == 16 else false,
-            .Olda => if (prog.builtin_types.items[a1.?.Ptr16.typ].bits(prog)) |b| b == 16 else false,
+            .Osta => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
+            .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
         };
     }
 
-    // std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
+    //std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
 
     const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
 
@@ -227,7 +238,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         },
         .Odeo => {
             a.args.append(if (i.short) .U16 else .U8) catch unreachable;
-            a.stack.append(.U8) catch unreachable; // TODO: device
+            a.args.append(.AnyDev) catch unreachable; // TODO: device
         },
         .Oinc, .Odup => {
             a.args.append(a1 orelse any) catch unreachable;
@@ -314,6 +325,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
         switch (node.node) {
             .None => {},
             .TypeDef => {},
+            .Debug => std.log.debug("analysis: {}", .{a}),
+            .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
             .Mac, .Decl => unreachable,
             .Wild => |w| {
                 var wa = a.*;
@@ -414,6 +427,20 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             u.cond_prep = if (b == 16) .DupShort else .Dup;
                         }
                     },
+                    .While => |*u| {
+                        const oldlen = a.stack.len;
+                        const t = a.stack.last().?;
+                        a.stack.append(t) catch unreachable;
+                        _ = try analyseBlock(program, parent, u.cond, a);
+                        assert(a.stack.last().? == .Bool);
+                        assert(a.stack.len == oldlen + 1);
+                        _ = a.stack.pop() catch unreachable;
+                        if (t.bits(program)) |b| {
+                            u.cond_prep = if (b == 16) .DupShort else .Dup;
+                        }
+
+                        _ = try analyseBlock(program, parent, l.body, a);
+                    },
                 }
             },
             .When => |w| {
@@ -478,31 +505,45 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // error message: (replacing nuh uh)
                 // Error: Need to know type at this point
                 //  Hint: Try explicit cast.
-                switch (a.stack.last() orelse @panic("nuh uh")) {
+                const b = a.stack.last() orelse @panic("nuh uh");
+                switch (b) {
                     // TODO: Ptr8 (it's easy, just change ptrize16 to be more generic)
-                    .Ptr16 => |ptr| switch (program.builtin_types.items[ptr.typ]) {
+                    .Ptr16 => |ptr| switch (program.ztype(ptr.typ)) {
                         .Struct => |s| {
                             if (ptr.ind > 1) {
-                                @panic("idiot");
+                                return program.aerr(error.CannotGetFieldMultiPtr, node.srcloc);
                             }
                             const tstruct = program.types.items[s].def.Struct;
                             const i = for (tstruct.fields.items, 0..) |f, i| {
                                 if (mem.eql(u8, f.name, gch.name)) break i;
                             } else @panic("no such field");
                             gch.offset = tstruct.fields.items[i].offset;
-                            gch.type = tstruct.fields.items[i].type;
-                            a.stack.append(gch.type.ptrize16(program)) catch unreachable;
+                            gch.is_short = b == .Ptr16;
+                            _ = a.stack.pop() catch unreachable;
+                            a.stack.append(tstruct.fields.items[i].type.ptrize16(program)) catch unreachable;
                         },
-                        else => @panic("can't get a child from that"),
+                        else => |typ| {
+                            std.log.info("cannot get child from {}", .{
+                                TypeFmt.from(typ, program),
+                            });
+                            return program.aerr(error.CannotGetField, node.srcloc);
+                        },
                     },
-                    .Struct => @panic("need protection (ptr)"),
-                    else => @panic("can't get a child from that"),
+                    .Struct => {
+                        std.log.info("need protection (ptr)", .{});
+                        return program.aerr(error.CannotGetField, node.srcloc);
+                    },
+                    else => {
+                        std.log.info("{} doesn't have fields", .{TypeFmt.from(b, program)});
+                        return program.aerr(error.CannotGetField, node.srcloc);
+                    },
                 }
             },
             .Cast => |*c| {
                 if (c.ref) |r| {
                     c.to = parent.arity.?.args.constSlice()[r];
                 }
+                c.to = try c.to.resolveTypeRef(parent.arity, program);
 
                 const into = a.stack.last() orelse .Any;
 
@@ -538,6 +579,7 @@ pub fn postProcess(self: *Program) Error!void {
                 .Loop => |d| {
                     switch (d.loop) {
                         .Until => |u| try walkNodes(program, parent, u.cond),
+                        .While => |u| try walkNodes(program, parent, u.cond),
                     }
                     try walkNodes(program, parent, d.body);
                 },
