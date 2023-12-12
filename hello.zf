@@ -34,6 +34,7 @@
 (word emit  (          Any8 --              ) [ .Console/write deo       ])
 (word nl    (               --              ) [ 0x0a emit                ])
 
+(word nip   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Onip)       ])
 (word dup   (           Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
 (word swap  ((AnySz $0) Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
 (word drop  (           Any --              ) [ (asm "g" .Op/Odrop)      ])
@@ -51,6 +52,7 @@
 (word =     (       $0  Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
 (word <>    (       $0  Any -- Bool         ) [ (asm "g" .Op/Oneq)      ])
 (word nil?  (          Bool -- Bool         ) [ nil =                   ])
+(word T?    (          Bool -- Bool         ) [ T =                     ])
 (word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
 (word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)       ])
 (word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)      ])
@@ -64,10 +66,12 @@
 (word 0<>   (           Any -- Bool         ) [ 0 (as $0) <>            ])
 (word 0<    (           Any -- Bool         ) [ 0 (as $0) <             ])
 (word 0>    (           Any -- Bool         ) [ 0 (as $0) >             ])
-(word not   (          Bool -- Bool         ) [ (when [ nil ] [ t ])    ])
 
-# TODO: this is stupid
-(word and   (  Bool Bool -- Bool         ) [ (when [ (when [ t ] [ nil ]) ] [ nil ]) ])
+# TODO: this is stupid... needs to be optimized
+# (Probably bake or/and into language to ensure short-circuiting)
+(word not   (          Bool -- Bool         ) [ (when [ nil ] [ t ])    ])
+(word or    (     Bool Bool -- Bool         ) [ (when [ drop t ]) ])
+(word and   (     Bool Bool -- Bool) [ (when [ (when [t] [ nil ]) ] [ drop nil ]) ])
 
 (word print8 (U8 --) [
 	dup 0= (when [ drop '0 emit return ])
@@ -142,12 +146,7 @@
 #0xaceds print
 #0xcafes print nl
 
-(word print-string ((Ptr16 U8) -- ) [ ldak (until [ 0= ] [ emit 1+ ldak ]) drop drop ])
-
-#"Hello, world!\n"
-#ldak (until [ 0= ] [ emit 1+ ldak ])
-#drop drop
-#dbg
+(word print-string ((Ptr16 U8) -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
 
 #(word foobar (Any -- $0) [
 #	(local baz $0 1)
@@ -194,8 +193,14 @@
 
 (word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
 
-(word over-short (Any16 Any8 -- $1 $0 $1) [
+(word over-sb (Any16 Any8 -- $1 $0 $1) [
 	(wild ($1 $0 -- $1 $0 $1) [
+		"TODO: over-sb" print-string nl
+	])
+])
+
+(word swap-sb (Any16 Any8 -- $0 $1) [
+	(wild ($1 $0 -- $0 $1) [
 		(asm "" .Op/Orot)
 		(asm "" .Op/Orot)
 	])
@@ -215,26 +220,36 @@
 	(local size U16 1)
 	@size <-
 
-	"Allocating " print-string
-	$size         print-dec
-	" bytes\n"    print-string
+	"*** Allocating " print-string
+	$size             print-dec
+	" bytes\n"        print-string
 
 	first
 	(while [
-		      :free -> nil?
-		first :next first - $size <
-		and
+		#dup "Sz: " print-string chunk-size print-dec nl
+		#    "Rq: " print-string $size print-dec nl
+		#dup "Nx: " print-string :next -> print nl
+		#dup "Av: " print-string :free -> print-bool nl
+		#nl
+
+		dup :free -> not
+		swap-sb chunk-size $size <
+		or
 	] [
-		dup :next -> 0= (when [ "Out of memory\n" print-string return ])
+		"    Skipping " print-string dup print nl
+
+		dup :next -> 0= (when [ "Out of memory\n" print-string 0s return ])
 		    :next ->
 	])
+
+	"Chosen: " print-string dup print nl nl
 
 	(local chosen (Ptr16 ChunkHeader) 1)
 	@chosen <-
 
+
 	nil $chosen :free <-
 
-	# ( addr addr->next-addr )
 	$chosen :next -> $chosen - $size - 5s < not (when [
 		(local next (Ptr16 ChunkHeader) 1)
 		5s $size $chosen + + @next <-
@@ -247,6 +262,11 @@
 	])
 
 	$chosen
+])
+
+(word chunk-size ((Ptr16 ChunkHeader) -- U16) [
+	dup :next -> swap -
+	(sizeof ChunkHeader) (as U16) -
 ])
 
 (word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
@@ -263,7 +283,7 @@
 		dup :next -> print
 	" \t" print-string
 	"Size: " print-string
-		dup :next -> over - 5s - print-dec
+		dup chunk-size print-dec
 	nl
 	drop
 ])
@@ -278,15 +298,14 @@
 
 alloc-init
 
-10s  alloc
-107s alloc
-2s   alloc
-34s  alloc
+10s  alloc drop
+107s alloc drop
+2s   alloc drop
+34s  alloc drop
+
+nl
 
 alloc-print-chunks
-
-#"Hello, world!\n"
-#ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop
 
 #(struct Box (Any) [value $0])
 
@@ -306,3 +325,14 @@ alloc-print-chunks
 #unbox print nl
 #unbox print nl
 
+# TODO: unit tests
+
+#0xffabs 0xba swap-sb print nl print nl
+#t   nil or  print-bool nl
+#nil t   or  print-bool nl
+#t   t   or  print-bool nl
+#nil nil or  print-bool nl
+#t   nil and print-bool nl
+#nil t   and print-bool nl
+#t   t   and print-bool nl
+#nil nil and print-bool nl
