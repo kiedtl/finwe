@@ -384,6 +384,13 @@ pub const Parser = struct {
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "here")) {
                     break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "sizeof")) {
+                    try self.validateListLength(ast, 2);
+                    const typ = try self.parseType(&ast[1]);
+                    break :b ASTNode{ .node = .{ .SizeOf = .{
+                        .original = typ,
+                        .resolved = .Any,
+                    } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "debug")) {
                     break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {

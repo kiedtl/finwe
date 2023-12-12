@@ -244,8 +244,13 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
+        .Onip => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+        },
         .Odrop => a.args.append(a1 orelse any) catch unreachable,
-        .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
+        .Osft, .Oand, .Oora, .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
             a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
@@ -449,7 +454,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 whena.mergeInto(a);
 
                 var ya = a.*;
-                const yr = try analyseBlock(program, parent, w.yup, &ya);
+                const ya_r = (try analyseBlock(program, parent, w.yup, &ya)).early_return;
 
                 var na_r = false;
                 var na = a.*;
@@ -458,11 +463,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         na_r = true;
                     };
 
-                if (yr.early_return and na_r) {
+                if (ya_r and na_r) {
                     a.* = ya;
-                } else if (yr.early_return) {
+                } else if (ya_r) {
                     a.* = na;
                 } else if (na_r) {
+                    a.* = ya;
+                } else {
                     a.* = ya;
                 }
             },
@@ -538,6 +545,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         return program.aerr(error.CannotGetField, node.srcloc);
                     },
                 }
+            },
+            .SizeOf => |*sizeof| {
+                a.stack.append(.U8) catch unreachable;
+                sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
             },
             .Cast => |*c| {
                 if (c.ref) |r| {

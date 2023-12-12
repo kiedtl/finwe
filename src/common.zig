@@ -533,6 +533,7 @@ pub const ASTNode = struct {
         GetChild: GetChild,
         TypeDef: TypeDef,
         Here,
+        SizeOf: SizeOf,
         Debug,
         Return,
 
@@ -563,6 +564,11 @@ pub const ASTNode = struct {
         if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
         try writer.print("{}", .{self.node});
     }
+
+    pub const SizeOf = struct {
+        original: TypeInfo,
+        resolved: TypeInfo,
+    };
 
     pub const TypeDef = struct {
         name: []const u8,
@@ -738,7 +744,7 @@ pub const ASTNode = struct {
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Here, .Return => {},
+            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .SizeOf, .Here, .Return => {},
         }
 
         return .{
@@ -814,7 +820,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .SizeOf, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
@@ -975,7 +981,9 @@ pub const OpTag = enum(u16) {
     Olt,
     Ogt,
     Oeor,
-    //Oand,
+    Oand,
+    Oora,
+    Osft,
     Odmod,
     Omul,
     Odiv,
@@ -1011,6 +1019,9 @@ pub const Op = union(OpTag) {
     Olt,
     Ogt,
     Oeor,
+    Oand,
+    Oora,
+    Osft,
     Odmod,
     Omul,
     Odiv,
@@ -1047,6 +1058,9 @@ pub const Op = union(OpTag) {
             .Olt => .Olt,
             .Ogt => .Ogt,
             .Oeor => .Oeor,
+            .Oand => .Oand,
+            .Oora => .Oora,
+            .Osft => .Osft,
             .Odmod => .Odmod,
             .Omul => .Omul,
             .Odiv => .Odiv,

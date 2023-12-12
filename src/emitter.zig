@@ -31,10 +31,10 @@ pub fn spitout(program: []const Ins) !void {
             .Osub => 0x19,
             .Omul => 0x1a,
             .Odiv => 0x1b,
-            // .Oand => 0x1c,
-            // .Oora => 0x1d,
-            // .Oeor => 0x1e,
-            // .Osft => 0x1f,
+            .Oand => 0x1c,
+            .Oora => 0x1d,
+            .Oeor => 0x1e,
+            .Osft => 0x1f,
             .Olit => 0x80,
             else => {
                 std.log.err("{} not implemented", .{ins});

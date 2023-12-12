@@ -105,6 +105,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .Debug => {},
         .Here => try emitUA(buf, ual, "", node),
+        .SizeOf => |sizeof| {
+            const s = sizeof.resolved.size(program).?;
+            try emitIMM(buf, node, WK_STACK, false, .Olit, s);
+        },
         .Cast => |c| {
             // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
             const from = c.of.bits(program).?;
