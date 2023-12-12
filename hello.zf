@@ -49,8 +49,8 @@
 (word tuck  (       Any Any -- $0 $1 $0     ) [ swap over               ])
 (word tuck> (       Any Any -- $1 $1 $0     ) [ over swap               ])
 
-(word =     (       $0  Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
-(word <>    (       $0  Any -- Bool         ) [ (asm "g" .Op/Oneq)      ])
+(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
+(word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)      ])
 (word nil?  (          Bool -- Bool         ) [ nil =                   ])
 (word T?    (          Bool -- Bool         ) [ T =                     ])
 (word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
@@ -182,10 +182,17 @@
 #     9  @foo :baz sta
 #        @foo :bar lda print nl
 
+# I wanted to have U16 guards, that way we could have 0x1cedc0fe
+#
+# Sadly that blows up the size to 9 bytes, so we have to settle with
+# just lukewarm 0xc0fe
+#
 (struct ChunkHeader
+	[guard1 U8]
 	[prev (Ptr16 ChunkHeader)]
 	[next (Ptr16 ChunkHeader)]
 	[free Bool]
+	[guard2 U8]
 )
 
 (word <- ((Child $0) AnyPtr16 -- ) [ sta ])
@@ -195,7 +202,10 @@
 
 (word over-sb (Any16 Any8 -- $1 $0 $1) [
 	(wild ($1 $0 -- $1 $0 $1) [
-		"TODO: over-sb" print-string nl
+		0
+		(asm "s" .Op/Oovr)
+		(asm "" .Op/Orot)
+		(asm "" .Op/Odrop)
 	])
 ])
 
@@ -213,6 +223,8 @@
 		first :next <-
 	T
 		first :free <-
+	0xc0    first :guard1 <-
+	0xfe    first :guard2 <-
 ])
 
 # ( bytes -- *ptr )
@@ -250,18 +262,33 @@
 
 	nil $chosen :free <-
 
-	$chosen :next -> $chosen - $size - 5s < not (when [
+	$chosen chunk-size $size -
+		(sizeof ChunkHeader) (as U16) 1+
+	< not (when [
 		(local next (Ptr16 ChunkHeader) 1)
-		5s $size $chosen + + @next <-
+		(sizeof ChunkHeader) (as U16) $size $chosen + + @next <-
 
 		$chosen          $next   :prev <-
 		$chosen :next -> $next   :next <-
 		T                $next   :free <-
 		$next            $chosen :next -> :prev <-
 		$next            $chosen :next <-
+		0xc0             $chosen :guard1 <-
+		0xfe             $chosen :guard2 <-
 	])
 
-	$chosen
+	$chosen (sizeof ChunkHeader) (as U16) +
+])
+
+(word dealloc (AnyPtr16 -- ) [
+	(sizeof ChunkHeader) (as U16) -
+	(as (Ptr16 ChunkHeader))
+
+		dup     :guard1 -> 0xc0 <>
+		over-sb :guard2 -> 0xfe <>
+	or (when [ "Bad ptr\n" print-string return ])
+
+	T swap-sb :free <-
 ])
 
 (word chunk-size ((Ptr16 ChunkHeader) -- U16) [
@@ -300,8 +327,10 @@ alloc-init
 
 10s  alloc drop
 107s alloc drop
+107s alloc dealloc
 2s   alloc drop
-34s  alloc drop
+34s  alloc dealloc
+30s  alloc drop
 
 nl
 
@@ -327,6 +356,7 @@ alloc-print-chunks
 
 # TODO: unit tests
 
+#0x1ceds 0xca over-sb print nl print nl print nl nl
 #0xffabs 0xba swap-sb print nl print nl
 #t   nil or  print-bool nl
 #nil t   or  print-bool nl

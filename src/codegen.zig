@@ -223,8 +223,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .When => |when| {
-            // TODO: handle case where body(s) >= 127 bytes generated code
-
             // Structure
             // - When else branch
             //   1. Jump-if-true to IF
@@ -240,26 +238,28 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             //   5. <end>
 
             // 1.
-            try emit(buf, node, WK_STACK, false, false, .Olit);
-            const blk_jump = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
-            try emit(buf, node, WK_STACK, false, false, .Ojcn);
+            try emit(buf, node, WK_STACK, false, true, .Olit);
+            const blk = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
             // 2.
             if (when.nah) |nah|
                 try genNodeList(program, buf, nah, ual);
 
             // 3.
-            try emit(buf, node, WK_STACK, false, false, .Olit);
-            const end_jump = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
-            try emit(buf, node, WK_STACK, false, false, .Ojmp);
+            try emit(buf, node, WK_STACK, false, true, .Olit);
+            const end = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+            try emit(buf, node, WK_STACK, false, true, .Ojmp);
 
-            buf.items[blk_jump].op.Oraw = @intCast(buf.items.len - blk_jump - 2);
+            reemitAddr16(buf, blk, buf.items.len); // - blk_jump - 2);
 
             // 4.
 
             try genNodeList(program, buf, when.yup, ual);
 
-            buf.items[end_jump].op.Oraw = @intCast(buf.items.len - end_jump - 2);
+            reemitAddr16(buf, end, buf.items.len); // - end_jump - 2);
         },
         .Cond => |cond| {
             var end_jumps = std.ArrayList(usize).init(gpa.allocator()); // Dummy jumps to fix
