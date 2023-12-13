@@ -283,6 +283,7 @@
 (word dealloc (AnyPtr16 -- ) [
 	(sizeof ChunkHeader) (as U16) -
 	(as (Ptr16 ChunkHeader))
+	"Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
 		over-sb :guard2 -> 0xfe <>
@@ -296,43 +297,81 @@
 	(sizeof ChunkHeader) (as U16) -
 ])
 
+(word alloc-defrag (--) [
+	first
+	(until [ :next -> 0= ] [
+		dup     :free ->
+		over-sb :next -> :free -> and
+		(when [
+			dup :next ->
+
+			# current->next = next->next
+			# ( current next )
+			over :next
+				# ( current next @current->next )
+				over :next -> swap <-
+
+			dup :next -> 0<> (when [
+				# ( current next )
+				:next ->
+					# ( current $next->next )
+					:prev
+					# ( current $next->next->prev )
+					over swap <-
+					# ( current )
+
+			] [ drop ])
+		] [ :next -> ])
+	])
+])
+
 (word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
 
 (word alloc-print-chunk ((Ptr16 ChunkHeader) -- ) [
-	"Chunk: " print-string
-		dup print
-	" \t" print-string
+	dup print " \t" print-string
 	dup :free -> print-bool "\t" print-string
-	"Prev: " print-string
-		dup :prev -> print
-	" \t" print-string
-	"Next: " print-string
-		dup :next -> print
-	" \t" print-string
-	"Size: " print-string
-		dup chunk-size print-dec
+	dup :prev -> print " \t" print-string
+	dup :next -> print " \t" print-string
+	dup chunk-size print-dec
 	nl
 	drop
 ])
 
 (word alloc-print-chunks (--) [
+	"Chunk\tFree\tPrev\tNext\tSize\n" print-string
+
 	first
 	(while [ :next -> 0<> ] [
 		dup alloc-print-chunk
 		:next ->
 	])
+
+	nl
 ])
 
 alloc-init
 
-10s  alloc drop
+(local ptrs (Ptr16 U8) 4)
+
 107s alloc drop
-107s alloc dealloc
+107s alloc 0s @ptrs + <-
+10s  alloc 2s @ptrs + <-
+26s  alloc 4s @ptrs + <-
 2s   alloc drop
-34s  alloc dealloc
+#34s  alloc dealloc
 30s  alloc drop
+30s  alloc 6s @ptrs + <-
+
+0s @ptrs + -> dealloc
+2s @ptrs + -> dealloc
+4s @ptrs + -> dealloc
+6s @ptrs + -> dealloc
 
 nl
+
+alloc-print-chunks
+
+alloc-defrag
 
 alloc-print-chunks
 

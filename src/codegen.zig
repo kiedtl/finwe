@@ -256,7 +256,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             reemitAddr16(buf, blk, buf.items.len); // - blk_jump - 2);
 
             // 4.
-
             try genNodeList(program, buf, when.yup, ual);
 
             reemitAddr16(buf, end, buf.items.len); // - end_jump - 2);
@@ -331,6 +330,11 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     }
 
     const here = buf.items.len;
+
+    // std.log.info("here: {x}", .{buf.items.len + 0x100});
+    // for (program.statics.items) |*data| {
+    //     std.log.info("Static: {x}...{x}", .{ data.romloc + 0x100, data.romloc + data.count + 0x100 });
+    // }
 
     ual_search: for (ual.items) |ua| switch (ua.node.node) {
         .Here => reemitAddr16(&buf, ua.loc, here),
