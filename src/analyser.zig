@@ -260,6 +260,10 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.args.append(a2 orelse any) catch unreachable;
             a.stack.append(.Bool) catch unreachable;
         },
+        .Osth => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.rstack.append(a1 orelse any) catch unreachable;
+        },
         .Olda => {
             a.args.append(a1 orelse .AnyPtr16) catch unreachable;
             a.stack.append(
@@ -283,10 +287,6 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         //     a.args.append(.Ptr8) catch unreachable;
         // },
         // .Ojsr => a.rstack.append(.AbsPtr), // FIXME: short mode?
-        // .Ostash => {
-        //     a.rstack += 1;
-        //     a.args += 1;
-        // },
         // .Osr, .Ozj, .Onac, .Oroll, .Odmod => unreachable,
     }
 

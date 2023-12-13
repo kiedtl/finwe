@@ -23,6 +23,8 @@ pub fn spitout(program: []const Ins) !void {
             .Ojmp => 0x0c,
             .Ojcn => 0x0d,
             .Ojsr => 0x0e,
+            .Osth => 0x0f,
+            // ldz/stz/ldr/str
             .Olda => 0x14,
             .Osta => 0x15,
             .Odei => 0x16,

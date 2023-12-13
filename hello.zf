@@ -23,11 +23,15 @@
 	[error U8]         # ? (not documented)
 )
 
+(mac push [ (asm "g"  .Op/Osth) ])
+(mac pop  [ (asm "rg" .Op/Osth) ])
+
 (word 2dup ( (AnySz $0) Any -- $0 $1 $0 $1) [ over over ])
 
 (word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)       ])
 (word ldak (       AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)      ])
 (word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
+(word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)      ])
 
 (word deo   (    Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
 (word dbg   (               --              ) [ 0x0 .System/debug deo    ])
@@ -41,10 +45,10 @@
 (word over  ((AnySz $0) Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
 
 # TODO
-#(word rot   (Any Any Any -- $2 $1 $0    ) [ (asm "g" .Op/Orot)      ])
-#(word rot>  (Any Any Any -- $1 $2 $0    ) [ rot rot                 ])
+#(word rot   (Any Any Any -- $1 $0 $2    ) [ (asm "g" .Op/Orot)      ])
+#(word rot>  (Any Any Any -- $0 $2 $1    ) [ rot rot                 ])
 
-(word rot   ((AnySz $0) (AnySz $0) Any -- $2 $1 $0) [ (asm "g" .Op/Orot)      ])
+(word rot   ((AnySz $0) (AnySz $0) Any -- $1 $0 $2) [ (asm "g" .Op/Orot)      ])
 (word rot>  (    $0  $0 Any -- $0 $0 $0     ) [ rot rot                 ])
 (word tuck  (       Any Any -- $0 $1 $0     ) [ swap over               ])
 (word tuck> (       Any Any -- $1 $1 $0     ) [ over swap               ])
@@ -200,6 +204,37 @@
 
 (word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
 
+(word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
+	# sa0 sa1 bt sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  # sa0 sa1 bt | sb0 sb1
+		(asm "" .Op/Orot)   # sa1 bt sa0 | sb0 sb1
+		(asm "" .Op/Orot)   # bt sa0 sa1 | sb0 sb1
+		(asm "rs" .Op/Osth) # bt sb0 sb1 sa0 sa1 
+		(asm "s" .Op/Oswp)  # bt sa0 sa1 sb0 sb1 
+	])
+])
+
+(word rot-bss (Any8 Any16 Any16 -- $1 $0 $2) [
+	# bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  # bt sa0 sa1 | sb0 sb1
+		(asm "" .Op/Orot)   # sa0 sa1 bt | sb0 sb1
+		(asm "rs" .Op/Osth) # sa0 sa1 bt sb0 sb1
+		(asm "" .Op/Orot)   # sa0 sa1 sb0 sb1 bt
+	])
+])
+
+(word rot-bss> (Any8 Any16 Any16 -- $0 $2 $1) [
+	# bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $0 $2 $1) [
+		(asm "s" .Op/Oswp)  # bt sb0 sb1 sa0 sa1
+		(asm "s" .Op/Osth)  # bt sb0 sb1 | sa0 sa1
+		(asm "" .Op/Orot)   # sb0 sb1 bt | sa0 sa1
+		(asm "rs" .Op/Osth) # sb0 sb1 bt sa0 sa1
+	])
+])
+
 (word over-sb (Any16 Any8 -- $1 $0 $1) [
 	(wild ($1 $0 -- $1 $0 $1) [
 		0
@@ -349,6 +384,24 @@
 	nl
 ])
 
+# ( val len ptr -- )
+(word memset8 (Any8 U16 AnyPtr16 -- ) [
+	(as (Ptr16 U8))
+	dup rot + (as (Ptr16 U8))
+
+	(while [ drop 2dup <> ] [
+		# ( val ptr end )
+		rot-bss>                  # ( end val  ptr  )
+		stak                      # ( end val  ptr  )
+		(sizeof $0) (as U16) +    # ( end val  ptr+ )
+		rot-sbs                   # ( val ptr+ end  )
+	])
+])
+
+0xAA
+	here 0xffffs -
+here memset8
+
 alloc-init
 
 (local ptrs (Ptr16 U8) 4)
@@ -395,8 +448,12 @@ alloc-print-chunks
 
 # TODO: unit tests
 
+#2s 1 0s rot-sbs      print nl print nl print nl nl
+#2 1s 0s rot-bss>     print nl print nl print nl nl
+#2 1s 0s rot-bss      print nl print nl print nl nl
 #0x1ceds 0xca over-sb print nl print nl print nl nl
 #0xffabs 0xba swap-sb print nl print nl
+
 #t   nil or  print-bool nl
 #nil t   or  print-bool nl
 #t   t   or  print-bool nl
