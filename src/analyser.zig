@@ -343,7 +343,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
                     const d = for (program.defs.items) |decl| {
-                        if (mem.eql(u8, decl.node.Decl.name, c.name))
+                        if (!decl.node.Decl.is_test and
+                            mem.eql(u8, decl.node.Decl.name, c.name))
                             break decl;
                     } else unreachable;
                     const cdecl = &d.node.Decl;
