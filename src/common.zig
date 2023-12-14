@@ -510,7 +510,7 @@ pub const ASTNode = struct {
 
     node: ASTNode.Type,
     srcloc: Srcloc,
-    romloc: usize = 0,
+    romloc: usize = 0xFFFF,
 
     pub const Tag = std.meta.Tag(ASTNode.Type);
 
@@ -534,6 +534,7 @@ pub const ASTNode = struct {
         TypeDef: TypeDef,
         Here,
         SizeOf: SizeOf,
+        Breakpoint: Breakpoint,
         Debug,
         Return,
 
@@ -681,10 +682,11 @@ pub const ASTNode = struct {
         analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
         variations: StackBuffer(analyser.BlockAnalysis, 8) = StackBuffer(analyser.BlockAnalysis, 8).init(null),
         body: ASTNodeList,
-        is_analysed: bool = false,
         variant: usize = 0,
         calls: usize = 0,
         locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
+        is_analysed: bool = false,
+        is_test: bool = false,
 
         pub const Local = struct {
             name: []const u8,
@@ -744,7 +746,7 @@ pub const ASTNode = struct {
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .SizeOf, .Here, .Return => {},
+            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .SizeOf, .Breakpoint, .Here, .Return => {},
         }
 
         return .{
@@ -753,6 +755,18 @@ pub const ASTNode = struct {
             .romloc = self.romloc,
         };
     }
+};
+
+pub const Breakpoint = struct {
+    type: Type,
+    romloc: usize = 0xFFFF,
+
+    pub const Type = union(enum) {
+        TosShouldEq: Value,
+        // TosShouldNeq: Value,
+    };
+
+    pub const AList = std.ArrayList(@This());
 };
 
 pub const Srcloc = struct {
@@ -776,7 +790,7 @@ pub const Static = struct {
         String: String,
         None,
     },
-    romloc: usize = 0,
+    romloc: usize = 0xFFFF,
 
     pub const AList = std.ArrayList(@This());
 };
@@ -788,6 +802,8 @@ pub const Program = struct {
     statics: Static.AList,
     types: UserType.AList,
     builtin_types: std.ArrayList(TypeInfo),
+    rng: std.rand.DefaultPrng,
+    breakpoints: common.Breakpoint.AList,
 
     errors: Error.AList,
 
@@ -807,6 +823,8 @@ pub const Program = struct {
             .types = UserType.AList.init(alloc),
             .builtin_types = std.ArrayList(TypeInfo).init(alloc),
             .errors = common.Error.AList.init(alloc),
+            .rng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp())),
+            .breakpoints = common.Breakpoint.AList.init(alloc),
             //.defs = ASTNodeList.init(alloc),
         };
     }
@@ -820,7 +838,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .SizeOf, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .Breakpoint, .SizeOf, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),

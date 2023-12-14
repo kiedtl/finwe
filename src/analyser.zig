@@ -311,6 +311,8 @@ pub const AnalyserInfo = struct {
 };
 
 fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) Error!AnalyserInfo {
+    //std.log.info("analysing {s}", .{parent.name});
+
     var info = AnalyserInfo{};
     var iter = block.iterator();
     while (iter.next()) |node| {
@@ -546,6 +548,21 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     },
                 }
             },
+            .Breakpoint => |brk| {
+                switch (brk.type) {
+                    .TosShouldEq => |v| {
+                        const tos = a.stack.pop() catch {
+                            @panic("Must have known stack contents before breakpoint");
+                        };
+                        if (!tos.eq(v.typ)) {
+                            std.log.err("Type error: {} (breakpoint) != {} (stack)", .{
+                                v.typ, tos,
+                            });
+                            return program.aerr(error.TypeNotMatching, node.srcloc);
+                        }
+                    },
+                }
+            },
             .SizeOf => |*sizeof| {
                 a.stack.append(.U8) catch unreachable;
                 sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
@@ -650,7 +667,7 @@ pub fn postProcess(self: *Program) Error!void {
             try _S.walkNodes(self, def, def.node.Decl.body);
 }
 
-pub fn analyse(program: *Program) Error!void {
+pub fn analyse(program: *Program, tests: bool) Error!void {
     // for (program.defs.items) |decl_node| {
     //     const decl = &decl_node.node.Decl;
     //     if (!decl.is_analysed) {
@@ -659,15 +676,26 @@ pub fn analyse(program: *Program) Error!void {
     //     }
     // }
 
-    const entrypoint_node = for (program.defs.items) |decl_node| {
-        if (mem.eql(u8, decl_node.node.Decl.name, "_Start")) break decl_node;
-    } else unreachable;
-    const entrypoint = &entrypoint_node.node.Decl;
-    entrypoint.calls += 1;
+    if (tests) {
+        for (program.defs.items) |d| if (d.node.Decl.is_test) {
+            const utest = &d.node.Decl;
+            utest.calls += 1;
 
-    assert(!entrypoint.is_analysed);
-    entrypoint.is_analysed = true;
-    _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
+            assert(!utest.is_analysed);
+            utest.is_analysed = true;
+            _ = try analyseBlock(program, utest, utest.body, &utest.analysis);
+        };
+    } else {
+        const entrypoint_node = for (program.defs.items) |decl_node| {
+            if (mem.eql(u8, decl_node.node.Decl.name, "_Start")) break decl_node;
+        } else unreachable;
+        const entrypoint = &entrypoint_node.node.Decl;
+        entrypoint.calls += 1;
+
+        assert(!entrypoint.is_analysed);
+        entrypoint.is_analysed = true;
+        _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
+    }
 
     try postProcess(program);
 }

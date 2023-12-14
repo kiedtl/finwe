@@ -26,6 +26,7 @@ const RT_STACK = @import("common.zig").RT_STACK;
 pub const Parser = struct {
     program: *Program,
     alloc: mem.Allocator,
+    is_testing: bool = false,
 
     pub const ParserError = error{
         StrayToken,
@@ -53,10 +54,11 @@ pub const Parser = struct {
         UnknownIdent,
     } || mem.Allocator.Error;
 
-    pub fn init(program: *Program, alloc: mem.Allocator) Parser {
+    pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
         return .{
             .program = program,
             .alloc = alloc,
+            .is_testing = is_testing,
         };
     }
 
@@ -328,6 +330,22 @@ pub const Parser = struct {
                         .arity = arity,
                         .body = body,
                     } }, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "test")) {
+                    const name = try self.expectNode(.Keyword, &ast[1]);
+                    const ast_body = try self.expectNode(.Quote, &ast[2]);
+                    const body = try self.parseStatements(ast_body.items);
+
+                    // const new_name = try std.fmt.allocPrint(
+                    //     common.gpa.allocator(),
+                    //     "test_{}_{s}",
+                    //     .{ self.program.rng.random().int(u16), name },
+                    // );
+
+                    break :b ASTNode{ .node = .{ .Decl = .{
+                        .name = name,
+                        .body = body,
+                        .is_test = true,
+                    } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
 
@@ -390,6 +408,20 @@ pub const Parser = struct {
                     break :b ASTNode{ .node = .{ .SizeOf = .{
                         .original = typ,
                         .resolved = .Any,
+                    } }, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "should")) {
+                    const t = try self.expectNode(.Keyword, &ast[1]);
+                    const v = try self.parseValue(&ast[2]);
+
+                    var b: common.Breakpoint.Type = undefined;
+                    if (mem.eql(u8, t, "eq")) {
+                        b = .{ .TosShouldEq = v };
+                    } else {
+                        @panic("Invalid breakpoint type");
+                    }
+
+                    break :b ASTNode{ .node = .{ .Breakpoint = .{
+                        .type = b,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "debug")) {
                     break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
@@ -635,7 +667,8 @@ pub const Parser = struct {
                         } else false) {
                             node.node.Call.ctyp = .Mac;
                         } else if (for (self.defs.items) |decl| {
-                            if (mem.eql(u8, decl.node.Decl.name, c.name))
+                            const d = decl.node.Decl;
+                            if (!d.is_test and mem.eql(u8, d.name, c.name))
                                 break true;
                         } else false) {
                             node.node.Call.ctyp = .{ .Decl = 0 };
@@ -687,14 +720,15 @@ pub const Parser = struct {
         try body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = .{} });
-        try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
-            .name = "_Start",
-            .goto = true,
-        } }, .srcloc = .{} });
         try self.program.ast.append(ASTNode{
             .node = .{ .Decl = .{ .name = "_Start", .body = body } },
             .srcloc = .{},
         });
+        if (!self.is_testing)
+            try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
+                .name = "_Start",
+                .goto = true,
+            } }, .srcloc = .{} });
     }
 
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ErrorSet!void {

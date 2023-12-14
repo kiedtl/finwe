@@ -16,9 +16,10 @@ const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const params = comptime [_]clap.Param(clap.Help){
-        clap.parseParam("-x, --spitout       Directly output UXN binary.") catch unreachable,
-        clap.parseParam("-1, --debug-asm     Output ASM to stderr.") catch unreachable,
-        clap.parseParam("-2, --debug-inf     Output word analysis to stderr.") catch unreachable,
+        clap.parseParam("-x, --emit        Directly output UXN binary.") catch unreachable,
+        clap.parseParam("-t, --test        Run test harness. Incompatible with -x.") catch unreachable,
+        clap.parseParam("-1, --debug-asm   Output ASM to stderr.") catch unreachable,
+        clap.parseParam("-2, --debug-inf   Output word analysis to stderr.") catch unreachable,
         clap.parseParam("<str>...") catch unreachable,
     };
 
@@ -50,7 +51,11 @@ pub fn main() anyerror!void {
 
         var program = common.Program.init(gpa.allocator());
 
-        var parser = parserm.Parser.init(&program, gpa.allocator());
+        var parser = parserm.Parser.init(
+            &program,
+            args.args.@"test" > 0,
+            gpa.allocator(),
+        );
         parser.initTypes();
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
@@ -61,7 +66,7 @@ pub fn main() anyerror!void {
             }
         };
 
-        analyser.analyse(&program) catch |e| {
+        analyser.analyse(&program, args.args.@"test" > 0) catch |e| {
             if (program.errors.items.len > 0) {
                 errors.printErrors(&program, buf);
                 std.os.exit(1);
@@ -69,6 +74,10 @@ pub fn main() anyerror!void {
                 @panic(@errorName(e));
             }
         };
+
+        if (args.args.@"test" != 0 and args.args.emit != 0) {
+            @panic("Cannot emit binary and test at same time");
+        }
 
         if (args.args.@"debug-inf" != 0)
             for (program.defs.items) |def| {
@@ -81,11 +90,14 @@ pub fn main() anyerror!void {
             for (assembled.items, 0..) |asmstmt, i| {
                 std.log.info("{} -\t{}", .{ i, asmstmt });
             };
-        std.log.info("--------------------------------------------------", .{});
+        std.log.info("--------------------------------------------", .{});
 
-        if (args.args.spitout != 0) {
+        if (args.args.emit != 0) {
             const stdout = std.io.getStdOut().writer();
             try emitter.spitout(stdout, assembled.items);
+        } else if (args.args.@"test" != 0) {
+            var vm = vmm.VM.init(assembled.items);
+            vm.executeTests(&program);
         } else {
             var vm = vmm.VM.init(assembled.items);
             vm.execute();

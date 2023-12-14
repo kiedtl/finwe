@@ -34,7 +34,7 @@
 (word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)      ])
 
 (word deo   (    Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
-(word dbg   (               --              ) [ 0x0 .System/debug deo    ])
+(word dbg   (               --              ) [ 0x1 .System/debug deo    ])
 (word emit  (          Any8 --              ) [ .Console/write deo       ])
 (word nl    (               --              ) [ 0x0a emit                ])
 
@@ -76,6 +76,27 @@
 (word not   (          Bool -- Bool         ) [ (when [ nil ] [ t ])    ])
 (word or    (     Bool Bool -- Bool         ) [ (when [ drop t ]) ])
 (word and   (     Bool Bool -- Bool) [ (when [ (when [t] [ nil ]) ] [ drop nil ]) ])
+
+(test or_basic [
+	t   nil or (should eq T)
+	nil t   or (should eq T)
+	t   t   or (should eq T)
+	nil nil or (should eq nil)
+])
+
+(test and_basic [
+	t   nil and (should eq nil)
+	nil t   and (should eq nil)
+	t   t   and (should eq T)
+	nil nil and (should eq nil)
+])
+
+(test rot_sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
+(test rot_bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
+(test rot_bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
+
+(test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
+(test swap-sb  [ 0xffabs 0xba swap-sb (should eq 0xffabs) (should eq 0xba)      ])
 
 (word print8 (U8 --) [
 	dup 0= (when [ drop '0 emit return ])
@@ -445,20 +466,3 @@ alloc-print-chunks
 
 #unbox print nl
 #unbox print nl
-
-# TODO: unit tests
-
-#2s 1 0s rot-sbs      print nl print nl print nl nl
-#2 1s 0s rot-bss>     print nl print nl print nl nl
-#2 1s 0s rot-bss      print nl print nl print nl nl
-#0x1ceds 0xca over-sb print nl print nl print nl nl
-#0xffabs 0xba swap-sb print nl print nl
-
-#t   nil or  print-bool nl
-#nil t   or  print-bool nl
-#t   t   or  print-bool nl
-#nil nil or  print-bool nl
-#t   nil and print-bool nl
-#nil t   and print-bool nl
-#t   t   and print-bool nl
-#nil nil and print-bool nl

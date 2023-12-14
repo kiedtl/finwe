@@ -92,6 +92,11 @@ fn emitIMM16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
     try emit(buf, node, stack, k, false, .{ .Oraw = @intCast(imm & 0xFF) });
 }
 
+fn emitARG(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u8) CodegenError!void {
+    try emitIMM(buf, node, stack, false, .Olit, imm);
+    try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
+}
+
 fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, imm: u16) CodegenError!void {
     try emitIMM16(buf, node, stack, false, .Olit, imm);
     try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
@@ -108,6 +113,13 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .SizeOf => |sizeof| {
             const s = sizeof.resolved.size(program).?;
             try emitIMM(buf, node, WK_STACK, false, .Olit, s);
+        },
+        .Breakpoint => |brk| {
+            try emitIMM(buf, node, WK_STACK, false, .Olit, 0x00);
+            try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0e);
+            try emit(buf, node, WK_STACK, false, false, .Odeo);
+            program.breakpoints.append(brk) catch unreachable;
+            program.breakpoints.items[program.breakpoints.items.len - 1].romloc = buf.items.len;
         },
         .Cast => |c| {
             // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
@@ -152,12 +164,21 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .Mac => {},
         .Decl => |d| {
-            if (d.calls == 0)
+            if (d.calls == 0) {
+                //std.log.info("skipping {s}", .{d.name});
                 return;
-            // std.log.info("codegen: generating {s}_{}", .{ d.name, d.variant });
+            }
             node.romloc = buf.items.len;
+            // std.log.info("codegen: generating {s}_{} @\t\t{x}", .{
+            //     d.name,              d.variant,
+            //     node.romloc + 0x100,
+            // });
             try genNodeList(program, buf, d.body, ual);
-            try emit(buf, node, RT_STACK, false, true, .Ojmp);
+            if (d.is_test) {
+                try emit(buf, node, WK_STACK, false, false, .Ohalt);
+            } else {
+                try emit(buf, node, RT_STACK, false, true, .Ojmp);
+            }
         },
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .Quote => {
@@ -350,7 +371,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 if (mem.eql(u8, def.node.Decl.name, ua.ident) and
                     c.ctyp.Decl == def.node.Decl.variant)
                 {
-                    if (def.romloc == 0) {
+                    if (def.romloc == 0xFFFF) {
                         std.log.err("Def {s} (var {}) was never generated", .{
                             def.node.Decl.name, def.node.Decl.variant,
                         });
