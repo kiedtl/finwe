@@ -10,7 +10,7 @@ const common = @import("common.zig");
 const emitter = @import("emitter.zig");
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
-// const vmm = @import("vm.zig");
+const vmm = @import("vm.zig");
 
 const gpa = &@import("common.zig").gpa;
 
@@ -84,10 +84,11 @@ pub fn main() anyerror!void {
         std.log.info("--------------------------------------------------", .{});
 
         if (args.args.spitout != 0) {
-            try emitter.spitout(assembled.items);
+            const stdout = std.io.getStdOut().writer();
+            try emitter.spitout(stdout, assembled.items);
         } else {
-            // var vm = vmm.VM.init(assembled.items);
-            // try vm.execute();
+            var vm = vmm.VM.init(assembled.items);
+            vm.execute();
         }
     }
 

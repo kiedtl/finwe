@@ -22,6 +22,24 @@ pub fn build(b: *Builder) void {
         .optimize = optimize,
     });
     exe.addModule("clap", clap_module);
+
+    exe.linkLibC();
+    exe.addIncludePath(.{ .path = "third_party/uxn/src/" });
+    exe.addCSourceFiles(.{ .files = &[_][]const u8{
+        "third_party/uxn/src/uxn.c",
+        "third_party/uxn/src/uxnemu.c",
+        "third_party/uxn/src/devices/system.c",
+        "third_party/uxn/src/devices/console.c",
+        "third_party/uxn/src/devices/screen.c",
+        "third_party/uxn/src/devices/audio.c",
+        "third_party/uxn/src/devices/file.c",
+        "third_party/uxn/src/devices/controller.c",
+        "third_party/uxn/src/devices/mouse.c",
+        "third_party/uxn/src/devices/datetime.c",
+    } });
+    exe.addIncludePath(.{ .path = "/usr/include/SDL2/" });
+    exe.linkSystemLibrary("SDL2");
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

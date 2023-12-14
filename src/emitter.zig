@@ -3,8 +3,7 @@ const std = @import("std");
 const Ins = @import("common.zig").Ins;
 const RT_STACK = @import("common.zig").RT_STACK;
 
-pub fn spitout(program: []const Ins) !void {
-    var stdout = std.io.getStdOut().writer();
+pub fn spitout(writer: anytype, program: []const Ins) !void {
     for (program) |ins| {
         var byte = switch (ins.op) {
             .Oraw => |v| v,
@@ -49,6 +48,6 @@ pub fn spitout(program: []const Ins) !void {
             byte |= 0x40;
         if (ins.keep)
             byte |= 0x80;
-        try stdout.writeByte(byte);
+        try writer.writeByte(byte);
     }
 }

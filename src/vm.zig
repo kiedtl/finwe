@@ -5,6 +5,7 @@ const fmt = std.fmt;
 const meta = std.meta;
 const assert = std.debug.assert;
 
+const emitter = @import("emitter.zig");
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Ins = @import("common.zig").Ins;
@@ -17,205 +18,71 @@ const STACK_SZ = @import("common.zig").STACK_SZ;
 
 const gpa = &@import("common.zig").gpa;
 
-const VMError = error{
-    NeedImmediate,
-    StackUnderflow,
-    StackOverflow,
-    InvalidType,
-};
+const c = @cImport({
+    @cInclude("uxn.h");
+    @cInclude("devices/system.h");
+    @cInclude("devices/console.h");
+    @cInclude("devices/screen.h");
+    @cInclude("devices/audio.h");
+    @cInclude("devices/file.h");
+    @cInclude("devices/controller.h");
+    @cInclude("devices/mouse.h");
+    @cInclude("devices/datetime.h");
+});
+
+extern "c" fn set_zoom(z: u8, win: c_int) void;
+extern "c" fn emu_init() c_int;
+extern "c" fn emu_restart(u: [*c]c.Uxn, rom: [*c]u8, soft: c_int) void;
+extern "c" fn emu_redraw(u: [*c]c.Uxn) c_int;
+extern "c" fn emu_resize(width: c_int, height: c_int) c_int;
+extern "c" fn emu_end(uxn: [*c]c.Uxn) c_int;
 
 pub const VM = struct {
-    stacks: [2]StackType,
-    program: []const Ins,
-    pc: u16,
-    stopped: bool = false,
+    uxn: c.Uxn = undefined,
 
-    pub const StackType = StackBuffer(u8, STACK_SZ);
+    pub fn init(assembled: []const Ins) VM {
+        const ram = gpa.allocator().alloc(u8, 0x10000 * c.RAM_PAGES) catch
+            @panic("please uninstall Chrome before proceeding (OOM)");
+        @memset(ram, 0);
 
-    pub fn init(program: []const Ins) VM {
-        return .{
-            .stacks = [1]StackType{StackType.init(null)} ** 2,
-            .program = program,
-            .pc = 0,
-        };
+        var fbstream = std.io.fixedBufferStream(ram);
+        var writer = fbstream.writer();
+        writer.writeByteNTimes(0, 0x0100) catch unreachable;
+        emitter.spitout(writer, assembled) catch unreachable;
+
+        var self = mem.zeroes(VM);
+        self.uxn.ram = ram.ptr;
+
+        c.system_connect(0x0, c.SYSTEM_VERSION, c.SYSTEM_DEIMASK, c.SYSTEM_DEOMASK);
+        c.system_connect(0x1, c.CONSOLE_VERSION, c.CONSOLE_DEIMASK, c.CONSOLE_DEOMASK);
+        c.system_connect(0x2, c.SCREEN_VERSION, c.SCREEN_DEIMASK, c.SCREEN_DEOMASK);
+        c.system_connect(0x3, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+        c.system_connect(0x4, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+        c.system_connect(0x5, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+        c.system_connect(0x6, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+        c.system_connect(0x8, c.CONTROL_VERSION, c.CONTROL_DEIMASK, c.CONTROL_DEOMASK);
+        c.system_connect(0x9, c.MOUSE_VERSION, c.MOUSE_DEIMASK, c.MOUSE_DEOMASK);
+        c.system_connect(0xa, c.FILE_VERSION, c.FILE_DEIMASK, c.FILE_DEOMASK);
+        c.system_connect(0xb, c.FILE_VERSION, c.FILE_DEIMASK, c.FILE_DEOMASK);
+        c.system_connect(0xc, c.DATETIME_VERSION, c.DATETIME_DEIMASK, c.DATETIME_DEOMASK);
+
+        set_zoom(2, 0);
+        if (emu_init() == 0)
+            @panic("Emulator failed to init.");
+
+        return self;
     }
 
-    pub fn execute(self: *VM) VMError!void {
-        assert(!self.stopped);
-        while (!self.stopped and self.pc < self.program.len) {
-            const ins = self.program[self.pc];
-            if (try self.executeIns(ins))
-                self.pc += 1;
+    pub fn execute(self: *VM) void {
+        // TODO: argument handling for roms that need it
+        //self.uxn.dev[0x17] = argc - i;
+
+        var pc: c_ushort = c.PAGE_PROGRAM;
+        while (true) {
+            pc = c.uxn_eval_once(&self.uxn, pc);
+            if (pc <= 1) break;
         }
-    }
 
-    pub fn imm(self: *VM) VMError!u8 {
-        self.pc += 1;
-        return switch (self.program[self.pc].op) {
-            .Oraw => |v| v,
-            else => error.NeedImmediate,
-        };
-    }
-
-    pub fn executeIns(self: *VM, ins: Ins) VMError!bool {
-        if (ins.keep)
-            @panic("keep unimplemented");
-        if (ins.short)
-            @panic("short unimplemented");
-        //std.log.info("pc: {}\tins: {}", .{ self.pc, ins });
-        switch (ins.op) {
-            .Oraw => unreachable,
-            .Olit => try self.push(ins.stack, try self.imm()),
-            .Osr => |f| {
-                // TODO 16
-                //try self.push(ins.stack, self.pc + 1);
-                self.pc = f orelse try self.pop(ins.stack);
-                return false;
-            },
-            // .Oj => |j| {
-            //     self.pc = j orelse try self.pop(ins.stack);
-            //     return false;
-            // },
-            .Ojcn => {
-                // TODO: actually make it conditional
-                self.pc = @as(u16, @bitCast(@as(i16, @bitCast(self.pc)) +
-                    @as(i16, @bitCast(@as(u16, @intCast(try self.pop(ins.stack)))))));
-                return false;
-            },
-            .Ozj => |j| {
-                const addr = j orelse try self.pop(ins.stack);
-                if ((try self.pop(ins.stack)) != 0) {
-                    self.pc = addr;
-                    return false;
-                }
-            },
-            .Ohalt => self.stopped = true,
-            .Onac => |f| try (findBuiltin(f).?.func)(self, ins.stack),
-            // .Opick => |i| {
-            //     const ind = i orelse try self.pop(ins.stack);
-            //     const len = self.stacks[ins.stack].len;
-            //     if (ind >= len) {
-            //         return error.StackUnderflow;
-            //     }
-            //     try self.push(ins.stack, self.stacks[ins.stack].data[len - ind - 1]);
-            // },
-            .Odup => {
-                const len = self.stacks[ins.stack].len;
-                try self.push(ins.stack, self.stacks[ins.stack].data[len - 1]);
-            },
-            .Oroll => |i| {
-                const ind = i orelse try self.pop(ins.stack);
-                const len = self.stacks[ins.stack].len;
-                if (ind >= len) {
-                    return error.StackUnderflow;
-                }
-                const item = self.stacks[ins.stack].orderedRemove(len - ind - 1) catch unreachable;
-                try self.push(ins.stack, item);
-            },
-            .Odrop => |i| {
-                const count = i orelse try self.pop(ins.stack);
-                const len = self.stacks[ins.stack].len;
-                self.stacks[ins.stack].resizeTo(len - count);
-            },
-            .Oeq => {
-                const b = try self.pop(ins.stack);
-                const a = try self.pop(ins.stack);
-                try self.push(ins.stack, if (a == b) @as(u8, 1) else 0);
-            },
-            .Oneq => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, if (a != b) @as(u8, 1) else 0);
-            },
-            .Olt => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, if (a < b) @as(u8, 1) else 0);
-            },
-            .Ogt => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, if (a > b) @as(u8, 1) else 0);
-            },
-            .Odmod => {
-                const dvs = try self.pop(ins.stack);
-                const dvd = try self.pop(ins.stack);
-                try self.push(ins.stack, dvd % dvs);
-                try self.push(ins.stack, dvd / dvs);
-            },
-            .Omul => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, a * b);
-            },
-            .Oadd => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, a + b);
-            },
-            .Osub => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, b - a);
-            },
-            .Oeor => {
-                const a = try self.pop(ins.stack);
-                const b = try self.pop(ins.stack);
-                try self.push(ins.stack, a ^ b);
-            },
-            .Ostash => {
-                const src = ins.stack;
-                const dst = (ins.stack + 1) % 2;
-                const v = try self.pop(src);
-                try self.push(dst, v);
-            },
-            else => @panic("unimplemented"),
-        }
-        return true;
-    }
-
-    pub fn pop(self: *VM, stk: usize) VMError!u8 {
-        if (self.stacks[stk].len == 0) {
-            return error.StackUnderflow;
-        }
-        return self.stacks[stk].pop() catch unreachable;
-    }
-
-    pub fn push(self: *VM, stk: usize, value: u8) VMError!void {
-        // XXX: not bothering matching on error since it can only return .NoSpaceLeft
-        self.stacks[stk].append(value) catch return error.StackOverflow;
+        _ = emu_end(&self.uxn);
     }
 };
-
-// Builtins
-//
-// (This is temporary)
-//
-// {{{
-
-pub const Builtin = struct {
-    name: []const u8,
-    func: fn (vm: *VM, stack: usize) VMError!void,
-};
-
-pub const BUILTINS = [_]Builtin{
-    Builtin{
-        .name = "print-stack",
-        .func = struct {
-            pub fn f(vm: *VM, stk: usize) VMError!void {
-                for (vm.stacks[stk].constSlice(), 0..) |item, i| {
-                    std.log.info("{}:\t{}", .{ i, item });
-                }
-            }
-        }.f,
-    },
-};
-
-pub fn findBuiltin(name: []const u8) ?Builtin {
-    return for (&BUILTINS) |builtin| {
-        if (mem.eql(u8, builtin.name, name))
-            break builtin;
-    } else null;
-}
-
-// }}}

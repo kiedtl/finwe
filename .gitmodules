@@ -1,3 +1,7 @@
 [submodule "third_party/zig-clap"]
 	path = third_party/zig-clap
 	url = https://github.com/Hejsil/zig-clap.git
+[submodule "third_party/uxn"]
+	path = third_party/uxn
+	url = https://github.com/kiedtl/bur_uxn
+	branch = for_bur
