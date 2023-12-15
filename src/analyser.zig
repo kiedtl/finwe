@@ -138,29 +138,51 @@ pub const BlockAnalysis = struct {
     }
 
     pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        if (comptime !mem.eql(u8, f, "")) {
+        var short = false;
+
+        if (comptime mem.eql(u8, f, "s")) {
+            short = true;
+        } else if (comptime !mem.eql(u8, f, "")) {
             @compileError("Unknown format string: '" ++ f ++ "'");
         }
 
-        try writer.print("\n    args:   ", .{});
-        for (self.args.constSlice()) |i| try writer.print("{}, ", .{i});
-        try writer.print("\n    stack:  ", .{});
-        for (self.stack.constSlice()) |i| try writer.print("{}, ", .{i});
-        try writer.print("\n    rargs:  ", .{});
-        for (self.rargs.constSlice()) |i| try writer.print("{}, ", .{i});
-        try writer.print("\n    rstack: ", .{});
-        for (self.rstack.constSlice()) |i| try writer.print("{}, ", .{i});
+        if (!short) {
+            try writer.print("\n    args:   ", .{});
+            for (self.args.constSlice()) |i| try writer.print("{}, ", .{i});
+            try writer.print("\n    stack:  ", .{});
+            for (self.stack.constSlice()) |i| try writer.print("{}, ", .{i});
+            try writer.print("\n    rargs:  ", .{});
+            for (self.rargs.constSlice()) |i| try writer.print("{}, ", .{i});
+            try writer.print("\n    rstack: ", .{});
+            for (self.rstack.constSlice()) |i| try writer.print("{}, ", .{i});
+        } else {
+            try writer.print("(", .{});
+            for (self.args.constSlice()) |i| try writer.print("{} ", .{i});
+            try writer.print("--", .{});
+            for (self.stack.constSlice()) |i| try writer.print(" {}", .{i});
+            try writer.print(")", .{});
+        }
     }
 
-    pub fn mergeInto(self: @This(), b: *@This()) void {
-        // std.log.info("MERGE {}", .{self});
-        // std.log.info("INTO  {}", .{b});
+    pub fn mergeInto(self: @This(), b: *@This(), p: *Program, srcloc: common.Srcloc) !void {
+        //std.log.info("MERGE {}", .{self});
+        //std.log.info("INTO ({},{}) {}", .{ srcloc.line, srcloc.column, b });
 
         if (b.stack.len < self.args.len)
             b.args.insertSlice(
                 0,
                 self.args.constSlice()[0 .. self.args.len - b.stack.len],
             ) catch unreachable;
+        if (b.stack.len >= self.args.len)
+            for (b.stack.slice()[b.stack.len - self.args.len ..], 0..) |stkitem, i| {
+                const arg = self.args.constSlice()[i];
+                if (!arg.doesInclude(stkitem, p)) {
+                    std.log.err("Type {} does not match {}", .{
+                        TypeFmt.from(arg, p), TypeFmt.from(stkitem, p),
+                    });
+                    return p.aerr(error.TypeNotMatching, srcloc);
+                }
+            };
         b.stack.resizeTo(b.stack.len -| self.args.len);
         b.stack.appendSlice(self.stack.constSlice()) catch unreachable;
 
@@ -169,6 +191,14 @@ pub const BlockAnalysis = struct {
                 0,
                 self.rargs.constSlice()[0 .. self.rargs.len - b.rstack.len],
             ) catch unreachable;
+        if (b.rstack.len >= self.rargs.len)
+            for (b.rstack.slice()[b.rstack.len - self.rargs.len ..], 0..) |stkitem, i| {
+                const arg = self.rargs.constSlice()[i];
+                if (!arg.doesInclude(stkitem, p)) {
+                    std.log.err("[RT] Type {} does not match {}", .{ arg, stkitem });
+                    return p.aerr(error.TypeNotMatching, srcloc);
+                }
+            };
         b.rstack.resizeTo(b.rstack.len -| self.rargs.len);
         b.rstack.appendSlice(self.rstack.constSlice()) catch unreachable;
 
@@ -217,28 +247,28 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
 
     switch (i.op) {
         .Orot => {
-            a.args.append(a1 orelse any) catch unreachable;
-            a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a3 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a2 orelse any) catch unreachable;
             a.stack.append(a3 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Oovr => {
-            a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
             a.stack.append(a2 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Oswp => {
-            a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
             a.stack.append(a2 orelse any) catch unreachable;
         },
         .Odeo => {
-            a.args.append(if (i.short) .U16 else .U8) catch unreachable;
+            a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
             a.args.append(.AnyDev) catch unreachable; // TODO: device
         },
         .Oinc, .Odup => {
@@ -246,19 +276,19 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Onip => {
-            a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Odrop => a.args.append(a1 orelse any) catch unreachable,
         .Osft, .Oand, .Oora, .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
-            a.args.append(a1 orelse any) catch unreachable;
+            a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Oeq, .Oneq, .Olt, .Ogt => {
-            a.args.append(a1 orelse any) catch unreachable;
             a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(.Bool) catch unreachable;
         },
         .Osth => {
@@ -272,8 +302,8 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             ) catch unreachable;
         },
         .Osta => {
-            a.args.append(a1 orelse .AnyPtr16) catch unreachable;
-            a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(a2 orelse .AnyPtr16) catch unreachable;
+            a.args.append(a1 orelse any) catch unreachable;
         },
         .Ohalt => {},
         else => {
@@ -339,7 +369,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
-                (try w.arity.resolveTypeRefs(parent.arity, program)).mergeInto(a);
+                try (try w.arity.resolveTypeRefs(parent.arity, program)).mergeInto(a, program, node.srcloc);
             },
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
@@ -361,29 +391,30 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
 
                         if (a.isGeneric(program) or !d_arity.isGeneric(program)) {
-                            (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a);
+                            try (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a, program, node.srcloc);
                             if (!d_arity.isGeneric(program))
                                 cdecl.calls += 1;
                         } else if (d_arity.isGeneric(program)) {
                             const ungenericified = try d_arity.conformGenericTo(a, node, program);
                             assert(!ungenericified.isGeneric(program));
-                            const var_ind: ?usize = for (cdecl.variations.slice(), 0..) |an, i| {
-                                if (ungenericified.eqExact(an)) break i;
+                            const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
+                                if (ungenericified.eqExact(an.node.Decl.arity.?))
+                                    break i;
                             } else null;
-                            if (var_ind == null)
-                                cdecl.variations.append(ungenericified) catch unreachable;
-                            c.ctyp.Decl = (var_ind orelse cdecl.variations.len - 1) + 1;
+
+                            c.ctyp.Decl = (var_ind orelse cdecl.variations.items.len) + 1;
 
                             // if (mem.eql(u8, parent.name, "_Start"))
                             //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
-                            ungenericified.mergeInto(a);
+                            try ungenericified.mergeInto(a, program, node.srcloc);
 
                             if (var_ind == null) {
                                 const newdef_ = d.deepclone(null, program);
                                 const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
                                 program.defs.append(newdef) catch unreachable;
 
-                                newdef.node.Decl.variant = cdecl.variations.len;
+                                cdecl.variations.append(newdef) catch unreachable;
+                                newdef.node.Decl.variant = cdecl.variations.items.len;
                                 newdef.node.Decl.arity = ungenericified;
 
                                 var ab = BlockAnalysis{};
@@ -404,7 +435,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
                             unreachable;
                         }
-                        cdecl.analysis.mergeInto(a);
+                        try cdecl.analysis.mergeInto(a, program, node.srcloc);
                         cdecl.calls += 1;
                     }
                 },
@@ -417,7 +448,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         _ = try analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis);
                         m.node.Mac.is_analysed = true;
                     }
-                    m.node.Mac.analysis.mergeInto(a);
+                    try m.node.Mac.analysis.mergeInto(a, program, node.srcloc);
                 },
                 .Unchecked => unreachable, // program.postProcess missed something
             },
@@ -455,7 +486,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .When => |w| {
                 var whena = BlockAnalysis{};
                 whena.args.append(.Bool) catch unreachable;
-                whena.mergeInto(a);
+                try whena.mergeInto(a, program, node.srcloc);
 
                 var ya = a.*;
                 const ya_r = (try analyseBlock(program, parent, w.yup, &ya)).early_return;
@@ -492,7 +523,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Asm => |*i| {
                 // std.log.info("merging asm into main", .{});
-                analyseAsm(i, a, program).mergeInto(a);
+                try analyseAsm(i, a, program).mergeInto(a, program, node.srcloc);
             },
             .Value => |v| switch (v.typ) {
                 .StaticPtr => |ind| a.stack.append(
@@ -627,7 +658,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 var casta = BlockAnalysis{};
                 casta.args.append(into) catch unreachable;
                 casta.stack.append(c.to) catch unreachable;
-                casta.mergeInto(a);
+                try casta.mergeInto(a, program, node.srcloc);
 
                 if (!into.isGeneric(program)) c.of = into;
 

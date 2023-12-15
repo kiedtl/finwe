@@ -327,6 +327,7 @@ pub const Parser = struct {
 
                     break :b ASTNode{ .node = .{ .Decl = .{
                         .name = name,
+                        .variations = ASTNodePtrList.init(self.alloc),
                         .arity = arity,
                         .body = body,
                     } }, .srcloc = ast[0].location };
@@ -345,6 +346,7 @@ pub const Parser = struct {
                         .name = name,
                         .body = body,
                         .is_test = true,
+                        .variations = undefined,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -728,7 +730,11 @@ pub const Parser = struct {
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = .{} });
         try self.program.ast.append(ASTNode{
-            .node = .{ .Decl = .{ .name = "_Start", .body = body } },
+            .node = .{ .Decl = .{
+                .name = "_Start",
+                .body = body,
+                .variations = ASTNodePtrList.init(self.alloc),
+            } },
             .srcloc = .{},
         });
         if (!self.is_testing)

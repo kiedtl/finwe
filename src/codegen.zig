@@ -182,9 +182,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 return;
             }
             node.romloc = buf.items.len;
-            // std.log.info("codegen: generating {s}_{} @\t\t{x}", .{
+            // const a = d.arity orelse @import("analyser.zig").BlockAnalysis{};
+            // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
             //     d.name,              d.variant,
-            //     node.romloc + 0x100,
+            //     node.romloc + 0x100, a,
             // });
             try genNodeList(program, buf, d.body, ual);
             if (d.is_test) {

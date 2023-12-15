@@ -704,7 +704,7 @@ pub const ASTNode = struct {
         name: []const u8,
         arity: ?analyser.BlockAnalysis = null,
         analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
-        variations: StackBuffer(analyser.BlockAnalysis, 8) = StackBuffer(analyser.BlockAnalysis, 8).init(null),
+        variations: ASTNodePtrList,
         body: ASTNodeList,
         variant: usize = 0,
         calls: usize = 0,
