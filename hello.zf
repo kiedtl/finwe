@@ -91,11 +91,59 @@
 	nil nil and (should eq nil)
 ])
 
-(test rot_sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
-(test rot_bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
-(test rot_bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
+(word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
+	# sa0 sa1 bt sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  # sa0 sa1 bt | sb0 sb1
+		(asm "" .Op/Orot)   # sa1 bt sa0 | sb0 sb1
+		(asm "" .Op/Orot)   # bt sa0 sa1 | sb0 sb1
+		(asm "rs" .Op/Osth) # bt sb0 sb1 sa0 sa1 
+		(asm "s" .Op/Oswp)  # bt sa0 sa1 sb0 sb1 
+	])
+])
+
+(word rot-bss (Any8 Any16 Any16 -- $1 $0 $2) [
+	# bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  # bt sa0 sa1 | sb0 sb1
+		(asm "" .Op/Orot)   # sa0 sa1 bt | sb0 sb1
+		(asm "rs" .Op/Osth) # sa0 sa1 bt sb0 sb1
+		(asm "" .Op/Orot)   # sa0 sa1 sb0 sb1 bt
+	])
+])
+
+(word rot-bss> (Any8 Any16 Any16 -- $0 $2 $1) [
+	# bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $0 $2 $1) [
+		(asm "s" .Op/Oswp)  # bt sb0 sb1 sa0 sa1
+		(asm "s" .Op/Osth)  # bt sb0 sb1 | sa0 sa1
+		(asm "" .Op/Orot)   # sb0 sb1 bt | sa0 sa1
+		(asm "rs" .Op/Osth) # sb0 sb1 bt sa0 sa1
+	])
+])
+
+(test rot-sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
+(test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
+(test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
+
+(word over-sb (Any16 Any8 -- $1 $0 $1) [
+	(wild ($1 $0 -- $1 $0 $1) [
+		0
+		(asm "s" .Op/Oovr)
+		(asm "" .Op/Orot)
+		(asm "" .Op/Odrop)
+	])
+])
 
 (test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
+
+(word swap-sb (Any16 Any8 -- $0 $1) [
+	(wild ($1 $0 -- $0 $1) [
+		(asm "" .Op/Orot)
+		(asm "" .Op/Orot)
+	])
+])
+
 (test swap-sb  [ 0xffabs 0xba swap-sb (should eq 0xffabs) (should eq 0xba)      ])
 
 (word print8 (U8 --) [
@@ -224,53 +272,6 @@
 (word -> (AnyPtr16 -- (Child $0)) [ lda ])
 
 (word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
-
-(word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
-	# sa0 sa1 bt sb0 sb1
-	(wild ($2 $1 $0 -- $1 $0 $2) [
-		(asm "s" .Op/Osth)  # sa0 sa1 bt | sb0 sb1
-		(asm "" .Op/Orot)   # sa1 bt sa0 | sb0 sb1
-		(asm "" .Op/Orot)   # bt sa0 sa1 | sb0 sb1
-		(asm "rs" .Op/Osth) # bt sb0 sb1 sa0 sa1 
-		(asm "s" .Op/Oswp)  # bt sa0 sa1 sb0 sb1 
-	])
-])
-
-(word rot-bss (Any8 Any16 Any16 -- $1 $0 $2) [
-	# bt sa0 sa1 sb0 sb1
-	(wild ($2 $1 $0 -- $1 $0 $2) [
-		(asm "s" .Op/Osth)  # bt sa0 sa1 | sb0 sb1
-		(asm "" .Op/Orot)   # sa0 sa1 bt | sb0 sb1
-		(asm "rs" .Op/Osth) # sa0 sa1 bt sb0 sb1
-		(asm "" .Op/Orot)   # sa0 sa1 sb0 sb1 bt
-	])
-])
-
-(word rot-bss> (Any8 Any16 Any16 -- $0 $2 $1) [
-	# bt sa0 sa1 sb0 sb1
-	(wild ($2 $1 $0 -- $0 $2 $1) [
-		(asm "s" .Op/Oswp)  # bt sb0 sb1 sa0 sa1
-		(asm "s" .Op/Osth)  # bt sb0 sb1 | sa0 sa1
-		(asm "" .Op/Orot)   # sb0 sb1 bt | sa0 sa1
-		(asm "rs" .Op/Osth) # sb0 sb1 bt sa0 sa1
-	])
-])
-
-(word over-sb (Any16 Any8 -- $1 $0 $1) [
-	(wild ($1 $0 -- $1 $0 $1) [
-		0
-		(asm "s" .Op/Oovr)
-		(asm "" .Op/Orot)
-		(asm "" .Op/Odrop)
-	])
-])
-
-(word swap-sb (Any16 Any8 -- $0 $1) [
-	(wild ($1 $0 -- $0 $1) [
-		(asm "" .Op/Orot)
-		(asm "" .Op/Orot)
-	])
-])
 
 (word alloc-init ( -- ) [
 	0s (as (Ptr16 ChunkHeader))
