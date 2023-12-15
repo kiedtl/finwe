@@ -20,6 +20,7 @@ pub const Error = error{
     CannotGetFieldMultiPtr,
     CannotGetField,
     CannotGetChild,
+    StructNotForStack,
 };
 
 pub const BlockAnalysis = struct {
@@ -508,6 +509,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .VDeref => |v| {
                 const t = parent.locals.slice()[v.lind.?].rtyp;
+                if (t.size(program)) |sz| if (sz > 2)
+                    return program.aerr(error.StructNotForStack, node.srcloc);
                 a.stack.append(t) catch unreachable;
             },
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
@@ -516,37 +519,63 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // Error: Need to know type at this point
                 //  Hint: Try explicit cast.
                 const b = a.stack.last() orelse @panic("nuh uh");
-                switch (b) {
+                const tstruct = switch (b) {
                     // TODO: Ptr8 (it's easy, just change ptrize16 to be more generic)
-                    .Ptr16 => |ptr| switch (program.ztype(ptr.typ)) {
-                        .Struct => |s| {
-                            if (ptr.ind > 1) {
-                                return program.aerr(error.CannotGetFieldMultiPtr, node.srcloc);
-                            }
-                            const tstruct = program.types.items[s].def.Struct;
-                            const i = for (tstruct.fields.items, 0..) |f, i| {
-                                if (mem.eql(u8, f.name, gch.name)) break i;
-                            } else @panic("no such field");
-                            gch.offset = tstruct.fields.items[i].offset;
-                            gch.is_short = b == .Ptr16;
-                            _ = a.stack.pop() catch unreachable;
-                            a.stack.append(tstruct.fields.items[i].type.ptrize16(program)) catch unreachable;
-                        },
-                        else => |typ| {
-                            std.log.info("cannot get child from {}", .{
-                                TypeFmt.from(typ, program),
-                            });
-                            return program.aerr(error.CannotGetField, node.srcloc);
-                        },
+                    .Ptr16 => |ptr| b: {
+                        switch (program.ztype(ptr.typ)) {
+                            .Struct => |s| {
+                                if (ptr.ind > 1) {
+                                    return program.aerr(error.CannotGetFieldMultiPtr, node.srcloc);
+                                }
+                                break :b &program.types.items[s].def.Struct;
+                            },
+                            else => |typ| {
+                                std.log.info("cannot get child from {}", .{
+                                    TypeFmt.from(typ, program),
+                                });
+                                return program.aerr(error.CannotGetField, node.srcloc);
+                            },
+                        }
                     },
-                    .Struct => {
-                        std.log.info("need protection (ptr)", .{});
-                        return program.aerr(error.CannotGetField, node.srcloc);
+                    .Struct => |s| b: {
+                        const tstruct = &program.types.items[s].def.Struct;
+                        if (b.size(program)) |sz| if (sz > 2)
+                            @panic("/dev/sda is on fire"); // How did this happen
+                        //std.log.info("need protection (ptr)", .{});
+                        //return program.aerr(error.CannotGetField, node.srcloc);
+                        break :b tstruct;
                     },
                     else => {
-                        std.log.info("{} doesn't have fields", .{TypeFmt.from(b, program)});
+                        std.log.info("field from {}? wat", .{TypeFmt.from(b, program)});
                         return program.aerr(error.CannotGetField, node.srcloc);
                     },
+                };
+                const i = for (tstruct.fields.items, 0..) |f, i| {
+                    if (mem.eql(u8, f.name, gch.name)) break i;
+                } else @panic("no such field");
+                _ = a.stack.pop() catch unreachable;
+                if (b == .Struct) {
+                    if (b.isGeneric(program)) {
+                        gch.kind = .unresolved;
+                    } else {
+                        // TODO: zero-bit fields
+                        if (tstruct.fields.items.len == 2) {
+                            assert(tstruct.fields.items[0].type.bits(program).? == 8);
+                            assert(tstruct.fields.items[1].type.bits(program).? == 8);
+                            gch.kind = .{ .stk_two_b = .{ .ind = @intCast(i) } };
+                        } else if (tstruct.fields.items.len == 1) {
+                            const bits = tstruct.fields.items[i].type.bits(program).?;
+                            gch.kind = if (bits == 16) .stk_one_s else .stk_one_b;
+                        } else unreachable;
+                    }
+                    a.stack.append(tstruct.fields.items[i].type) catch unreachable;
+                } else {
+                    const generic = program.ztype(b.Ptr16.typ).isGeneric(program);
+                    gch.kind = if (generic) .unresolved else .{ .mem = .{
+                        .offset = tstruct.fields.items[i].offset,
+                        .is_short = b == .Ptr16,
+                    } };
+                    a.stack.append(tstruct.fields.items[i].type.ptrize16(program)) catch unreachable;
                 }
             },
             .Breakpoint => |brk| {
@@ -564,9 +593,28 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     },
                 }
             },
-            .SizeOf => |*sizeof| {
-                a.stack.append(.U8) catch unreachable;
-                sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
+            .Builtin => |*builtin| switch (builtin.type) {
+                .Make => |*make| {
+                    make.resolved = try make.original.resolveTypeRef(parent.arity, program);
+                    var b = BlockAnalysis{};
+                    if (make.resolved.size(program)) |sz| {
+                        if (sz > 2) {
+                            return program.aerr(error.StructNotForStack, node.srcloc);
+                        }
+                    }
+                    if (make.resolved != .Struct) {
+                        @panic("Type must have resolved to struct at this point");
+                    }
+                    const s = program.types.items[make.resolved.Struct];
+                    for (s.def.Struct.fields.items) |field|
+                        b.args.append(field.type) catch unreachable;
+                    b.stack.append(make.resolved) catch unreachable;
+                    try b.mergeInto(a, program, node.srcloc);
+                },
+                .SizeOf => |*sizeof| {
+                    a.stack.append(.U8) catch unreachable;
+                    sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
+                },
             },
             .Cast => |*c| {
                 if (c.ref) |r| {

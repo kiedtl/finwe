@@ -110,9 +110,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .Debug => {},
         .Here => try emitUA(buf, ual, "", node),
-        .SizeOf => |sizeof| {
-            const s = sizeof.resolved.size(program).?;
-            try emitIMM(buf, node, WK_STACK, false, .Olit, s);
+        .Builtin => |builtin| switch (builtin.type) {
+            .Make => {},
+            .SizeOf => |sizeof| {
+                const s = sizeof.resolved.size(program).?;
+                try emitIMM(buf, node, WK_STACK, false, .Olit, s);
+            },
         },
         .Breakpoint => |brk| {
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x00);
@@ -135,13 +138,23 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .None => {},
-        .GetChild => |gch| {
-            if (gch.is_short) {
-                try emitIMM16(buf, node, WK_STACK, false, .Olit, gch.offset);
-            } else {
-                try emitIMM(buf, node, WK_STACK, false, .Olit, gch.offset);
-            }
-            try emit(buf, null, 0, false, gch.is_short, .Oadd);
+        .GetChild => |gch| switch (gch.kind) {
+            .unresolved => unreachable,
+            .stk_one_s => {},
+            .stk_two_b => |gch2b| if (gch2b.ind == 0) {
+                try emit(buf, null, 0, false, false, .Onip);
+            } else if (gch2b.ind == 1) {
+                try emit(buf, null, 0, false, false, .Odrop);
+            },
+            .stk_one_b => {},
+            .mem => |gchmem| {
+                if (gchmem.is_short) {
+                    try emitIMM16(buf, node, WK_STACK, false, .Olit, gchmem.offset);
+                } else {
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, gchmem.offset);
+                }
+                try emit(buf, null, 0, false, gchmem.is_short, .Oadd);
+            },
         },
         .VDecl => {},
         .VRef => |v| try emitUA(buf, ual, v.name, node),

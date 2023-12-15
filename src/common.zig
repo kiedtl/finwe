@@ -450,7 +450,11 @@ pub const TypeInfo = union(enum) {
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .AnyOf, .Struct => null, // TODO: 16/8 if allowable
+            .AnyOf => null,
+            .Struct => b: {
+                const sz = self.size(program) orelse return null;
+                break :b if (sz <= 2) @as(u5, @intCast(sz)) * 8 else null;
+            },
             // .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
             .Unresolved, .Expr, .Quote, .TypeRef => null,
             .AmbigEnumLit => unreachable,
@@ -533,7 +537,7 @@ pub const ASTNode = struct {
         GetChild: GetChild,
         TypeDef: TypeDef,
         Here,
-        SizeOf: SizeOf,
+        Builtin: Builtin,
         Breakpoint: Breakpoint,
         Debug,
         Return,
@@ -566,9 +570,21 @@ pub const ASTNode = struct {
         try writer.print("{}", .{self.node});
     }
 
-    pub const SizeOf = struct {
-        original: TypeInfo,
-        resolved: TypeInfo,
+    pub const Builtin = struct {
+        type: union(enum) {
+            SizeOf: SizeOf,
+            Make: Make,
+        },
+
+        pub const Make = struct {
+            original: TypeInfo,
+            resolved: TypeInfo,
+        };
+
+        pub const SizeOf = struct {
+            original: TypeInfo,
+            resolved: TypeInfo,
+        };
     };
 
     pub const TypeDef = struct {
@@ -599,8 +615,16 @@ pub const ASTNode = struct {
 
     pub const GetChild = struct {
         name: []const u8,
-        is_short: bool = true,
-        offset: u8 = 0,
+        kind: union(enum) {
+            unresolved,
+            stk_one_s,
+            stk_two_b: struct { ind: u1 },
+            stk_one_b,
+            mem: struct {
+                offset: u8,
+                is_short: bool,
+            },
+        } = .unresolved,
     };
 
     pub const VDecl = struct {
@@ -740,13 +764,16 @@ pub const ASTNode = struct {
                     .While => |u| new.Loop.loop.While.cond = _deepcloneASTList(u.cond, parent, program),
                 }
             },
-            .Decl => new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program),
+            .Decl => {
+                new.Decl.variations = ASTNodePtrList.init(gpa.allocator());
+                new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program);
+            },
             .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body, parent, program),
             .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .SizeOf, .Breakpoint, .Here, .Return => {},
+            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
         }
 
         return .{
@@ -838,7 +865,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .Breakpoint, .SizeOf, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),

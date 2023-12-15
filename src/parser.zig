@@ -402,13 +402,20 @@ pub const Parser = struct {
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "here")) {
                     break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "make")) {
+                    try self.validateListLength(ast, 2);
+                    const typ = try self.parseType(&ast[1]);
+                    break :b ASTNode{ .node = .{ .Builtin = .{ .type = .{ .Make = .{
+                        .original = typ,
+                        .resolved = .Any,
+                    } } } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "sizeof")) {
                     try self.validateListLength(ast, 2);
                     const typ = try self.parseType(&ast[1]);
-                    break :b ASTNode{ .node = .{ .SizeOf = .{
+                    break :b ASTNode{ .node = .{ .Builtin = .{ .type = .{ .SizeOf = .{
                         .original = typ,
                         .resolved = .Any,
-                    } }, .srcloc = ast[0].location };
+                    } } } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "should")) {
                     const t = try self.expectNode(.Keyword, &ast[1]);
                     const v = try self.parseValue(&ast[2]);
