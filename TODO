@@ -11,11 +11,17 @@ x If statement
 - Structs
 - HERE
 - Malloc
+  x Basic + free + realloc
+  x Defrag
+  - Opaque ("void") pointers
+  - Maybe0/MaybeFF
+- Test suite
+- Vec
+  - Unbounded
 - Arity conformity checks
 - Imports
 - Enums
 - Shadowcaster
-- Test suite
 - Refactoring
   - Scopes
   - Explicit main function
