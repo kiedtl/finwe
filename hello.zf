@@ -50,7 +50,8 @@
 (word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
 (word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)      ])
 
-(word deo   (    Any AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
+(word dei   (        AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
+(word deo   ((AnySz $0) AnyDev --           ) [ (asm "g" .Op/Odeo)       ])
 (word dbg   (               --              ) [ 0x1 .System/debug deo    ])
 (word emit  (          Any8 --              ) [ .Console/write deo       ])
 (word nl    (               --              ) [ 0x0a emit                ])
@@ -66,27 +67,28 @@
 #(word rot>  (Any Any Any -- $0 $2 $1    ) [ rot rot                 ])
 
 (word rot   ((AnySz $0) (AnySz $0) Any -- $1 $0 $2) [ (asm "g" .Op/Orot)      ])
-(word rot>  (    $0  $0 Any -- $0 $0 $0     ) [ rot rot                 ])
-(word tuck  (       Any Any -- $0 $1 $0     ) [ swap over               ])
-(word tuck> (       Any Any -- $1 $1 $0     ) [ over swap               ])
+(word rot>  (    $0  $0 Any -- $0 $0 $0     ) [ rot rot                  ])
+(word tuck  (       Any Any -- $0 $1 $0     ) [ swap over                ])
+(word tuck> (       Any Any -- $1 $1 $0     ) [ over swap                ])
 
-(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeq)       ])
-(word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)      ])
-(word nil?  (          Bool -- Bool         ) [ nil =                   ])
-(word T?    (          Bool -- Bool         ) [ T =                     ])
-(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)       ])
-(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)       ])
-(word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)      ])
-(word 1+    (           Any -- $0           ) [ (asm "g" .Op/Oinc)      ])
-(word -     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Osub)      ])
-(word /     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Odiv)      ])
-(word mod   ((AnySz $0) Any -- $0           ) [ 2dup / * -              ])
-(word /mod  ((AnySz $0) Any -- $0 $0        ) [ 2dup / rot> mod         ])
-(word *     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Omul)      ])
-(word 0=    (           Any -- Bool         ) [ 0 (as $0) =             ])
-(word 0<>   (           Any -- Bool         ) [ 0 (as $0) <>            ])
-(word 0<    (           Any -- Bool         ) [ 0 (as $0) <             ])
-(word 0>    (           Any -- Bool         ) [ 0 (as $0) >             ])
+(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeq)        ])
+(word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)       ])
+(word nil?  (          Bool -- Bool         ) [ nil =                    ])
+(word T?    (          Bool -- Bool         ) [ T =                      ])
+(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)        ])
+(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)        ])
+(word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)       ])
+(word 1+    (           Any -- $0           ) [ (asm "g" .Op/Oinc)       ])
+(word 1-    (           Any -- $0           ) [ 1 -                      ])
+(word -     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Osub)       ])
+(word /     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Odiv)       ])
+(word mod   ((AnySz $0) Any -- $0           ) [ 2dup / * -               ])
+(word /mod  ((AnySz $0) Any -- $0 $0        ) [ 2dup / rot> mod          ])
+(word *     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Omul)       ])
+(word 0=    (           Any -- Bool         ) [ 0 (as $0) =              ])
+(word 0<>   (           Any -- Bool         ) [ 0 (as $0) <>             ])
+(word 0<    (           Any -- Bool         ) [ 0 (as $0) <              ])
+(word 0>    (           Any -- Bool         ) [ 0 (as $0) >              ])
 
 # TODO: this is stupid... needs to be optimized
 # (Probably bake or/and into language to ensure short-circuiting)
@@ -228,6 +230,31 @@
 (word print-dec (Any --) [
 	10 (as $0) print-base
 ])
+
+(struct Maybe0 (Any) [value $0])
+(word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
+	:value
+	dup 0= (when [ "Unwrapped 0 value" panic ])
+])
+
+(word orelse ((Of Maybe0 U8) (FieldType $1 value) -- (FieldType $1 value)) [
+	swap :value dup 0= (when [ drop ] [ nip ])
+])
+(test orelse [ 0 (make (Of Maybe0 U8)) 12 orelse (should eq 12) ])
+
+(word panic ((Ptr16 U8) -- ) [
+	"Panic: " print-string print-string nl
+	.System/rst (asm "" .Op/Odei) 2 /
+	(while [ 0> ] [
+		"  at " print-string
+		(asm "sr" .Op/Osth) print nl
+		1-
+	])
+	"Aborting.\n" print-string
+	(asm "" .Op/Ohalt)
+])
+
+"Oh no!" panic
 
 #0xbeefs print nl
 #0x3b    print nl
@@ -437,32 +464,32 @@
 	])
 ])
 
-0xAA
-	here 0xffffs -
-here memset8
+#0xAA
+#	here 0xffffs -
+#here memset8
 
-alloc-init
+#alloc-init
 
-(local ptrs (Ptr16 U8) 4)
-107s alloc drop
-107s alloc 0s @ptrs + <-
-10s  alloc 2s @ptrs + <-
-26s  alloc 4s @ptrs + <-
-2s   alloc drop
-#34s  alloc dealloc
-30s  alloc drop
-30s  alloc 6s @ptrs + <-
+#(local ptrs (Ptr16 U8) 4)
+#107s alloc drop
+#107s alloc 0s @ptrs + <-
+#10s  alloc 2s @ptrs + <-
+#26s  alloc 4s @ptrs + <-
+#2s   alloc drop
+##34s  alloc dealloc
+#30s  alloc drop
+#30s  alloc 6s @ptrs + <-
 
-0s @ptrs + -> dealloc
-2s @ptrs + -> dealloc
-4s @ptrs + -> dealloc
-6s @ptrs + -> dealloc
+#0s @ptrs + -> dealloc
+#2s @ptrs + -> dealloc
+#4s @ptrs + -> dealloc
+#6s @ptrs + -> dealloc
 
-nl
+#nl
 
-alloc-print-chunks
-alloc-defrag
-alloc-print-chunks
+#alloc-print-chunks
+#alloc-defrag
+#alloc-print-chunks
 
 #(struct Box (Any) [value $0])
 
