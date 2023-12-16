@@ -96,10 +96,10 @@ pub fn main() anyerror!void {
             const stdout = std.io.getStdOut().writer();
             try emitter.spitout(stdout, assembled.items);
         } else if (args.args.@"test" != 0) {
-            var vm = vmm.VM.init(assembled.items);
-            vm.executeTests(&program);
+            var vm = vmm.VM.init(&program, assembled.items);
+            vm.executeTests();
         } else {
-            var vm = vmm.VM.init(assembled.items);
+            var vm = vmm.VM.init(&program, assembled.items);
             vm.execute();
         }
     }

@@ -431,38 +431,38 @@
 	(while [ drop 2dup <> ] [
 		# ( val ptr end )
 		rot-bss>                  # ( end val  ptr  )
-		#stak                      # ( end val  ptr  )
+		stak                      # ( end val  ptr  )
 		(sizeof $0) (as U16) +    # ( end val  ptr+ )
 		rot-sbs                   # ( val ptr+ end  )
 	])
 ])
 
-#0xAA
-#	here 0xffffs -
-#here memset8
-#
-#alloc-init
-#
-#(local ptrs (Ptr16 U8) 4)
-#107s alloc drop
-#107s alloc 0s @ptrs + <-
-#10s  alloc 2s @ptrs + <-
-#26s  alloc 4s @ptrs + <-
-#2s   alloc drop
-##34s  alloc dealloc
-#30s  alloc drop
-#30s  alloc 6s @ptrs + <-
+0xAA
+	here 0xffffs -
+here memset8
 
-#0s @ptrs + -> dealloc
-#2s @ptrs + -> dealloc
-#4s @ptrs + -> dealloc
-#6s @ptrs + -> dealloc
+alloc-init
 
-#nl
+(local ptrs (Ptr16 U8) 4)
+107s alloc drop
+107s alloc 0s @ptrs + <-
+10s  alloc 2s @ptrs + <-
+26s  alloc 4s @ptrs + <-
+2s   alloc drop
+#34s  alloc dealloc
+30s  alloc drop
+30s  alloc 6s @ptrs + <-
 
-#alloc-print-chunks
-#alloc-defrag
-#alloc-print-chunks
+0s @ptrs + -> dealloc
+2s @ptrs + -> dealloc
+4s @ptrs + -> dealloc
+6s @ptrs + -> dealloc
+
+nl
+
+alloc-print-chunks
+alloc-defrag
+alloc-print-chunks
 
 #(struct Box (Any) [value $0])
 

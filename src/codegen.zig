@@ -347,6 +347,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     try genNodeList(program, &buf, program.ast, &ual);
 
+    program.romloc_code_end = buf.items.len;
+
     for (program.statics.items) |*data| {
         data.romloc = buf.items.len;
         switch (data.default) {

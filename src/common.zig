@@ -831,6 +831,7 @@ pub const Program = struct {
     builtin_types: std.ArrayList(TypeInfo),
     rng: std.rand.DefaultPrng,
     breakpoints: common.Breakpoint.AList,
+    romloc_code_end: usize = 0,
 
     errors: Error.AList,
 

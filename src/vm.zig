@@ -42,11 +42,12 @@ pub const VM = struct {
     uxn: c.Uxn = undefined,
     ram: []u8,
     here: usize = 0,
+    program: *Program,
 
     is_testing: bool = false,
     is_breakpoint: bool = false,
 
-    pub fn init(assembled: []const Ins) VM {
+    pub fn init(program: *Program, assembled: []const Ins) VM {
         const ram = gpa.allocator().alloc(u8, 0x10000 * c.RAM_PAGES) catch
             @panic("please uninstall Chrome before proceeding (OOM)");
         @memset(ram, 0);
@@ -56,10 +57,12 @@ pub const VM = struct {
         writer.writeByteNTimes(0, 0x0100) catch unreachable;
         emitter.spitout(writer, assembled) catch unreachable;
 
-        var self = mem.zeroes(VM);
-        self.ram = ram;
+        var self = VM{
+            .ram = ram,
+            .here = assembled.len,
+            .program = program,
+        };
         self.uxn.ram = ram.ptr;
-        self.here = c.PAGE_PROGRAM + assembled.len;
 
         c.system_connect(0x0, c.SYSTEM_VERSION, c.SYSTEM_DEIMASK, c.SYSTEM_DEOMASK);
         c.system_connect(0x1, c.CONSOLE_VERSION, c.CONSOLE_DEIMASK, c.CONSOLE_DEOMASK);
@@ -87,8 +90,42 @@ pub const VM = struct {
         // TODO: argument handling for roms that need it
         //self.uxn.dev[0x17] = argc - i;
 
+        // const end = self.program.romloc_code_end + 0x100;
+
+        // const copy = gpa.allocator().alloc(u8, 0x10000) catch unreachable;
+        // @memcpy(
+        //     copy[0..end],
+        //     self.ram[0..end],
+        // );
+
+        // const stderr = std.io.getStdErr().writer();
+        // std.log.info("romloc end: {x}", .{end});
+
+        var ctr: usize = 0;
         var pc: c_ushort = c.PAGE_PROGRAM;
-        while (true) {
+        while (true) : (ctr += 1) {
+            // stderr.print("{}: pc: {x} {x:0<2} ({x:0<2}) {: <3} {x}\n", .{
+            //     ctr,
+            //     pc,
+            //     self.ram[pc],
+            //     copy[pc],
+            //     self.uxn.wst.ptr,
+            //     self.uxn.wst.dat[self.uxn.wst.ptr -| 1],
+            // }) catch unreachable;
+
+            // var xi: usize = 0;
+            // while (xi < self.uxn.wst.ptr) : (xi += 1)
+            //     stderr.print(" {x:0<2}", .{self.uxn.wst.dat[xi]}) catch unreachable;
+            // if (xi == 0)
+            //     stderr.print(" <empty>", .{}) catch unreachable;
+            // stderr.print(" \n", .{}) catch unreachable;
+
+            // for (copy[c.PAGE_PROGRAM..end], c.PAGE_PROGRAM..) |byte, i|
+            //     if (byte != self.ram[i]) {
+            //         std.log.info("differs at {x}", .{i});
+            //         break :f;
+            //     };
+
             pc = c.uxn_eval_once(&self.uxn, pc);
             if (pc <= 1) break;
             assert(!self.is_breakpoint);
@@ -133,12 +170,12 @@ pub const VM = struct {
         }
     }
 
-    pub fn executeTests(self: *VM, program: *Program) void {
+    pub fn executeTests(self: *VM) void {
         const stderr = std.io.getStdErr().writer();
 
         self.is_testing = true;
 
-        test_loop: for (program.defs.items) |decl_node| {
+        test_loop: for (self.program.defs.items) |decl_node| {
             const decl = decl_node.node.Decl;
             if (!decl.is_test) continue;
             assert(decl.is_analysed);
@@ -163,7 +200,7 @@ pub const VM = struct {
 
                 if (self.is_breakpoint) {
                     self.is_breakpoint = false;
-                    _handleBreak(self, pc, stderr, program) catch continue :test_loop;
+                    _handleBreak(self, pc, stderr, self.program) catch continue :test_loop;
                 }
             }
 
