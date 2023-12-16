@@ -122,6 +122,7 @@ pub const TypeInfo = union(enum) {
 
     pub const Expr = union(enum) {
         AnySz: usize,
+        USz: usize,
         AnyOf: usize,
         Child: usize,
         Of: Of,
@@ -153,6 +154,7 @@ pub const TypeInfo = union(enum) {
                     mem.eql(u8, ft.field, b.FieldType.field),
                 .Ptr16 => |ar| ar == b.Ptr16,
                 .AnySz => |ar| ar == b.AnySz,
+                .USz => |ar| ar == b.USz,
                 .AnyOf => |ar| ar == b.AnyOf,
                 .Child => |ar| ar == b.Child,
             };
@@ -176,6 +178,7 @@ pub const TypeInfo = union(enum) {
                 },
                 .Ptr16 => |ar| .{ .Ptr16 = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnySz => |ar| .{ .AnySz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .USz => |ar| .{ .USz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
             };
@@ -205,6 +208,7 @@ pub const TypeInfo = union(enum) {
                 },
                 .Ptr16 => |ar| program.builtin_types.items[ar].isGeneric(program),
                 .AnySz => |ar| program.builtin_types.items[ar].isGeneric(program),
+                .USz => |ar| program.builtin_types.items[ar].isGeneric(program),
                 .AnyOf => |ar| program.builtin_types.items[ar].isGeneric(program),
                 .Child => |ar| program.builtin_types.items[ar].isGeneric(program),
             };
@@ -242,9 +246,22 @@ pub const TypeInfo = union(enum) {
 
                     break :b .{ .AnyOf = program.btype(arg_t) };
                 },
+                .USz => |s| b: {
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    if (arg_t == .Dev8 or arg_t == .Dev16) {
+                        break :b if (arg_t == .Dev8) .U8 else .U16;
+                    } else if (arg_t.bits(program)) |b| {
+                        break :b if (b == 16) .U16 else .U8;
+                    } else {
+                        //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
+                        break :b .Any;
+                    }
+                },
                 .AnySz => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
-                    if (arg_t.bits(program)) |b| {
+                    if (arg_t == .Dev8 or arg_t == .Dev16) {
+                        break :b if (arg_t == .Dev8) .Any8 else .Any16;
+                    } else if (arg_t.bits(program)) |b| {
                         break :b if (b == 16) .Any16 else .Any8;
                     } else {
                         //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
@@ -288,6 +305,7 @@ pub const TypeInfo = union(enum) {
                             offset += field.type.size(program).?;
                         }
                     }
+                    new.def.Struct.args = null;
                     program.types.append(new) catch unreachable;
                     break :b .{ .Struct = program.types.items.len - 1 };
                 },
@@ -438,7 +456,7 @@ pub const TypeInfo = union(enum) {
             .Struct => |s| b: {
                 const tstruct = program.types.items[s].def.Struct;
                 const last = tstruct.fields.items[tstruct.fields.items.len - 1];
-                break :b last.offset + last.type.size(program).?;
+                break :b last.offset + (last.type.size(program) orelse break :b null);
             },
             else => return if (self.bits(program)) |b| b / 8 else null,
         };

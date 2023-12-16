@@ -86,14 +86,14 @@ pub const BlockAnalysis = struct {
                         arg.* = arg.resolveGeneric(calleritem, p);
                     }
                 }
-                //std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
+                std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
 
                 if (arg.isResolvable(p)) {
                     arg.* = try arg.resolveTypeRef(r, p);
                 }
-                //std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
+                std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
 
-                //std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
+                std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
             }
 
             if (!arg.doesInclude(calleritem, p)) {
@@ -244,6 +244,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     //std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
 
     const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
+    const any_or_unsigned: TypeInfo = if (i.generic) .Any else if (i.short) .U16 else .U8;
 
     switch (i.op) {
         .Orot => {
@@ -269,7 +270,11 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         },
         .Odeo => {
             a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
-            a.args.append(.AnyDev) catch unreachable; // TODO: device
+            a.args.append(.AnyDev) catch unreachable;
+        },
+        .Odei => {
+            a.args.append(if (i.short) .Dev16 else .Dev8) catch unreachable;
+            a.stack.append(if (i.short) .U16 else .U8) catch unreachable;
         },
         .Oinc, .Odup => {
             a.args.append(a1 orelse any) catch unreachable;
@@ -292,8 +297,8 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.stack.append(.Bool) catch unreachable;
         },
         .Osth => {
-            a.args.append(a1 orelse any) catch unreachable;
-            a.rstack.append(a1 orelse any) catch unreachable;
+            a.args.append(a1 orelse any_or_unsigned) catch unreachable;
+            a.rstack.append(a1 orelse any_or_unsigned) catch unreachable;
         },
         .Olda => {
             a.args.append(a1 orelse .AnyPtr16) catch unreachable;

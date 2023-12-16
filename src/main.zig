@@ -75,10 +75,6 @@ pub fn main() anyerror!void {
             }
         };
 
-        if (args.args.@"test" != 0 and args.args.emit != 0) {
-            @panic("Cannot emit binary and test at same time");
-        }
-
         if (args.args.@"debug-inf" != 0)
             for (program.defs.items) |def| {
                 const d = def.node.Decl;
