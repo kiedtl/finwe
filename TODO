@@ -8,8 +8,8 @@ x Devices (same as enums?)
 x String literals
 x Variables
 x If statement
-- Structs
-- HERE
+x Structs
+x HERE
 - Malloc
   x Basic + free + realloc
   x Defrag
@@ -18,7 +18,6 @@ x If statement
 - Test suite
 - Vec
   - Unbounded
-- Arity conformity checks
 - Imports
 - Enums
 - Shadowcaster
