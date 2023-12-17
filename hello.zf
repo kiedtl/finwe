@@ -199,36 +199,36 @@
 	drop # drop stop indicator
 ])
 
-(word print-base (Any (AnySz $1) --) [
-	(local base $0 1)
+(word print-base (Any U8 --) [
+	(local base U8 1)
 	@base <-
 
-	dup 0= (when [ drop '0 emit return ])
+	#dup 0= (when [ drop '0 emit return ])
 
-	0x99 (as $0) swap # stop indicator
+	0x99 (as $1) swap # stop indicator
 
-	(wild ($0 $0 -- $0) [
+	(wild ($1 $1 -- $1) [
 		(until [ 0= ] [
-			$base (as $0) /mod
-			dup 9 (as $0) > (when
-				[ 10 (as $0) - 'a (as $0) + ]
-				[ '0 (as $0) + ]
+			$base (as $1) /mod
+			dup 9 (as $1) > (when
+				[ 10 (as $1) - 'a (as $1) + ]
+				[ '0 (as $1) + ]
 			)
 			swap
 		])
 
-		(until [ 0x99 (as $0) = ] [ (as U8) emit ])
+		(until [ 0x99 (as $1) = ] [ (as U8) emit ])
 	])
 
 	drop # drop stop indicator
 ])
 
 (word print (Any --) [
-	16 (as $0) print-base
+	16 print-base
 ])
 
 (word print-dec (Any --) [
-	10 (as $0) print-base
+	10 print-base
 ])
 
 (struct Maybe0 (Any) [value $0])
@@ -237,7 +237,7 @@
 	dup 0= (when [ "Unwrapped 0 value" panic ])
 ])
 
-(word orelse ((Of Maybe0 U8) (FieldType $1 value) -- (FieldType $1 value)) [
+(word orelse ((AnyOf Maybe0) (FieldType $1 value) -- (FieldType $1 value)) [
 	swap :value dup 0= (when [ drop ] [ nip ])
 ])
 (test orelse [ 0 (make (Of Maybe0 U8)) 12 orelse (should eq 12) ])
@@ -253,8 +253,6 @@
 	"Aborting.\n" print-string
 	(asm "" .Op/Ohalt)
 ])
-
-"Oh no!" panic
 
 #0xbeefs print nl
 #0x3b    print nl
@@ -384,7 +382,7 @@
 (word dealloc (AnyPtr16 -- ) [
 	(sizeof ChunkHeader) (as U16) -
 	(as (Ptr16 ChunkHeader))
-	"Dealloc'ing: " print-string dup print nl
+	#"Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
 		over-sb :guard2 -> 0xfe <>
@@ -464,32 +462,32 @@
 	])
 ])
 
-#0xAA
-#	here 0xffffs -
-#here memset8
+0xAA
+	here 0xffffs -
+here memset8
 
-#alloc-init
+alloc-init
 
-#(local ptrs (Ptr16 U8) 4)
-#107s alloc drop
-#107s alloc 0s @ptrs + <-
-#10s  alloc 2s @ptrs + <-
-#26s  alloc 4s @ptrs + <-
-#2s   alloc drop
-##34s  alloc dealloc
-#30s  alloc drop
-#30s  alloc 6s @ptrs + <-
+(local ptrs (Ptr16 U8) 4)
+107s alloc drop
+107s alloc 0s @ptrs + <-
+10s  alloc 2s @ptrs + <-
+26s  alloc 4s @ptrs + <-
+2s   alloc drop
+#34s  alloc dealloc
+30s  alloc drop
+30s  alloc 6s @ptrs + <-
 
-#0s @ptrs + -> dealloc
-#2s @ptrs + -> dealloc
-#4s @ptrs + -> dealloc
-#6s @ptrs + -> dealloc
+0s @ptrs + -> dealloc
+2s @ptrs + -> dealloc
+4s @ptrs + -> dealloc
+6s @ptrs + -> dealloc
 
-#nl
+nl
 
-#alloc-print-chunks
-#alloc-defrag
-#alloc-print-chunks
+alloc-print-chunks
+alloc-defrag
+alloc-print-chunks
 
 #(struct Box (Any) [value $0])
 
