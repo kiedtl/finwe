@@ -1,3 +1,13 @@
+(test lang_decl_scoping [
+	(word foobar [ 1 ])
+	(word baz [
+		(word foobar [ 2 ])
+		foobar
+	])
+	foobar (should eq 1)
+	baz    (should eq 2)
+])
+
 (test lang_stack_structs [
 	(struct A [ foo U8 ])
 	(struct B [ foo U16 ])
@@ -223,15 +233,11 @@
 	drop # drop stop indicator
 ])
 
-(word print (Any --) [
-	16 print-base
-])
-
-(word print-dec (Any --) [
-	10 print-base
-])
+(word print (Any --) [ 16 print-base ])
+(word print-dec (Any --) [ 10 print-base ])
 
 (struct Maybe0 (Any) [value $0])
+
 (word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
 	:value
 	dup 0= (when [ "Unwrapped 0 value" panic ])
@@ -254,48 +260,7 @@
 	(asm "" .Op/Ohalt)
 ])
 
-#0xbeefs print nl
-#0x3b    print nl
-#0x0d    print
-#0xef    print
-#0xaceds print
-#0xcafes print nl
-
 (word print-string ((Ptr16 U8) -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
-
-#(word foobar (Any -- $0) [
-#	(local baz $0 1)
-#	1+ @baz sta
-#	$baz
-#])
-
-#0 foobar foobar foobar print nl
-#0s foobar foobar foobar foobar print nl
-
-#(word variable (Any -- (Ptr16 $0)) [
-#	(local _S $0 1)
-#	drop
-#	@_S
-#])
-#
-#0s variable dbg drop
-#0  variable dbg drop
-#nl
-
-#(struct Foo
-#	[bar U16]
-#	[baz U8]
-#)
-
-#(local foo Foo 0)
-
-#@foo :bar
-#@foo :baz
-#dbg
-
-#0xffffs @foo :bar sta
-#     9  @foo :baz sta
-#        @foo :bar lda print nl
 
 # I wanted to have U16 guards, that way we could have 0x1cedc0fe
 #
@@ -327,7 +292,7 @@
 ])
 
 # ( bytes -- *ptr )
-(word alloc ( U16 -- (Ptr16 U8)) [
+(word alloc ( U16 -- (Of Maybe0 (Ptr16 U8))) [
 	(local size U16 1)
 	@size <-
 
@@ -349,7 +314,10 @@
 	] [
 		"    Skipping " print-string dup print nl
 
-		dup :next -> 0= (when [ "Out of memory\n" print-string 0s return ])
+		dup :next -> 0= (when [
+			0s (as (Ptr16 U8)) (make (Of Maybe0 (Ptr16 U8)))
+			return
+		])
 		    :next ->
 	])
 
@@ -376,7 +344,8 @@
 		0xfe             $chosen :guard2 <-
 	])
 
-	$chosen (sizeof ChunkHeader) (as U16) +
+	$chosen (sizeof ChunkHeader) (as (Ptr16 U8)) +
+	(make (Of Maybe0 (Ptr16 U8)))
 ])
 
 (word dealloc (AnyPtr16 -- ) [
@@ -462,47 +431,90 @@
 	])
 ])
 
-0xAA
-	here 0xffffs -
-here memset8
-
-alloc-init
-
-(local ptrs (Ptr16 U8) 4)
-107s alloc drop
-107s alloc 0s @ptrs + <-
-10s  alloc 2s @ptrs + <-
-26s  alloc 4s @ptrs + <-
-2s   alloc drop
-#34s  alloc dealloc
-30s  alloc drop
-30s  alloc 6s @ptrs + <-
-
-0s @ptrs + -> dealloc
-2s @ptrs + -> dealloc
-4s @ptrs + -> dealloc
-6s @ptrs + -> dealloc
-
-nl
-
-alloc-print-chunks
-alloc-defrag
-alloc-print-chunks
-
-#(struct Box (Any) [value $0])
-
-#(word box (Any -- (Ptr16 (Of Box $0))) [
-#	(local retval (Of Box $0) 1)
-#	@retval :value sta
-#	@retval
-#])
-
-#(word unbox ((Ptr16 (AnyOf Box)) -- (FieldType (Child $0) value)) [
-#	:value lda
-#])
-
-#0xffffs box
-#0x02    box
-
-#unbox print nl
-#unbox print nl
+(word main [
+	#0xbeefs print nl
+	#0x3b    print nl
+	#0x0d    print
+	#0xef    print
+	#0xaceds print
+	#0xcafes print nl
+	
+	#(word foobar (Any -- $0) [
+	#	(local baz $0 1)
+	#	1+ @baz sta
+	#	$baz
+	#])
+	
+	#0 foobar foobar foobar print nl
+	#0s foobar foobar foobar foobar print nl
+	
+	#(word variable (Any -- (Ptr16 $0)) [
+	#	(local _S $0 1)
+	#	drop
+	#	@_S
+	#])
+	#
+	#0s variable dbg drop
+	#0  variable dbg drop
+	#nl
+	
+	#(struct Foo
+	#	[bar U16]
+	#	[baz U8]
+	#)
+	
+	#(local foo Foo 0)
+	
+	#@foo :bar
+	#@foo :baz
+	#dbg
+	
+	#0xffffs @foo :bar sta
+	#     9  @foo :baz sta
+	#        @foo :bar lda print nl
+	
+	0xAA
+		here 0xffffs -
+	here memset8
+	
+	alloc-init
+	
+	(local ptrs (Ptr16 U8) 4)
+	107s alloc unwrap drop
+	107s alloc unwrap 0s @ptrs + <-
+	10s  alloc unwrap 2s @ptrs + <-
+	26s  alloc unwrap 4s @ptrs + <-
+	2s   alloc unwrap drop
+	#34s  alloc unwrap dealloc
+	30s  alloc unwrap drop
+	30s  alloc unwrap 6s @ptrs + <-
+	
+	0s @ptrs + -> dealloc
+	2s @ptrs + -> dealloc
+	4s @ptrs + -> dealloc
+	6s @ptrs + -> dealloc
+	
+	nl
+	
+	alloc-print-chunks
+	alloc-defrag
+	alloc-print-chunks
+	
+	#(struct Box (Any) [value $0])
+	
+	#(word box (Any -- (Ptr16 (Of Box $0))) [
+	#	(local retval (Of Box $0) 1)
+	#	@retval :value sta
+	#	@retval
+	#])
+	
+	#(word unbox ((Ptr16 (AnyOf Box)) -- (FieldType (Child $0) value)) [
+	#	:value lda
+	#])
+	
+	#0xffffs box
+	#0x02    box
+	
+	#unbox print nl
+	#unbox print nl
+])
