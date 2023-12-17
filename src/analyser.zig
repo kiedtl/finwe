@@ -13,6 +13,8 @@ const TypeFmt = common.TypeFmt;
 const Value = common.Value;
 const VTList16 = TypeInfo.List16;
 
+const StackBuffer = @import("buffer.zig").StackBuffer;
+
 pub const Error = error{
     NoSuchType,
     GenericNotMatching,
@@ -47,59 +49,83 @@ pub const BlockAnalysis = struct {
         return r;
     }
 
+    fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, arity: BlockAnalysis, caller: *ASTNode, p: *Program) Error!TypeInfo {
+        var r = paramspec;
+        while (!r.eq(argtyp) and (r.isResolvable(p) or r.isGeneric(p))) {
+            if (r.isGeneric(p)) {
+                if (!r.doesInclude(argtyp, p)) {
+                    if (!r.isResolvable(p)) {
+                        std.log.err("Generic {} does not encompass {}", .{ r, argtyp });
+                        return p.aerr(error.GenericNotMatching, caller.srcloc);
+                    }
+                } else {
+                    r = r.resolveGeneric(argtyp, p);
+                }
+            }
+            // std.log.info("- after generic: {}", .{TypeFmt.from(r, p)});
+
+            if (r.isResolvable(p)) {
+                r = try r.resolveTypeRef(arity, p);
+            }
+            // std.log.info("- after typeref: {}", .{TypeFmt.from(r, p)});
+
+            // std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ r.eq(argtyp), r.isGeneric(p), r.isResolvable(p) });
+        }
+        return r;
+    }
+
+    fn _getArgForInd(arglist: *const BlockAnalysis, paramlen: usize, i: usize, caller: *ASTNode) Error!TypeInfo {
+        const j = paramlen - (i + 1);
+        return if (j < arglist.stack.len)
+            arglist.stack.constSlice()[arglist.stack.len - j - 1]
+        else if ((j - arglist.stack.len) < arglist.args.len)
+            arglist.args.constSlice()[arglist.args.len - (j - arglist.stack.len) - 1]
+        else {
+            std.log.err("{}:{}", .{ caller.srcloc.line, caller.srcloc.column });
+            @panic("can't call generic func from non-arity func");
+        };
+    }
+
+    pub fn _resolveFullyRecurse(r: *@This(), caller: *const @This(), call_node: *ASTNode, p: *Program, i: usize) Error!void {
+        // std.log.info("\n", .{});
+        // std.log.info("- beginning  {}", .{i});
+
+        var refs = StackBuffer(usize, 12).init(null);
+        r.args.slice()[i].getTypeRefs(&refs, p);
+        for (refs.slice()) |*ref| {
+            ref.* = r.args.len - ref.* - 1;
+            // std.log.info("- refs {}", .{ref.*});
+        }
+
+        for (refs.constSlice()) |ref| if (ref < i)
+            try _resolveFullyRecurse(r, caller, call_node, p, ref);
+
+        const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
+        const resolved = try _resolveFully(r.args.slice()[i], calleritem, r.*, call_node, p);
+
+        if (!resolved.doesInclude(calleritem, p)) {
+            std.log.err("Type {} does not encompass {}", .{ resolved, calleritem });
+            return p.aerr(error.TypeNotMatching, call_node.srcloc);
+        }
+
+        r.args.slice()[i] = resolved;
+    }
+
     pub fn conformGenericTo(generic: @This(), caller: *const @This(), call_node: *ASTNode, p: *Program) Error!@This() {
+
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
         // std.log.info("CONFORM {}", .{generic});
         // std.log.info("TO ARGS {}", .{caller});
 
+        //std.log.info("\n", .{});
         var r = generic;
 
         var i = r.args.len;
-        var j: usize = 0;
-        while (i > 0) : (j += 1) {
+        while (i > 0) {
             i -= 1;
-
-            const calleritem = if (j < caller.stack.len)
-                caller.stack.constSlice()[caller.stack.len - j - 1]
-            else if ((j - caller.stack.len) < caller.args.len)
-                caller.args.constSlice()[caller.args.len - (j - caller.stack.len) - 1]
-            else {
-                std.log.info("{}:{}", .{ call_node.srcloc.line, call_node.srcloc.column });
-                @panic("can't call generic func from non-arity func"); // arg.*
-            };
-
-            const arg = &r.args.slice()[i];
-
-            // std.log.info("\n", .{});
-            // std.log.info("*** {}:{}: doing {} <- {}", .{ call_node.srcloc.line, call_node.srcloc.column, TypeFmt.from(arg.*, p), TypeFmt.from(calleritem, p) });
-
-            while (!arg.eq(calleritem) and (arg.isResolvable(p) or arg.isGeneric(p))) {
-                if (arg.isGeneric(p)) {
-                    if (!arg.doesInclude(calleritem, p)) {
-                        if (!arg.isResolvable(p)) {
-                            std.log.err("Generic {} @ {} does not encompass {}", .{ arg, i, calleritem });
-                            return p.aerr(error.GenericNotMatching, call_node.srcloc);
-                        }
-                    } else {
-                        arg.* = arg.resolveGeneric(calleritem, p);
-                    }
-                }
-                std.log.info("- after generic: {}", .{TypeFmt.from(arg.*, p)});
-
-                if (arg.isResolvable(p)) {
-                    arg.* = try arg.resolveTypeRef(r, p);
-                }
-                std.log.info("- after typeref: {}", .{TypeFmt.from(arg.*, p)});
-
-                std.log.info("eq?: {}, generic?: {}, ref?: {}", .{ arg.eq(calleritem), arg.isGeneric(p), arg.isResolvable(p) });
-            }
-
-            if (!arg.doesInclude(calleritem, p)) {
-                std.log.err("Type {} (arg ${}) does not encompass {}", .{ arg, i, calleritem });
-                return p.aerr(error.TypeNotMatching, call_node.srcloc);
-            }
+            try _resolveFullyRecurse(&r, caller, call_node, p, i);
         }
 
         for (r.stack.slice()) |*stack|
@@ -654,7 +680,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Cast => |*c| {
                 if (c.ref) |r| {
-                    c.to = parent.arity.?.args.constSlice()[r];
+                    c.to = parent.arity.?.args.constSlice()[
+                        parent.arity.?.args.len - r - 1
+                    ];
                 }
                 c.to = try c.to.resolveTypeRef(parent.arity, program);
 
@@ -667,7 +695,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 if (!into.isGeneric(program)) c.of = into;
 
-                // std.log.info("{s}_{}: casting {} -> {}", .{ parent.name, parent.variant, c.of, c.to });
+                // std.log.info("{s}_{}: casting {} -> {} (ref: {?}) {s}", .{ parent.name, parent.variant, c.of, c.to, c.ref, parent.arity.? });
             },
         }
     }

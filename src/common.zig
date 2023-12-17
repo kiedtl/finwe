@@ -184,16 +184,21 @@ pub const TypeInfo = union(enum) {
             };
         }
 
-        // test {
-        //     var p = Program.init(std.testing.allocator);
-        //     const a = std.testing.allocator.create(StackBuffer(usize, 8));
-        //     a.reinit();
-        //     a.append(p.btype(
-        //     (TypeInfo{ .Expr = .{ .Ptr16 = p.btype(
-        //         .{ .Expr = .{ .Of = .{
-        //             .of = .Any,
-        //             .args = kk
-        // }
+        pub fn getTypeRefs(self: @This(), buf: anytype, program: *Program) void {
+            switch (self) {
+                .FieldType => |f| program.ztype(f.of).getTypeRefs(buf, program),
+                .Of => |of| {
+                    program.ztype(of.of).getTypeRefs(buf, program);
+                    for (of.args.constSlice()) |arg|
+                        program.ztype(arg).getTypeRefs(buf, program);
+                },
+                .Ptr16 => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .AnySz => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .USz => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .AnyOf => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .Child => |ar| program.ztype(ar).getTypeRefs(buf, program),
+            }
+        }
 
         pub fn isGeneric(self: @This(), program: *Program) bool {
             return switch (self) {
@@ -327,6 +332,15 @@ pub const TypeInfo = union(enum) {
             .TypeRef, .Expr, .Unresolved => true,
             else => false,
         };
+    }
+
+    pub fn getTypeRefs(a: @This(), buf: anytype, program: *Program) void {
+        switch (a) {
+            .TypeRef => |r| buf.append(r) catch unreachable,
+            .AnyOf => |anyof| program.ztype(anyof).getTypeRefs(buf, program),
+            .Expr => |e| e.getTypeRefs(buf, program),
+            else => {},
+        }
     }
 
     pub fn resolveTypeRef(a: @This(), arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
