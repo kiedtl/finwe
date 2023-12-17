@@ -14,11 +14,12 @@ x HERE
   x Basic + free + realloc
   x Defrag
   - Opaque ("void") pointers
-  - Maybe0/MaybeFF
-- Test suite
+  x Maybe0
+  - Unit tests, stress tests
+x Test suite
+- Imports
 - Vec
   - Unbounded
-- Imports
 - Enums
 - Shadowcaster
 - Refactoring
