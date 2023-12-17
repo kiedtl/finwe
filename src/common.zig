@@ -693,7 +693,10 @@ pub const ASTNode = struct {
         name: []const u8,
         ctyp: union(enum) {
             Mac,
-            Decl: usize, // variant, 0 if not generic
+            Decl: struct {
+                variant: usize, // 0 if not generic
+                node: ?*ASTNode = null,
+            },
             Unchecked,
         } = .Unchecked,
         goto: bool = false,
@@ -741,6 +744,7 @@ pub const ASTNode = struct {
         variant: usize = 0,
         calls: usize = 0,
         locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
+        scope: *Scope,
         is_analysed: bool = false,
         is_test: bool = false,
 
@@ -854,6 +858,43 @@ pub const Static = struct {
     pub const AList = std.ArrayList(@This());
 };
 
+pub const Scope = struct {
+    defs: ASTNodePtrList,
+    macs: ASTNodePtrList,
+    parent: ?*Scope,
+
+    pub const AList = std.ArrayList(Scope);
+
+    pub fn create(parent: ?*Scope) *@This() {
+        const p = gpa.allocator().create(@This()) catch unreachable;
+        p.* = .{
+            .defs = ASTNodePtrList.init(gpa.allocator()),
+            .macs = ASTNodePtrList.init(gpa.allocator()),
+            .parent = parent,
+        };
+        return p;
+    }
+
+    pub fn findDecl(self: *Scope, name: []const u8) ?*ASTNode {
+        return for (self.defs.items) |def| {
+            const decl = def.node.Decl;
+            if (!decl.is_test and mem.eql(u8, decl.name, name))
+                break def;
+        } else if (self.parent) |parent| parent.findDecl(name) else null;
+    }
+
+    pub fn findMac(self: *Scope, name: []const u8) ?*ASTNode {
+        return for (self.macs.items) |mac| {
+            if (mem.eql(u8, mac.node.Mac.name, name))
+                return mac;
+        } else if (self.parent) |parent| parent.findMac(name) else null;
+    }
+
+    pub fn findAny(self: *Scope, name: []const u8) ?*ASTNode {
+        return self.findDecl(name) orelse self.findMac(name);
+    }
+};
+
 pub const Program = struct {
     ast: ASTNodeList,
     defs: ASTNodePtrList,
@@ -864,15 +905,8 @@ pub const Program = struct {
     rng: std.rand.DefaultPrng,
     breakpoints: common.Breakpoint.AList,
     romloc_code_end: usize = 0,
-
     errors: Error.AList,
-
-    // scopes: Scope.AList,
-    // pub const Scope = struct {
-    //     defs: ASTNodePtrList,
-    //     macs: ASTNodePtrList,
-    //     pub const AList = std.ArrayList(Scope);
-    // };
+    global_scope: *Scope,
 
     pub fn init(alloc: mem.Allocator) @This() {
         return Program{
@@ -885,7 +919,7 @@ pub const Program = struct {
             .errors = common.Error.AList.init(alloc),
             .rng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp())),
             .breakpoints = common.Breakpoint.AList.init(alloc),
-            //.defs = ASTNodeList.init(alloc),
+            .global_scope = Scope.create(null),
         };
     }
 

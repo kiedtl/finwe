@@ -13,6 +13,7 @@ const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
 const TypeInfo = common.TypeInfo;
 const Value = common.Value;
+const Scope = common.Scope;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
@@ -52,6 +53,9 @@ pub const Parser = struct {
         InvalidEnumField,
         NoSuchType,
         UnknownIdent,
+        NakedStatements,
+        NoMainFunction,
+        InvalidCall,
     } || mem.Allocator.Error;
 
     pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
@@ -195,14 +199,14 @@ pub const Parser = struct {
         };
     }
 
-    fn parseStatement(self: *Parser, node: *const lexer.Node) ParserError!ASTNode {
+    fn parseStatement(self: *Parser, node: *const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
         return switch (node.node) {
             .List => |l| {
                 const lst = l.items;
-                return self.parseList(lst);
+                return self.parseList(lst, p_scope);
             },
             .Quote => |q| blk: {
-                const body = try self.parseStatements(q.items);
+                const body = try self.parseStatements(q.items, p_scope);
                 break :blk ASTNode{
                     .node = .{ .Quote = .{ .body = body } },
                     .srcloc = node.location,
@@ -234,10 +238,10 @@ pub const Parser = struct {
         };
     }
 
-    fn parseStatements(self: *Parser, nodes: []const lexer.Node) ParserError!ASTNodeList {
+    fn parseStatements(self: *Parser, nodes: []const lexer.Node, p_scope: *Scope) ParserError!ASTNodeList {
         var ast = ASTNodeList.init(self.alloc);
         for (nodes) |node|
-            try ast.append(try self.parseStatement(&node));
+            try ast.append(try self.parseStatement(&node, p_scope));
         return ast;
     }
 
@@ -308,7 +312,7 @@ pub const Parser = struct {
         } else unreachable;
     }
 
-    fn parseList(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
+    fn parseList(self: *Parser, ast: []const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
         if (ast.len == 0)
             return error.EmptyList;
 
@@ -321,20 +325,22 @@ pub const Parser = struct {
                     if (ast.len == 4)
                         arity = try self.parseArity(&ast[2]);
 
+                    const scope = Scope.create(p_scope);
                     const body_ind: usize = if (ast.len == 4) @as(usize, 3) else 2;
                     const ast_body = try self.expectNode(.Quote, &ast[body_ind]);
-                    const body = try self.parseStatements(ast_body.items);
+                    const body = try self.parseStatements(ast_body.items, scope);
 
                     break :b ASTNode{ .node = .{ .Decl = .{
                         .name = name,
                         .variations = ASTNodePtrList.init(self.alloc),
                         .arity = arity,
                         .body = body,
+                        .scope = scope,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const body = try self.parseStatements(ast_body.items);
+                    const body = try self.parseStatements(ast_body.items, p_scope);
 
                     // const new_name = try std.fmt.allocPrint(
                     //     common.gpa.allocator(),
@@ -347,12 +353,13 @@ pub const Parser = struct {
                         .body = body,
                         .is_test = true,
                         .variations = undefined,
+                        .scope = Scope.create(self.program.global_scope),
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
 
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const body = try self.parseStatements(ast_body.items);
+                    const body = try self.parseStatements(ast_body.items, p_scope);
 
                     break :b ASTNode{
                         .node = .{ .Mac = .{ .name = name, .body = body } },
@@ -378,7 +385,7 @@ pub const Parser = struct {
 
                     const arity = try self.parseArity(&ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const block = try self.parseStatements(ast_body.items);
+                    const block = try self.parseStatements(ast_body.items, p_scope);
 
                     break :b ASTNode{
                         .node = .{ .Wild = .{ .arity = arity, .body = block } },
@@ -438,10 +445,10 @@ pub const Parser = struct {
                     try self.validateListLength(ast, 3);
 
                     const ast_cond = try self.expectNode(.Quote, &ast[1]);
-                    const cond = try self.parseStatements(ast_cond.items);
+                    const cond = try self.parseStatements(ast_cond.items, p_scope);
 
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const body = try self.parseStatements(ast_body.items);
+                    const body = try self.parseStatements(ast_body.items, p_scope);
 
                     break :b ASTNode{
                         .node = .{ .Loop = .{
@@ -455,10 +462,10 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "when")) {
                     const yup_n = try self.expectNode(.Quote, &ast[1]);
-                    const yup = try self.parseStatements(yup_n.items);
+                    const yup = try self.parseStatements(yup_n.items, p_scope);
                     const nah = if (ast.len > 2) ifb: {
                         const nah_n = try self.expectNode(.Quote, &ast[2]);
-                        break :ifb try self.parseStatements(nah_n.items);
+                        break :ifb try self.parseStatements(nah_n.items, p_scope);
                     } else null;
                     break :b ASTNode{
                         .node = .{ .When = .{ .yup = yup, .nah = nah } },
@@ -475,7 +482,7 @@ pub const Parser = struct {
 
                     for (ast[1..]) |*node| {
                         const q = try self.expectNode(.Quote, node);
-                        try all_branches.append(try self.parseStatements(q.items));
+                        try all_branches.append(try self.parseStatements(q.items, p_scope));
                     }
 
                     // FIXME: make it an error for a cond statement with only
@@ -556,20 +563,32 @@ pub const Parser = struct {
                     break :b error.UnknownKeyword;
                 }
             },
-            .List => |l| try self.parseList(l.items),
-            else => try self.parseStatement(&ast[0]),
+            .List => |l| try self.parseList(l.items, p_scope),
+            else => try self.parseStatement(&ast[0], p_scope),
         };
     }
 
     // Extract definitions
-    pub fn extractDefs(self: *Parser) ParserError!void {
-        var iter = self.program.ast.iterator();
-        while (iter.next()) |node|
-            if (node.node == .Decl) {
-                try self.program.defs.append(node);
-            } else if (node.node == .Mac) {
-                try self.program.macs.append(node);
-            };
+    pub fn extractDefs(parser_: *Parser) ErrorSet!void {
+        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
+            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
+                const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
+                switch (node.node) {
+                    .Decl => {
+                        // const par: []const u8 = if (parent) |p| p.node.Decl.name else "global";
+                        // std.log.info("function: {s} -> {s}", .{ node.node.Decl.name, par });
+
+                        try scope.defs.append(node);
+                        try self.defs.append(node);
+                    },
+                    .Mac => {
+                        try scope.macs.append(node);
+                        try self.macs.append(node);
+                    },
+                    else => {},
+                }
+            }
+        }.f);
     }
 
     pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.Type {
@@ -670,17 +689,18 @@ pub const Parser = struct {
                         else => {},
                     },
                     .Call => |c| if (c.ctyp == .Unchecked) {
-                        if (for (self.macs.items) |mac| {
-                            if (mem.eql(u8, mac.node.Mac.name, c.name))
-                                break true;
-                        } else false) {
-                            node.node.Call.ctyp = .Mac;
-                        } else if (for (self.defs.items) |decl| {
-                            const d = decl.node.Decl;
-                            if (!d.is_test and mem.eql(u8, d.name, c.name))
-                                break true;
-                        } else false) {
-                            node.node.Call.ctyp = .{ .Decl = 0 };
+                        const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
+                        if (scope.findAny(c.name)) |found| {
+                            switch (found.node) {
+                                .Mac => node.node.Call.ctyp = .Mac,
+                                .Decl => node.node.Call.ctyp = .{ .Decl = .{ .variant = 0 } },
+                                else => {
+                                    std.log.info("Expected macro/word, got {s}", .{
+                                        @tagName(found.node),
+                                    });
+                                    return self.perr(error.InvalidCall, node.srcloc);
+                                },
+                            }
                         } else {
                             std.log.info("Unknown ident {s}", .{c.name});
                             return self.perr(error.UnknownIdent, node.srcloc);
@@ -713,45 +733,37 @@ pub const Parser = struct {
         }.f);
     }
 
-    // Setup the entry function
-    // TODO: this should be in codegen
-    //
     pub fn setupMainFunc(self: *Parser) ParserError!void {
-        var body = ASTNodeList.init(self.alloc);
         var iter2 = self.program.ast.iterator();
-        while (iter2.next()) |ast_item| {
-            if (ast_item.node != .Decl and ast_item.node != .Mac) {
-                try body.append(ast_item.*);
-                ast_item.node = .None;
-                ast_item.srcloc = .{};
-            }
-        }
-        try body.append(ASTNode{ .node = .{
+        while (iter2.next()) |ast_item|
+            switch (ast_item.node) {
+                .Decl, .Mac, .VDecl, .TypeDef => {},
+                else => return error.NakedStatements,
+            };
+
+        const main_func = self.program.global_scope.findDecl("main") orelse
+            return error.NoMainFunction;
+
+        try main_func.node.Decl.body.append(ASTNode{ .node = .{
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = .{} });
-        try self.program.ast.append(ASTNode{
-            .node = .{ .Decl = .{
-                .name = "_Start",
-                .body = body,
-                .variations = ASTNodePtrList.init(self.alloc),
-            } },
-            .srcloc = .{},
-        });
+
         if (!self.is_testing)
             try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
-                .name = "_Start",
+                .name = "main",
+                .ctyp = .{ .Decl = .{ .node = main_func, .variant = 0 } },
                 .goto = true,
             } }, .srcloc = .{} });
     }
 
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ErrorSet!void {
-        for (lexed.items) |*node| switch (node.node) {
-            .List => |l| try self.program.ast.append(try self.parseList(l.items)),
-            else => try self.program.ast.append(try self.parseStatement(node)),
-        };
+        for (lexed.items) |*node| try self.program.ast.append(switch (node.node) {
+            .List => |l| try self.parseList(l.items, self.program.global_scope),
+            else => try self.parseStatement(node, self.program.global_scope),
+        });
 
-        try self.setupMainFunc();
         try self.extractDefs();
+        try self.setupMainFunc();
         try self.postProcess();
     }
 };

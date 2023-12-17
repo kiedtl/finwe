@@ -176,24 +176,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .Mac => {},
-        .Decl => |d| {
-            if (d.calls == 0) {
-                //std.log.info("skipping {s}", .{d.name});
-                return;
-            }
-            node.romloc = buf.items.len;
-            // const a = d.arity orelse @import("analyser.zig").BlockAnalysis{};
-            // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
-            //     d.name,              d.variant,
-            //     node.romloc + 0x100, a,
-            // });
-            try genNodeList(program, buf, d.body, ual);
-            if (d.is_test) {
-                try emit(buf, node, WK_STACK, false, false, .Ohalt);
-            } else {
-                try emit(buf, node, RT_STACK, false, true, .Ojmp);
-            }
-        },
+        .Decl => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .Quote => {
             @panic("unimplemented");
@@ -345,7 +328,26 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     var buf = Ins.List.init(gpa.allocator());
     var ual = UA.List.init(gpa.allocator());
 
-    try genNodeList(program, &buf, program.ast, &ual);
+    for (program.defs.items) |def| {
+        const d = def.node.Decl;
+        try genNodeList(program, &buf, program.ast, &ual);
+        if (d.calls == 0) {
+            //std.log.info("skipping {s}", .{d.name});
+            continue;
+        }
+        def.romloc = buf.items.len;
+        // const a = d.arity orelse @import("analyser.zig").BlockAnalysis{};
+        // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
+        //     d.name,              d.variant,
+        //     node.romloc + 0x100, a,
+        // });
+        try genNodeList(program, &buf, d.body, &ual);
+        if (d.is_test) {
+            try emit(&buf, def, WK_STACK, false, false, .Ohalt);
+        } else {
+            try emit(&buf, def, RT_STACK, false, true, .Ojmp);
+        }
+    }
 
     program.romloc_code_end = buf.items.len;
 
@@ -373,7 +375,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     //     std.log.info("Static: {x}...{x}", .{ data.romloc + 0x100, data.romloc + data.count + 0x100 });
     // }
 
-    ual_search: for (ual.items) |ua| switch (ua.node.node) {
+    for (ual.items) |ua| switch (ua.node.node) {
         .Here => reemitAddr16(&buf, ua.loc, here),
         .VRef => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
         .VDeref => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
@@ -383,25 +385,18 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             reemitAddr16(&buf, ua.loc, static.romloc);
         },
         .Call => |c| {
-            for (program.defs.items) |def| {
-                if (mem.eql(u8, def.node.Decl.name, ua.ident) and
-                    c.ctyp.Decl == def.node.Decl.variant)
-                {
-                    if (def.romloc == 0xFFFF) {
-                        std.log.err("Def {s} (var {}) was never generated", .{
-                            def.node.Decl.name, def.node.Decl.variant,
-                        });
-                        unreachable;
-                    }
+            const node = c.ctyp.Decl.node.?;
+            assert(c.ctyp.Decl.variant == node.node.Decl.variant);
+            assert(mem.eql(u8, ua.ident, node.node.Decl.name));
 
-                    reemitAddr16(&buf, ua.loc, def.romloc);
-                    continue :ual_search;
-                }
+            if (node.romloc == 0xFFFF) {
+                std.log.err("[Bug] codegen: word {s} (var {}) was never generated", .{
+                    node.node.Decl.name, node.node.Decl.variant,
+                });
+                unreachable;
             }
 
-            // If we haven't matched a UA with a label by now, it's an invalid
-            // identifier
-            unreachable;
+            reemitAddr16(&buf, ua.loc, node.romloc);
         },
         else => unreachable,
     };

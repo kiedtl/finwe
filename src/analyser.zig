@@ -378,7 +378,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
     var info = AnalyserInfo{};
     var iter = block.iterator();
     while (iter.next()) |node| {
-        // if (mem.eql(u8, parent.name, "_Start")) {
+        // if (mem.eql(u8, parent.name, "main")) {
         //     std.log.info("{s}_{}: node: {}", .{ parent.name, parent.variant, node.node });
         //     std.log.info("analysis: {}\n", .{a});
         //     if (a.stack.len > 0) {
@@ -396,7 +396,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .TypeDef => {},
             .Debug => std.log.debug("analysis: {}", .{a}),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
-            .Mac, .Decl => unreachable,
+            .Mac, .Decl => {}, // Only analyse if/when called
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
@@ -404,12 +404,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Call => |*c| switch (c.ctyp) {
                 .Decl => {
-                    const d = for (program.defs.items) |decl| {
-                        if (!decl.node.Decl.is_test and
-                            mem.eql(u8, decl.node.Decl.name, c.name))
-                            break decl;
-                    } else unreachable;
+                    const d = parent.scope.findAny(c.name).?;
                     const cdecl = &d.node.Decl;
+
+                    c.ctyp.Decl.node = d;
 
                     if (cdecl.arity) |d_arity| {
                         if (!cdecl.is_analysed) {
@@ -433,15 +431,18 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                                     break i;
                             } else null;
 
-                            c.ctyp.Decl = (var_ind orelse cdecl.variations.items.len) + 1;
+                            c.ctyp.Decl.variant = (var_ind orelse cdecl.variations.items.len) + 1;
+                            if (var_ind) |ind|
+                                c.ctyp.Decl.node = cdecl.variations.items[ind];
 
-                            // if (mem.eql(u8, parent.name, "_Start"))
+                            // if (mem.eql(u8, parent.name, "main"))
                             //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
                             try ungenericified.mergeInto(a, program, node.srcloc);
 
                             if (var_ind == null) {
                                 const newdef_ = d.deepclone(null, program);
                                 const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                                c.ctyp.Decl.node = newdef;
                                 program.defs.append(newdef) catch unreachable;
 
                                 cdecl.variations.append(newdef) catch unreachable;
@@ -713,7 +714,7 @@ pub fn postProcess(self: *Program) Error!void {
 
         pub fn walkNode(program: *Program, parent: ?*ASTNode, node: *ASTNode) Error!void {
             switch (node.node) {
-                .Decl => unreachable,
+                .Decl => {},
                 .Mac => |b| try walkNodes(program, parent, b.body),
                 .Wild => |b| try walkNodes(program, parent, b.body),
                 .Quote => |b| try walkNodes(program, parent, b.body),
@@ -799,10 +800,7 @@ pub fn analyse(program: *Program, tests: bool) Error!void {
             _ = try analyseBlock(program, utest, utest.body, &utest.analysis);
         };
     } else {
-        const entrypoint_node = for (program.defs.items) |decl_node| {
-            if (mem.eql(u8, decl_node.node.Decl.name, "_Start")) break decl_node;
-        } else unreachable;
-        const entrypoint = &entrypoint_node.node.Decl;
+        const entrypoint = &program.global_scope.findDecl("main").?.node.Decl;
         entrypoint.calls += 1;
 
         assert(!entrypoint.is_analysed);
