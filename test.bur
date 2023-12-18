@@ -91,8 +91,6 @@
 		here 0xffffs -
 	here memset8
 	
-	(asm "k" .Op/Odrop)
-
 	alloc/init
 	
 	(local ptrs (Ptr16 U8) 4)

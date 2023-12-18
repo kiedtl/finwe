@@ -366,7 +366,7 @@ pub const Parser = struct {
                             .name = name,
                             .utyp = ltyp,
                             .llen = llen,
-                            .lind = 0,
+                            .lind = 0xFFFF,
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -707,6 +707,7 @@ pub const Parser = struct {
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 switch (node.node) {
+                    .Import => |i| if (i.is_dupe) return error._Continue,
                     .Value => |v| switch (v.typ) {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
@@ -736,7 +737,7 @@ pub const Parser = struct {
                             .name = vd.name,
                             .rtyp = vd.utyp,
                             .llen = vd.llen,
-                            .ind = 0,
+                            .ind = 0xFFFF,
                         }) catch unreachable;
                         vd.lind = parent.?.node.Decl.locals.len - 1;
                     },
@@ -783,6 +784,8 @@ pub const Parser = struct {
 
         for (self.imports.items) |*importptr| {
             const import = &importptr.*.node.Import;
+            if (!mem.eql(u8, import.path, "<unresolved>"))
+                continue;
 
             var path: []const u8 = "";
 
@@ -808,8 +811,9 @@ pub const Parser = struct {
             } else null;
 
             if (already_imported) |nodeptr| {
-                //importptr.* = nodeptr;
+                assert(importptr.* != nodeptr);
                 import.body = nodeptr.node.Import.body;
+                import.is_dupe = true;
                 continue;
             }
 

@@ -327,8 +327,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         def.romloc = buf.items.len;
         // const a = d.arity orelse @import("analyser.zig").BlockAnalysis{};
         // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
-        //     d.name,              d.variant,
-        //     node.romloc + 0x100, a,
+        //     d.name,             d.variant,
+        //     def.romloc + 0x100, a,
         // });
         try genNodeList(program, &buf, d.body, &ual);
         if (d.is_test) {
@@ -338,7 +338,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
-    program.romloc_code_end = buf.items.len;
+    //program.romloc_code_end = buf.items.len;
 
     for (program.statics.items) |*data| {
         data.romloc = buf.items.len;
@@ -347,12 +347,14 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
                 for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
                 try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+                program.romloc_code_end = buf.items.len - 1;
             },
             .None => {
                 const typsz = data.type.size(program).?;
-                assert(data.count > 0);
                 const totalsz = typsz * data.count;
-                for (0..totalsz) |_| try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+                assert(totalsz > 0);
+                for (0..totalsz) |_|
+                    try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
             },
         }
     }
@@ -361,13 +363,23 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     // std.log.info("here: {x}", .{buf.items.len + 0x100});
     // for (program.statics.items) |*data| {
-    //     std.log.info("Static: {x}...{x}", .{ data.romloc + 0x100, data.romloc + data.count + 0x100 });
+    //     std.log.info("Static: {s} {x}...{x}", .{
+    //         @tagName(data.default), data.romloc + 0x100, data.romloc + (data.type.size(program).? * data.count) + 0x100,
+    //     });
     // }
 
     for (ual.items) |ua| switch (ua.node.node) {
         .Here => reemitAddr16(&buf, ua.loc, here),
-        .VRef => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
-        .VDeref => |v| reemitAddr16(&buf, ua.loc, program.statics.items[v.sind.?].romloc),
+        .VRef => |v| {
+            const loc = program.statics.items[v.sind.?].romloc;
+            // std.log.info("Static @ {s}: {x}", .{ v.name, loc + 0x100 });
+            reemitAddr16(&buf, ua.loc, loc);
+        },
+        .VDeref => |v| {
+            const loc = program.statics.items[v.sind.?].romloc;
+            // std.log.info("Static $ {s}: {x}", .{ v.name, loc + 0x100 });
+            reemitAddr16(&buf, ua.loc, loc);
+        },
         .Value => |v| {
             assert(v.typ == .StaticPtr);
             const static = program.statics.items[v.typ.StaticPtr];

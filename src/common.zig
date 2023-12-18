@@ -603,7 +603,14 @@ pub const ASTNode = struct {
         path: []const u8,
         scope: *Scope,
         body: ASTNodeList,
-        is_defiling: bool = false, // Import into current namespace?
+
+        // Import into current namespace?
+        is_defiling: bool = false,
+
+        // Import that was already imported previously (into another
+        // namspace)? Keep track of this so that walkNodes doesn't go
+        // over import ast multiple times
+        is_dupe: bool = false,
     };
 
     pub const Builtin = struct {

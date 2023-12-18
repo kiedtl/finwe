@@ -72,7 +72,7 @@
 	(local base U8 1)
 	@base <-
 
-	#dup 0= (when [ drop '0 emit return ])
+	dup 0= (when [ drop '0 emit return ])
 
 	0x99 (as $1) swap # stop indicator
 

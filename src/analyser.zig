@@ -727,10 +727,13 @@ pub fn postProcess(self: *Program) Error!void {
                     // FIXME: we should do all this in one shot, after before
                     // walking over decls
 
-                    // std.log.info("{}: added static of type {} from parent {s}", .{
+                    // std.log.info("{}: {s} ({x}): added static of type {} from parent {s} {s}", .{
                     //     program.statics.items.len,
+                    //     parent.?.node.Decl.locals.slice()[vd.lind].name,
+                    //     @intFromPtr(parent.?),
                     //     parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
                     //     parent.?.node.Decl.name,
+                    //     parent.?.node.Decl.arity orelse BlockAnalysis{},
                     // });
 
                     program.statics.append(.{
@@ -741,21 +744,15 @@ pub fn postProcess(self: *Program) Error!void {
                     parent.?.node.Decl.locals.slice()[vd.lind].ind = program.statics.items.len - 1;
                 },
                 .VRef => |*v| {
-                    v.sind = for (parent.?.node.Decl.locals.constSlice()) |local| {
-                        if (mem.eql(u8, v.name, local.name))
-                            break local.ind;
-                    } else unreachable;
-                    // std.log.info("{s}: @{s}: linked to {?}", .{
-                    //     parent.?.node.Decl.name, v.name, v.sind,
+                    v.sind = parent.?.node.Decl.locals.constSlice()[v.lind.?].ind;
+                    // std.log.info("{x}: {s}: @{s}: linked to {?}", .{
+                    //     @intFromPtr(parent.?), parent.?.node.Decl.name, v.name, v.sind,
                     // });
                 },
                 .VDeref => |*v| {
-                    v.sind = for (parent.?.node.Decl.locals.constSlice()) |local| {
-                        if (mem.eql(u8, v.name, local.name))
-                            break local.ind;
-                    } else unreachable;
-                    // std.log.info("{s}: ${s}: linked to {?}", .{
-                    //     parent.?.node.Decl.name, v.name, v.sind,
+                    v.sind = parent.?.node.Decl.locals.constSlice()[v.lind.?].ind;
+                    // std.log.info("{x}: {s}: @{s}: linked to {?}", .{
+                    //     @intFromPtr(parent.?), parent.?.node.Decl.name, v.name, v.sind,
                     // });
                 },
                 else => {},

@@ -123,6 +123,12 @@ pub const VM = struct {
             // for (copy[c.PAGE_PROGRAM..end], c.PAGE_PROGRAM..) |byte, i|
             //     if (byte != self.ram[i]) {
             //         std.log.info("differs at {x}", .{i});
+            //         var xi: usize = 0;
+            //         while (xi < self.uxn.rst.ptr) : (xi += 1)
+            //             stderr.print(" {x:0<2}", .{self.uxn.rst.dat[xi]}) catch unreachable;
+            //         if (xi == 0)
+            //             stderr.print(" <empty>", .{}) catch unreachable;
+            //         stderr.print(" \n", .{}) catch unreachable;
             //         break :f;
             //     };
 
