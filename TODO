@@ -16,8 +16,9 @@ x HERE
   - Opaque ("void") pointers
   x Maybe0
   - Unit tests, stress tests
+x Remove macros
 x Test suite
-- Imports
+x Imports
 - Vec
   - Unbounded
 - Enums
@@ -26,6 +27,7 @@ x Test suite
   - Scopes
   - Explicit main function
   - Decls within decls
+
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
   - Devices
