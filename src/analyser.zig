@@ -237,7 +237,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
 
     const args_needed: usize = switch (i.op) {
         .Ohalt => 0,
-        .Olda, .Odeo, .Odup, .Odrop => 1,
+        .Oinc, .Olda, .Odeo, .Odup, .Odrop => 1,
         .Orot => 3,
         else => 2,
     };
@@ -261,7 +261,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         i.short = switch (i.op) {
             .Osta => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
-            .Odup, .Odrop, .Odeo => a1b.? == 16,
+            .Oinc, .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
         };
