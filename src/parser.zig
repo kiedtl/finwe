@@ -355,16 +355,6 @@ pub const Parser = struct {
                         .variations = undefined,
                         .scope = Scope.create(p_scope),
                     } }, .srcloc = ast[0].location };
-                } else if (mem.eql(u8, k, "mac")) {
-                    const name = try self.expectNode(.Keyword, &ast[1]);
-
-                    const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const body = try self.parseStatements(ast_body.items, p_scope);
-
-                    break :b ASTNode{
-                        .node = .{ .Mac = .{ .name = name, .body = body } },
-                        .srcloc = ast[0].location,
-                    };
                 } else if (mem.eql(u8, k, "local")) {
                     try self.validateListLength(ast, 4);
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -605,10 +595,6 @@ pub const Parser = struct {
                         try scope.defs.append(node);
                         try self.defs.append(node);
                     },
-                    .Mac => {
-                        try scope.macs.append(node);
-                        try self.macs.append(node);
-                    },
                     else => {},
                 }
             }
@@ -725,14 +711,16 @@ pub const Parser = struct {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
-                    .Call => |c| if (c.ctyp == .Unchecked) {
+                    .Call => |c| if (c.node == null) {
                         const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
                         if (scope.findAny(c.name)) |found| {
                             switch (found.node) {
-                                .Mac => node.node.Call.ctyp = .Mac,
-                                .Decl => node.node.Call.ctyp = .{ .Decl = .{ .variant = 0 } },
+                                .Decl => {
+                                    node.node.Call.variant = 0;
+                                    node.node.Call.node = found;
+                                },
                                 else => {
-                                    std.log.info("Expected macro/word, got {s}", .{
+                                    std.log.info("Expected word, got {s}", .{
                                         @tagName(found.node),
                                     });
                                     return self.perr(error.InvalidCall, node.srcloc);
@@ -854,7 +842,7 @@ pub const Parser = struct {
         var iter2 = self.program.ast.iterator();
         while (iter2.next()) |ast_item|
             switch (ast_item.node) {
-                .Import, .Decl, .Mac, .VDecl, .TypeDef => {},
+                .Import, .Decl, .VDecl, .TypeDef => {},
                 else => return error.NakedStatements,
             };
 
@@ -869,7 +857,8 @@ pub const Parser = struct {
 
         try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
             .name = "main",
-            .ctyp = .{ .Decl = .{ .node = main_func, .variant = 0 } },
+            .node = main_func,
+            .variant = 0,
             .goto = true,
         } }, .srcloc = .{} });
     }

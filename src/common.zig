@@ -554,7 +554,6 @@ pub const ASTNode = struct {
         None, // Placeholder for removed ast values
         Import: Import,
         Decl: Decl, // word declaration
-        Mac: Mac, // macro declaration
         Call: Call,
         Wild: Wild,
         Loop: Loop,
@@ -580,11 +579,7 @@ pub const ASTNode = struct {
 
             const s = @tagName(self);
             switch (self) {
-                .Call => |c| switch (c.ctyp) {
-                    .Decl => |d| try writer.print("Call<{s}, {}>", .{ c.name, d }),
-                    .Mac => try writer.print("CallMac<{s}>", .{c.name}),
-                    .Unchecked => try writer.print("Call<{s}?>", .{c.name}),
-                },
+                .Call => |c| try writer.print("Call<{s}, {}>", .{ c.name, c.variant }),
                 .Wild => |w| try writer.print("Wild<{}>", .{w.arity}),
                 .Loop => |l| switch (l.loop) {
                     .Until => |u| try writer.print("Until<{s}>", .{@tagName(u.cond_prep)}),
@@ -700,14 +695,8 @@ pub const ASTNode = struct {
 
     pub const Call = struct {
         name: []const u8,
-        ctyp: union(enum) {
-            Mac,
-            Decl: struct {
-                variant: usize, // 0 if not generic
-                node: ?*ASTNode = null,
-            },
-            Unchecked,
-        } = .Unchecked,
+        variant: usize = 0, // 0 if not generic
+        node: ?*ASTNode = null,
         goto: bool = false,
     };
 
@@ -765,13 +754,6 @@ pub const ASTNode = struct {
         };
     };
 
-    pub const Mac = struct {
-        name: []const u8,
-        analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
-        body: ASTNodeList,
-        is_analysed: bool = false,
-    };
-
     pub const Quote = struct {
         body: ASTNodeList,
     };
@@ -813,7 +795,6 @@ pub const ASTNode = struct {
                 new.Decl.variations = ASTNodePtrList.init(gpa.allocator());
                 new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program);
             },
-            .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body, parent, program),
             .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .Import => @panic("excuse me what"),
@@ -921,15 +902,8 @@ pub const Scope = struct {
         } else null;
     }
 
-    pub fn findMac(self: *Scope, name: []const u8) ?*ASTNode {
-        return for (self.macs.items) |mac| {
-            if (mem.eql(u8, mac.node.Mac.name, name))
-                return mac;
-        } else if (self.parent) |parent| parent.findMac(name) else null;
-    }
-
     pub fn findAny(self: *Scope, name: []const u8) ?*ASTNode {
-        return self.findDecl(name) orelse self.findMac(name);
+        return self.findDecl(name);
     }
 };
 
@@ -980,7 +954,6 @@ pub const Program = struct {
             .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Import => |b| try walkNodes(self, node, b.body, ctx, func),
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
-            .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Quote => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Loop => |d| {

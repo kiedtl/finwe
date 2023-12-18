@@ -175,7 +175,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program));
             }
         },
-        .Mac => {},
         .Decl => {},
         .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
@@ -228,19 +227,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 },
             }
         },
-        .Asm => |a| {
-            try emit(buf, node, a.stack, a.keep, a.short, a.op);
-        },
-        .Call => |f| {
-            if (for (program.macs.items) |mac| {
-                if (mem.eql(u8, mac.node.Mac.name, f.name))
-                    break mac;
-            } else null) |mac| {
-                try genNodeList(program, buf, mac.node.Mac.body, ual);
-            } else {
-                try emitUA(buf, ual, f.name, node);
-            }
-        },
+        .Asm => |a| try emit(buf, node, a.stack, a.keep, a.short, a.op),
+        .Call => |f| try emitUA(buf, ual, f.name, node),
         .When => |when| {
             // Structure
             // - When else branch
@@ -386,8 +374,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             reemitAddr16(&buf, ua.loc, static.romloc);
         },
         .Call => |c| {
-            const node = c.ctyp.Decl.node.?;
-            assert(c.ctyp.Decl.variant == node.node.Decl.variant);
+            const node = c.node.?;
+            assert(c.variant == node.node.Decl.variant);
 
             if (node.romloc == 0xFFFF) {
                 std.log.err("[Bug] codegen: word {s} (var {}) was never generated", .{

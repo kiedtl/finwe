@@ -397,93 +397,79 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .TypeDef => {},
             .Debug => std.log.debug("analysis: {}", .{a}),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
-            .Mac, .Decl => {}, // Only analyse if/when called
+            .Decl => {}, // Only analyse if/when called
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
                 try (try w.arity.resolveTypeRefs(parent.arity, program)).mergeInto(a, program, node.srcloc);
             },
-            .Call => |*c| switch (c.ctyp) {
-                .Decl => {
-                    const d = parent.scope.findAny(c.name).?;
-                    const cdecl = &d.node.Decl;
+            .Call => |*c| {
+                const d = parent.scope.findAny(c.name).?;
+                const cdecl = &d.node.Decl;
 
-                    c.ctyp.Decl.node = d;
+                c.node = d;
 
-                    if (cdecl.arity) |d_arity| {
-                        if (!cdecl.is_analysed) {
-                            const ungenericified = try d_arity.conformGenericTo(a, node, program);
-                            assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
+                if (cdecl.arity) |d_arity| {
+                    if (!cdecl.is_analysed) {
+                        const ungenericified = try d_arity.conformGenericTo(a, node, program);
+                        assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
+                        for (ungenericified.args.constSlice()) |arg|
+                            cdecl.analysis.stack.append(arg) catch unreachable;
+                        _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                        cdecl.is_analysed = true;
+                    }
+
+                    if (a.isGeneric(program) or !d_arity.isGeneric(program)) {
+                        try (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a, program, node.srcloc);
+                        if (!d_arity.isGeneric(program))
+                            cdecl.calls += 1;
+                    } else if (d_arity.isGeneric(program)) {
+                        const ungenericified = try d_arity.conformGenericTo(a, node, program);
+                        assert(!ungenericified.isGeneric(program));
+                        const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
+                            if (ungenericified.eqExact(an.node.Decl.arity.?))
+                                break i;
+                        } else null;
+
+                        c.variant = (var_ind orelse cdecl.variations.items.len) + 1;
+                        if (var_ind) |ind|
+                            c.node = cdecl.variations.items[ind];
+
+                        // if (mem.eql(u8, parent.name, "main"))
+                        //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
+                        try ungenericified.mergeInto(a, program, node.srcloc);
+
+                        if (var_ind == null) {
+                            const newdef_ = d.deepclone(null, program);
+                            const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                            c.node = newdef;
+                            program.defs.append(newdef) catch unreachable;
+
+                            cdecl.variations.append(newdef) catch unreachable;
+                            newdef.node.Decl.variant = cdecl.variations.items.len;
+                            newdef.node.Decl.arity = ungenericified;
+
+                            var ab = BlockAnalysis{};
                             for (ungenericified.args.constSlice()) |arg|
-                                cdecl.analysis.stack.append(arg) catch unreachable;
-                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
-                            cdecl.is_analysed = true;
+                                ab.stack.append(arg) catch unreachable;
+                            newdef.node.Decl.arity = ungenericified;
+                            newdef.node.Decl.calls += 1;
+                            _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                            newdef.node.Decl.is_analysed = true;
                         }
-
-                        if (a.isGeneric(program) or !d_arity.isGeneric(program)) {
-                            try (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a, program, node.srcloc);
-                            if (!d_arity.isGeneric(program))
-                                cdecl.calls += 1;
-                        } else if (d_arity.isGeneric(program)) {
-                            const ungenericified = try d_arity.conformGenericTo(a, node, program);
-                            assert(!ungenericified.isGeneric(program));
-                            const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
-                                if (ungenericified.eqExact(an.node.Decl.arity.?))
-                                    break i;
-                            } else null;
-
-                            c.ctyp.Decl.variant = (var_ind orelse cdecl.variations.items.len) + 1;
-                            if (var_ind) |ind|
-                                c.ctyp.Decl.node = cdecl.variations.items[ind];
-
-                            // if (mem.eql(u8, parent.name, "main"))
-                            //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
-                            try ungenericified.mergeInto(a, program, node.srcloc);
-
-                            if (var_ind == null) {
-                                const newdef_ = d.deepclone(null, program);
-                                const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
-                                c.ctyp.Decl.node = newdef;
-                                program.defs.append(newdef) catch unreachable;
-
-                                cdecl.variations.append(newdef) catch unreachable;
-                                newdef.node.Decl.variant = cdecl.variations.items.len;
-                                newdef.node.Decl.arity = ungenericified;
-
-                                var ab = BlockAnalysis{};
-                                for (ungenericified.args.constSlice()) |arg|
-                                    ab.stack.append(arg) catch unreachable;
-                                newdef.node.Decl.arity = ungenericified;
-                                newdef.node.Decl.calls += 1;
-                                _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
-                                newdef.node.Decl.is_analysed = true;
-                            }
-                        } else unreachable;
-                    } else {
-                        if (!cdecl.is_analysed) {
-                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
-                            cdecl.is_analysed = true;
-                        }
-                        if (cdecl.analysis.isGeneric(program)) {
-                            std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
-                            unreachable;
-                        }
-                        try cdecl.analysis.mergeInto(a, program, node.srcloc);
-                        cdecl.calls += 1;
-                    }
-                },
-                .Mac => {
-                    const m = for (program.macs.items) |mac| {
-                        if (mem.eql(u8, mac.node.Mac.name, c.name))
-                            break mac;
                     } else unreachable;
-                    if (!m.node.Mac.is_analysed) {
-                        _ = try analyseBlock(program, parent, m.node.Mac.body, &m.node.Mac.analysis);
-                        m.node.Mac.is_analysed = true;
+                } else {
+                    if (!cdecl.is_analysed) {
+                        _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                        cdecl.is_analysed = true;
                     }
-                    try m.node.Mac.analysis.mergeInto(a, program, node.srcloc);
-                },
-                .Unchecked => unreachable, // program.postProcess missed something
+                    if (cdecl.analysis.isGeneric(program)) {
+                        std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
+                        unreachable;
+                    }
+                    try cdecl.analysis.mergeInto(a, program, node.srcloc);
+                    cdecl.calls += 1;
+                }
             },
             .Loop => |*l| {
                 switch (l.loop) {
@@ -716,7 +702,6 @@ pub fn postProcess(self: *Program) Error!void {
         pub fn walkNode(program: *Program, parent: ?*ASTNode, node: *ASTNode) Error!void {
             switch (node.node) {
                 .Decl => {},
-                .Mac => |b| try walkNodes(program, parent, b.body),
                 .Wild => |b| try walkNodes(program, parent, b.body),
                 .Quote => |b| try walkNodes(program, parent, b.body),
                 .Loop => |d| {
