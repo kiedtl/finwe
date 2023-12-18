@@ -786,7 +786,7 @@ pub const Parser = struct {
 
             var path: []const u8 = "";
 
-            const PATHS = [_][]const u8{ "{s}.bur", "std/{s}.bur", "{s}/init.bur" };
+            const PATHS = [_][]const u8{ "{s}.bur", "std/{s}.bur", "{s}/prelude.bur" };
 
             inline for (PATHS) |possible_path_fmt| {
                 const possible_path = std.fmt.allocPrint(
