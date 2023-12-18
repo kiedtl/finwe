@@ -7,20 +7,20 @@
 # Sadly that blows up the size to 9 bytes, so we have to settle with
 # just lukewarm 0xc0fe
 #
-(struct ChunkHeader
+(struct Header
 	[guard1 U8]
-	[prev (Ptr16 ChunkHeader)]
-	[next (Ptr16 ChunkHeader)]
+	[prev (Ptr16 Header)]
+	[next (Ptr16 Header)]
 	[free Bool]
 	[guard2 U8]
 )
 
-(word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
+(word first  (-- (Ptr16 Header)) [ here (as (Ptr16 Header)) ])
 
 (word init ( -- ) [
-	0s (as (Ptr16 ChunkHeader))
+	0s (as (Ptr16 Header))
 		first :prev <-
-	0xFFFFs (as (Ptr16 ChunkHeader))
+	0xFFFFs (as (Ptr16 Header))
 		first :next <-
 	T
 		first :free <-
@@ -33,9 +33,9 @@
 	(local size U16 1)
 	@size <-
 
-	"*** Allocating " print-string
-	$size             print-dec
-	" bytes\n"        print-string
+	#"*** Allocating " print-string
+	#$size             print-dec
+	#" bytes\n"        print-string
 
 	first
 	(while [
@@ -49,7 +49,7 @@
 		swap-sb chunk-size $size <
 		or
 	] [
-		"    Skipping " print-string dup print nl
+		#"    Skipping " print-string dup print nl
 
 		dup :next -> 0= (when [
 			0s (as (Ptr16 U8)) (make (Of Maybe0 (Ptr16 U8)))
@@ -58,19 +58,19 @@
 		    :next ->
 	])
 
-	"Chosen: " print-string dup print nl nl
+	#"Chosen: " print-string dup print nl nl
 
-	(local chosen (Ptr16 ChunkHeader) 1)
+	(local chosen (Ptr16 Header) 1)
 	@chosen <-
 
 
 	nil $chosen :free <-
 
 	$chosen chunk-size $size -
-		(sizeof ChunkHeader) (as U16) 1+
+		(sizeof Header) (as U16) 1+
 	< not (when [
-		(local next (Ptr16 ChunkHeader) 1)
-		(sizeof ChunkHeader) (as U16) $size $chosen + + @next <-
+		(local next (Ptr16 Header) 1)
+		(sizeof Header) (as U16) $size $chosen + + @next <-
 
 		$chosen          $next   :prev <-
 		$chosen :next -> $next   :next <-
@@ -81,13 +81,13 @@
 		0xfe             $chosen :guard2 <-
 	])
 
-	$chosen (sizeof ChunkHeader) (as (Ptr16 U8)) +
+	$chosen (sizeof Header) (as (Ptr16 U8)) +
 	(make (Of Maybe0 (Ptr16 U8)))
 ])
 
 (word de (AnyPtr16 -- ) [
-	(sizeof ChunkHeader) (as U16) -
-	(as (Ptr16 ChunkHeader))
+	(sizeof Header) (as U16) -
+	(as (Ptr16 Header))
 	#"Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
@@ -97,9 +97,9 @@
 	T swap-sb :free <-
 ])
 
-(word chunk-size ((Ptr16 ChunkHeader) -- U16) [
+(word chunk-size ((Ptr16 Header) -- U16) [
 	dup :next -> swap -
-	(sizeof ChunkHeader) (as U16) -
+	(sizeof Header) (as U16) -
 ])
 
 (word defrag (--) [
@@ -130,7 +130,7 @@
 	])
 ])
 
-(word print-chunk ((Ptr16 ChunkHeader) -- ) [
+(word print-chunk ((Ptr16 Header) -- ) [
 	dup print " \t" print-string
 	dup :free -> print-bool "\t" print-string
 	dup :prev -> print " \t" print-string
