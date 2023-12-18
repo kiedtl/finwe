@@ -347,7 +347,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
                 for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
                 try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
-                program.romloc_code_end = buf.items.len - 1;
+                program.romloc_code_end = buf.items.len;
             },
             .None => {
                 const typsz = data.type.size(program).?;
@@ -361,7 +361,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     const here = buf.items.len;
 
-    // std.log.info("here: {x}", .{buf.items.len + 0x100});
+    // // std.log.info("here: {x}", .{buf.items.len + 0x100});
     // for (program.statics.items) |*data| {
     //     std.log.info("Static: {s} {x}...{x}", .{
     //         @tagName(data.default), data.romloc + 0x100, data.romloc + (data.type.size(program).? * data.count) + 0x100,
