@@ -552,6 +552,7 @@ pub const ASTNode = struct {
 
     pub const Type = union(enum) {
         None, // Placeholder for removed ast values
+        Import: Import,
         Decl: Decl, // word declaration
         Mac: Mac, // macro declaration
         Call: Call,
@@ -601,6 +602,14 @@ pub const ASTNode = struct {
         if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
         try writer.print("{}", .{self.node});
     }
+
+    pub const Import = struct {
+        name: []const u8,
+        path: []const u8,
+        scope: *Scope,
+        body: ASTNodeList,
+        is_defiling: bool = false, // Import into current namespace?
+    };
 
     pub const Builtin = struct {
         type: union(enum) {
@@ -807,6 +816,7 @@ pub const ASTNode = struct {
             .Mac => new.Mac.body = _deepcloneASTList(new.Mac.body, parent, program),
             .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
+            .Import => @panic("excuse me what"),
             .VDecl => {},
             .VDeref, .VRef => {},
             .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
@@ -842,7 +852,7 @@ pub const Error = struct {
     e: Set,
     l: Srcloc,
 
-    pub const Set = parser.Parser.ParserError || analyser.Error;
+    pub const Set = parser.Parser.ParserError || analyser.Error || lexer.Lexer.LexerError;
     pub const AList = std.ArrayList(@This());
 };
 
@@ -861,6 +871,7 @@ pub const Static = struct {
 pub const Scope = struct {
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
+    imports: ASTNodePtrList,
     parent: ?*Scope,
 
     pub const AList = std.ArrayList(Scope);
@@ -870,17 +881,40 @@ pub const Scope = struct {
         p.* = .{
             .defs = ASTNodePtrList.init(gpa.allocator()),
             .macs = ASTNodePtrList.init(gpa.allocator()),
+            .imports = ASTNodePtrList.init(gpa.allocator()),
             .parent = parent,
         };
         return p;
     }
 
     pub fn findDecl(self: *Scope, name: []const u8) ?*ASTNode {
+        for (self.imports.items) |import| {
+            if (import.node.Import.is_defiling) {
+                // std.log.info("[{x}] -> search import {s} ({x}) for {s}", .{
+                //     @intFromPtr(self),
+                //     import.node.Import.name,
+                //     @intFromPtr(import.node.Import.scope),
+                //     name,
+                // });
+                if (import.node.Import.scope.findDecl(name)) |n|
+                    return n;
+            } else {
+                if (mem.indexOfScalar(u8, name, '/')) |n|
+                    if (mem.eql(u8, name[0..n], import.node.Import.name))
+                        if (import.node.Import.scope.findDecl(name)) |d|
+                            return d;
+            }
+        }
         return for (self.defs.items) |def| {
             const decl = def.node.Decl;
             if (!decl.is_test and mem.eql(u8, decl.name, name))
                 break def;
-        } else if (self.parent) |parent| parent.findDecl(name) else null;
+        } else if (self.parent) |parent| b: {
+            // std.log.info("[{x}] -> search parent {x} for {s}", .{
+            //     @intFromPtr(self), @intFromPtr(parent), name,
+            // });
+            break :b parent.findDecl(name);
+        } else null;
     }
 
     pub fn findMac(self: *Scope, name: []const u8) ?*ASTNode {
@@ -908,6 +942,9 @@ pub const Program = struct {
     errors: Error.AList,
     global_scope: *Scope,
 
+    // Keep track of which files evaluated, to avoid import infinite loop
+    imports: ASTNodePtrList,
+
     pub fn init(alloc: mem.Allocator) @This() {
         return Program{
             .ast = ASTNodeList.init(alloc),
@@ -920,6 +957,7 @@ pub const Program = struct {
             .rng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp())),
             .breakpoints = common.Breakpoint.AList.init(alloc),
             .global_scope = Scope.create(null),
+            .imports = ASTNodePtrList.init(alloc),
         };
     }
 
@@ -933,6 +971,7 @@ pub const Program = struct {
         try func(node, parent, self, ctx);
         switch (node.node) {
             .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .Import => |b| try walkNodes(self, node, b.body, ctx, func),
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Mac => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),

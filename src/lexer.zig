@@ -76,7 +76,7 @@ pub const Lexer = struct {
 
     const Self = @This();
 
-    const LexerError = error{
+    pub const LexerError = error{
         NoMatchingParen,
         UnexpectedClosingParen,
         InvalidEnumLiteral,

@@ -393,6 +393,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
         // }
         switch (node.node) {
             .None => {},
+            .Import => {},
             .TypeDef => {},
             .Debug => std.log.debug("analysis: {}", .{a}),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,

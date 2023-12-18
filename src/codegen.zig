@@ -177,6 +177,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .Mac => {},
         .Decl => {},
+        .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .Quote => {
             @panic("unimplemented");

@@ -56,7 +56,6 @@ pub fn main() anyerror!void {
             args.args.@"test" > 0,
             gpa.allocator(),
         );
-        parser.initTypes();
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
                 errors.printErrors(&program, buf);

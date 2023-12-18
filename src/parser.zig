@@ -13,6 +13,7 @@ const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
 const TypeInfo = common.TypeInfo;
 const Value = common.Value;
+const Srcloc = common.Srcloc;
 const Scope = common.Scope;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
@@ -28,6 +29,7 @@ pub const Parser = struct {
     program: *Program,
     alloc: mem.Allocator,
     is_testing: bool = false,
+    stuff_to_import: bool = false,
 
     pub const ParserError = error{
         StrayToken,
@@ -56,18 +58,16 @@ pub const Parser = struct {
         NakedStatements,
         NoMainFunction,
         InvalidCall,
-    } || mem.Allocator.Error;
+        InvalidImport,
+    } || mem.Allocator.Error || std.fs.File.GetSeekPosError || std.fs.File.ReadError;
 
     pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
+        program.addNativeType(common.Op.Tag, "Op");
         return .{
             .program = program,
             .alloc = alloc,
             .is_testing = is_testing,
         };
-    }
-
-    pub fn initTypes(self: *Parser) void {
-        self.program.addNativeType(common.Op.Tag, "Op");
     }
 
     fn validateListLength(self: *Parser, ast: []const lexer.Node, require: usize) ParserError!void {
@@ -353,7 +353,7 @@ pub const Parser = struct {
                         .body = body,
                         .is_test = true,
                         .variations = undefined,
-                        .scope = Scope.create(self.program.global_scope),
+                        .scope = Scope.create(p_scope),
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "mac")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -404,6 +404,23 @@ pub const Parser = struct {
 
                     break :b ASTNode{
                         .node = .{ .Cast = .{ .to = to, .ref = ref } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "use") or mem.eql(u8, k, "use*")) {
+                    try self.validateListLength(ast, 2);
+                    if (p_scope != self.program.global_scope)
+                        @panic("Must import into global scope"); // TODO
+                    const name = try self.expectNode(.Keyword, &ast[1]);
+                    const is_defiling = mem.eql(u8, k, "use*");
+                    self.stuff_to_import = true;
+                    break :b ASTNode{
+                        .node = .{ .Import = .{
+                            .name = name,
+                            .path = "<this is a bug>",
+                            .scope = Scope.create(null),
+                            .body = undefined,
+                            .is_defiling = is_defiling,
+                        } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "return")) {
@@ -530,7 +547,7 @@ pub const Parser = struct {
                     const asm_op_kwd = try self.parseValue(&ast[2]);
                     if (asm_op_kwd.typ != .AmbigEnumLit)
                         return error.ExpectedEnumLit;
-                    const asm_val = try self.lowerEnumValue(asm_op_kwd.val.AmbigEnumLit);
+                    const asm_val = try self.lowerEnumValue(asm_op_kwd.val.AmbigEnumLit, ast[2].location);
                     const asm_typ = self.program.types.items[asm_val.Value.typ.EnumLit];
                     const asm_name = asm_typ.def.Enum.fields.items[asm_val.Value.val.EnumLit].name;
                     var asm_op_e: ?Op.Tag = null;
@@ -572,11 +589,20 @@ pub const Parser = struct {
     pub fn extractDefs(parser_: *Parser) ErrorSet!void {
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
-                const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
+                const scope = if (parent) |p| switch (p.node) {
+                    .Decl => |d| d.scope,
+                    .Import => |i| i.scope,
+                    else => unreachable,
+                } else self.global_scope;
+
                 switch (node.node) {
                     .Decl => {
-                        // const par: []const u8 = if (parent) |p| p.node.Decl.name else "global";
-                        // std.log.info("function: {s} -> {s}", .{ node.node.Decl.name, par });
+                        // const pname: []const u8 = if (parent) |p| switch (p.node) {
+                        //     .Decl => |d| d.name,
+                        //     .Import => |i| i.name,
+                        //     else => unreachable,
+                        // } else "<global>";
+                        // std.log.info("function: {s} -> {s}", .{ node.node.Decl.name, pname });
 
                         try scope.defs.append(node);
                         try self.defs.append(node);
@@ -591,7 +617,7 @@ pub const Parser = struct {
         }.f);
     }
 
-    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit) ParserError!ASTNode.Type {
+    pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit, srcloc: Srcloc) ParserError!ASTNode.Type {
         if (lit.of == null)
             return error.MissingEnumType;
         for (self.program.types.items, 0..) |t, i| {
@@ -623,7 +649,7 @@ pub const Parser = struct {
                 else => return error.NotAnEnumOrDevice,
             };
         }
-        return error.NoSuchType;
+        return self.program.perr(error.NoSuchType, srcloc);
     }
 
     pub fn postProcess(parser_: *Parser) ErrorSet!void {
@@ -685,7 +711,7 @@ pub const Parser = struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 switch (node.node) {
                     .Value => |v| switch (v.typ) {
-                        .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit),
+                        .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
                     .Call => |c| if (c.ctyp == .Unchecked) {
@@ -733,13 +759,79 @@ pub const Parser = struct {
         }.f);
     }
 
+    // Not really part of parsing
+    pub fn importModules(parser_: *Parser) ErrorSet!void {
+        parser_.stuff_to_import = false;
+
+        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
+            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
+                if (node.node == .Import) {
+                    self.imports.append(node) catch unreachable;
+                    if (parent) |p| {
+                        switch (p.node) {
+                            .Decl => |d| d.scope.imports.append(node) catch unreachable,
+                            .Import => |i| i.scope.imports.append(node) catch unreachable,
+                            else => {},
+                        }
+                    } else {
+                        self.global_scope.imports.append(node) catch unreachable;
+                    }
+                }
+            }
+        }.f);
+
+        const self = parser_.program;
+
+        for (self.imports.items) |*importptr| {
+            const import = &importptr.*.node.Import;
+
+            const path = std.fmt.allocPrint(parser_.alloc, "{s}.bur", .{
+                import.name,
+            }) catch unreachable;
+
+            const already_imported: ?*ASTNode = for (self.imports.items) |imp| {
+                if (mem.eql(u8, imp.node.Import.path, path)) break imp;
+            } else null;
+
+            if (already_imported) |nodeptr| {
+                importptr.* = nodeptr;
+                continue;
+            }
+
+            import.body = ASTNodeList.init(parser_.alloc);
+
+            const file = std.fs.cwd().openFile(path, .{}) catch
+                return error.InvalidImport;
+            defer file.close();
+
+            const size = try file.getEndPos();
+            const buf = try parser_.alloc.alloc(u8, size);
+            defer parser_.alloc.free(buf);
+            _ = try file.readAll(buf);
+
+            var lex = lexer.Lexer.init(buf, parser_.alloc);
+            const lexed = try lex.lex(.Root);
+            defer lex.deinit();
+
+            for (lexed.items) |*node| try import.body.append(switch (node.node) {
+                .List => |l| try parser_.parseList(l.items, import.scope),
+                else => try parser_.parseStatement(node, import.scope),
+            });
+        }
+
+        if (parser_.stuff_to_import)
+            try parser_.importModules();
+    }
+
     pub fn setupMainFunc(self: *Parser) ParserError!void {
         var iter2 = self.program.ast.iterator();
         while (iter2.next()) |ast_item|
             switch (ast_item.node) {
-                .Decl, .Mac, .VDecl, .TypeDef => {},
+                .Import, .Decl, .Mac, .VDecl, .TypeDef => {},
                 else => return error.NakedStatements,
             };
+
+        if (self.is_testing) return;
 
         const main_func = self.program.global_scope.findDecl("main") orelse
             return error.NoMainFunction;
@@ -748,12 +840,11 @@ pub const Parser = struct {
             .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
         }, .srcloc = .{} });
 
-        if (!self.is_testing)
-            try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
-                .name = "main",
-                .ctyp = .{ .Decl = .{ .node = main_func, .variant = 0 } },
-                .goto = true,
-            } }, .srcloc = .{} });
+        try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
+            .name = "main",
+            .ctyp = .{ .Decl = .{ .node = main_func, .variant = 0 } },
+            .goto = true,
+        } }, .srcloc = .{} });
     }
 
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ErrorSet!void {
@@ -762,6 +853,7 @@ pub const Parser = struct {
             else => try self.parseStatement(node, self.program.global_scope),
         });
 
+        try self.importModules();
         try self.extractDefs();
         try self.setupMainFunc();
         try self.postProcess();
