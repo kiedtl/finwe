@@ -40,8 +40,7 @@
 		# ( val ptr end )
 		rot-bss>                  # ( end val  ptr  )
 		stak                      # ( end val  ptr  )
-		(sizeof $0) (as U16) +    # ( end val  ptr+ )
-		rot-sbs                   # ( val ptr+ end  )
+		1+ rot-sbs                # ( val ptr+ end  )
 	])
 ])
 
@@ -88,7 +87,7 @@
 	#        @foo :bar lda print nl
 	
 	0xAA
-		here 0xffffs -
+		0xffffs here (as U16) -
 	here memset8
 	
 	alloc/init
