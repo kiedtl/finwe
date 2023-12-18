@@ -1,0 +1,153 @@
+(use* core)
+(use* varvara)
+(use std)
+
+# I wanted to have U16 guards, that way we could have 0x1cedc0fe
+#
+# Sadly that blows up the size to 9 bytes, so we have to settle with
+# just lukewarm 0xc0fe
+#
+(struct ChunkHeader
+	[guard1 U8]
+	[prev (Ptr16 ChunkHeader)]
+	[next (Ptr16 ChunkHeader)]
+	[free Bool]
+	[guard2 U8]
+)
+
+(word first  (-- (Ptr16 ChunkHeader)) [ here (as (Ptr16 ChunkHeader)) ])
+
+(word init ( -- ) [
+	0s (as (Ptr16 ChunkHeader))
+		first :prev <-
+	0xFFFFs (as (Ptr16 ChunkHeader))
+		first :next <-
+	T
+		first :free <-
+	0xc0    first :guard1 <-
+	0xfe    first :guard2 <-
+])
+
+# ( bytes -- *ptr )
+(word get ( U16 -- (Of Maybe0 (Ptr16 U8))) [
+	(local size U16 1)
+	@size <-
+
+	"*** Allocating " print-string
+	$size             print-dec
+	" bytes\n"        print-string
+
+	first
+	(while [
+		#dup "Sz: " print-string chunk-size print-dec nl
+		#    "Rq: " print-string $size print-dec nl
+		#dup "Nx: " print-string :next -> print nl
+		#dup "Av: " print-string :free -> print-bool nl
+		#nl
+
+		dup :free -> not
+		swap-sb chunk-size $size <
+		or
+	] [
+		"    Skipping " print-string dup print nl
+
+		dup :next -> 0= (when [
+			0s (as (Ptr16 U8)) (make (Of Maybe0 (Ptr16 U8)))
+			return
+		])
+		    :next ->
+	])
+
+	"Chosen: " print-string dup print nl nl
+
+	(local chosen (Ptr16 ChunkHeader) 1)
+	@chosen <-
+
+
+	nil $chosen :free <-
+
+	$chosen chunk-size $size -
+		(sizeof ChunkHeader) (as U16) 1+
+	< not (when [
+		(local next (Ptr16 ChunkHeader) 1)
+		(sizeof ChunkHeader) (as U16) $size $chosen + + @next <-
+
+		$chosen          $next   :prev <-
+		$chosen :next -> $next   :next <-
+		T                $next   :free <-
+		$next            $chosen :next -> :prev <-
+		$next            $chosen :next <-
+		0xc0             $chosen :guard1 <-
+		0xfe             $chosen :guard2 <-
+	])
+
+	$chosen (sizeof ChunkHeader) (as (Ptr16 U8)) +
+	(make (Of Maybe0 (Ptr16 U8)))
+])
+
+(word de (AnyPtr16 -- ) [
+	(sizeof ChunkHeader) (as U16) -
+	(as (Ptr16 ChunkHeader))
+	#"Dealloc'ing: " print-string dup print nl
+
+		dup     :guard1 -> 0xc0 <>
+		over-sb :guard2 -> 0xfe <>
+	or (when [ "Bad ptr\n" print-string return ])
+
+	T swap-sb :free <-
+])
+
+(word chunk-size ((Ptr16 ChunkHeader) -- U16) [
+	dup :next -> swap -
+	(sizeof ChunkHeader) (as U16) -
+])
+
+(word defrag (--) [
+	first
+	(until [ :next -> 0= ] [
+		dup     :free ->
+		over-sb :next -> :free -> and
+		(when [
+			dup :next ->
+
+			# current->next = next->next
+			# ( current next )
+			over :next
+				# ( current next @current->next )
+				over :next -> swap <-
+
+			dup :next -> 0<> (when [
+				# ( current next )
+				:next ->
+					# ( current $next->next )
+					:prev
+					# ( current $next->next->prev )
+					over swap <-
+					# ( current )
+
+			] [ drop ])
+		] [ :next -> ])
+	])
+])
+
+(word print-chunk ((Ptr16 ChunkHeader) -- ) [
+	dup print " \t" print-string
+	dup :free -> print-bool "\t" print-string
+	dup :prev -> print " \t" print-string
+	dup :next -> print " \t" print-string
+	dup chunk-size print-dec
+	nl
+	drop
+])
+
+(word print-chunks (--) [
+	"Chunk\tFree\tPrev\tNext\tSize\n" print-string
+
+	first
+	(while [ :next -> 0<> ] [
+		dup print-chunk
+		:next ->
+	])
+
+	nl
+])

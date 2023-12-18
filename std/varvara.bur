@@ -1,0 +1,108 @@
+(use* core)
+
+(device System 0x00
+	[_unused   U16]
+	[expansion U16] # (Ptr16 ExpansionCmd)
+	[wst        U8]
+	[rst        U8]
+	[metadata  U16] # (Ptr16 Metadata)
+	[red       U16]
+	[green     U16]
+	[blue      U16]
+	[debug      U8]
+	[state      U8]
+)
+
+(device Console 0x10
+	[vector U16] #[vector (Fn u8 --)]
+	[read U8]
+	[exec U8]          # ? (not documented)
+	[mode U8]          # ? (not documented)
+	[dead U8]          # ? (not documented)
+	[exit U8]          # ? (not documented)
+	[type U8] #[type ConsoleType] # enum
+	[write U8]         # ? (not documented)
+	[error U8]         # ? (not documented)
+)
+
+(word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
+(word deo   ((AnySz $0) AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
+(word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
+(word emit  (             Any8 --              ) [ .Console/write deo       ])
+(word nl    (                  --              ) [ 0x0a emit                ])
+
+(word print-string ((Ptr16 U8) -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
+(word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
+
+(word print8 (U8 --) [
+	dup 0= (when [ drop '0 emit return ])
+
+	0x99 swap # stop indicator
+	
+	(until [ 0= ] [
+		16 /mod
+		dup 9 > (when [ 10 - 'a + ] [ '0 + ])
+		swap
+	])
+# TODO: drop null byte?
+	(until [ 0x99 = ] [ emit ])
+
+	drop # drop stop indicator
+])
+
+(word print16 (U16 --) [
+	dup 0= (when [ drop '0 emit return ])
+
+	0x99s swap # stop indicator
+	
+	(wild (U16 U16 -- U16) [
+		(until [ 0= ] [
+			16s /mod
+			dup 9s > (when [ 10s - 'as + ] [ '0s + ])
+			swap
+		])
+
+		(until [ 0x99s = ] [ (as U8) emit ])
+	])
+
+	drop # drop stop indicator
+])
+
+(word print-base (Any U8 --) [
+	(local base U8 1)
+	@base <-
+
+	#dup 0= (when [ drop '0 emit return ])
+
+	0x99 (as $1) swap # stop indicator
+
+	(wild ($1 $1 -- $1) [
+		(until [ 0= ] [
+			$base (as $1) /mod
+			dup 9 (as $1) > (when
+				[ 10 (as $1) - 'a (as $1) + ]
+				[ '0 (as $1) + ]
+			)
+			swap
+		])
+
+		(until [ 0x99 (as $1) = ] [ (as U8) emit ])
+	])
+
+	drop # drop stop indicator
+])
+
+(word print (Any --) [ 16 print-base ])
+(word print-dec (Any --) [ 10 print-base ])
+
+(word panic ((Ptr16 U8) -- ) [
+	"Panic: " print-string print-string nl
+	.System/rst (asm "" .Op/Odei) 2 /
+	(while [ 0> ] [
+		"  at " print-string
+		(asm "sr" .Op/Osth) print nl
+		1-
+	])
+	"Aborting.\n" print-string
+	(asm "" .Op/Ohalt)
+])

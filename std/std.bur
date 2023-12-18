@@ -1,0 +1,14 @@
+(use* core)
+(use* varvara)
+
+(struct Maybe0 (Any) [value $0])
+
+(word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
+       :value
+       dup 0= (when [ "Unwrapped 0 value" panic ])
+])
+
+(word orelse ((AnyOf Maybe0) (FieldType $1 value) -- (FieldType $1 value)) [
+       swap :value dup 0= (when [ drop ] [ nip ])
+])
+(test orelse [ 0 (make (Of Maybe0 U8)) 12 orelse (should eq 12) ])

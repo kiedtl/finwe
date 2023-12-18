@@ -388,7 +388,6 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         .Call => |c| {
             const node = c.ctyp.Decl.node.?;
             assert(c.ctyp.Decl.variant == node.node.Decl.variant);
-            assert(mem.eql(u8, ua.ident, node.node.Decl.name));
 
             if (node.romloc == 0xFFFF) {
                 std.log.err("[Bug] codegen: word {s} (var {}) was never generated", .{

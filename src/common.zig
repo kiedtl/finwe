@@ -852,7 +852,9 @@ pub const Error = struct {
     e: Set,
     l: Srcloc,
 
-    pub const Set = parser.Parser.ParserError || analyser.Error || lexer.Lexer.LexerError;
+    pub const Set = error{
+        _Continue, // Internal control flow for walkNodes, should never be raised
+    } || parser.Parser.ParserError || analyser.Error || lexer.Lexer.LexerError;
     pub const AList = std.ArrayList(@This());
 };
 
@@ -890,7 +892,7 @@ pub const Scope = struct {
     pub fn findDecl(self: *Scope, name: []const u8) ?*ASTNode {
         for (self.imports.items) |import| {
             if (import.node.Import.is_defiling) {
-                // std.log.info("[{x}] -> search import {s} ({x}) for {s}", .{
+                // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
                 //     @intFromPtr(self),
                 //     import.node.Import.name,
                 //     @intFromPtr(import.node.Import.scope),
@@ -901,16 +903,18 @@ pub const Scope = struct {
             } else {
                 if (mem.indexOfScalar(u8, name, '/')) |n|
                     if (mem.eql(u8, name[0..n], import.node.Import.name))
-                        if (import.node.Import.scope.findDecl(name)) |d|
+                        if (import.node.Import.scope.findDecl(name[n + 1 ..])) |d|
                             return d;
             }
         }
+        // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
         return for (self.defs.items) |def| {
             const decl = def.node.Decl;
+            // std.log.info("    - ... {s}", .{decl.name});
             if (!decl.is_test and mem.eql(u8, decl.name, name))
                 break def;
         } else if (self.parent) |parent| b: {
-            // std.log.info("[{x}] -> search parent {x} for {s}", .{
+            // std.log.info("[{x}] search parent {x} for {s}", .{
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
             break :b parent.findDecl(name);
@@ -964,7 +968,10 @@ pub const Program = struct {
     pub fn walkNodes(self: *Program, parent: ?*ASTNode, nodes: ASTNodeList, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         var iter = nodes.iterator();
         while (iter.next()) |node|
-            try walkNode(self, parent, node, ctx, func);
+            walkNode(self, parent, node, ctx, func) catch |e| switch (e) {
+                error._Continue => continue,
+                else => return e,
+            };
     }
 
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {

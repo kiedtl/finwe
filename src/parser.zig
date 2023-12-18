@@ -408,15 +408,13 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "use") or mem.eql(u8, k, "use*")) {
                     try self.validateListLength(ast, 2);
-                    if (p_scope != self.program.global_scope)
-                        @panic("Must import into global scope"); // TODO
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const is_defiling = mem.eql(u8, k, "use*");
                     self.stuff_to_import = true;
                     break :b ASTNode{
                         .node = .{ .Import = .{
                             .name = name,
-                            .path = "<this is a bug>",
+                            .path = "<unresolved>",
                             .scope = Scope.create(null),
                             .body = undefined,
                             .is_defiling = is_defiling,
@@ -587,8 +585,8 @@ pub const Parser = struct {
 
     // Extract definitions
     pub fn extractDefs(parser_: *Parser) ErrorSet!void {
-        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
+        try parser_.program.walkNodes(null, parser_.program.ast, {}, struct {
+            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: void) ErrorSet!void {
                 const scope = if (parent) |p| switch (p.node) {
                     .Decl => |d| d.scope,
                     .Import => |i| i.scope,
@@ -615,6 +613,19 @@ pub const Parser = struct {
                 }
             }
         }.f);
+
+        var i: usize = 0;
+        while (i < parser_.program.defs.items.len) {
+            const item = parser_.program.defs.items[i];
+            const contains = for (parser_.program.defs.items[0..i]) |otheritem| {
+                if (otheritem == item) break true;
+            } else false;
+            if (contains) {
+                _ = parser_.program.defs.swapRemove(i);
+            } else {
+                i += 1;
+            }
+        }
     }
 
     pub fn lowerEnumValue(self: *Parser, lit: lexer.Node.EnumLit, srcloc: Srcloc) ParserError!ASTNode.Type {
@@ -785,23 +796,39 @@ pub const Parser = struct {
         for (self.imports.items) |*importptr| {
             const import = &importptr.*.node.Import;
 
-            const path = std.fmt.allocPrint(parser_.alloc, "{s}.bur", .{
-                import.name,
-            }) catch unreachable;
+            var path: []const u8 = "";
+
+            const PATHS = [_][]const u8{ "{s}.bur", "std/{s}.bur", "{s}/init.bur" };
+
+            inline for (PATHS) |possible_path_fmt| {
+                const possible_path = std.fmt.allocPrint(
+                    parser_.alloc,
+                    possible_path_fmt,
+                    .{import.name},
+                ) catch unreachable;
+                if (std.fs.cwd().statFile(possible_path)) |_| {
+                    path = possible_path;
+                } else |_| {
+                    parser_.alloc.free(possible_path);
+                }
+            }
+
+            if (path.len == 0) return error.InvalidImport;
 
             const already_imported: ?*ASTNode = for (self.imports.items) |imp| {
                 if (mem.eql(u8, imp.node.Import.path, path)) break imp;
             } else null;
 
             if (already_imported) |nodeptr| {
-                importptr.* = nodeptr;
+                //importptr.* = nodeptr;
+                import.body = nodeptr.node.Import.body;
                 continue;
             }
 
+            import.path = path;
             import.body = ASTNodeList.init(parser_.alloc);
 
-            const file = std.fs.cwd().openFile(path, .{}) catch
-                return error.InvalidImport;
+            const file = std.fs.cwd().openFile(path, .{}) catch unreachable;
             defer file.close();
 
             const size = try file.getEndPos();

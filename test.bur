@@ -1,0 +1,136 @@
+(use* core)
+(use* varvara)
+
+(use std)
+(use alloc)
+
+(test lang_decl_scoping [
+	(word foobar [ 1 ])
+	(word baz [
+		(word foobar [ 2 ])
+		foobar
+	])
+	foobar (should eq 1)
+	baz    (should eq 2)
+])
+
+(test lang_stack_structs [
+	(struct A [ foo U8 ])
+	(struct B [ foo U16 ])
+	(struct C [ foo U8 ] [ bar U8 ])
+
+	0x24 (make A) :foo (should eq 0x24)
+
+	1 2 3 0x24s (make B) drop (should eq 3)
+	drop drop
+
+	1 2 3 4 (make C) drop (should eq 2) (should eq 1)
+	3 4 (make C) :foo (should eq 4)
+	3 4 (make C) :bar (should eq 3)
+
+	1 2 (make C) 3 4 (make C) swap :foo (should eq 2)
+])
+
+# ( val len ptr -- )
+(word memset8 (Any8 U16 AnyPtr16 -- ) [
+	(as (Ptr16 U8))
+	dup rot + (as (Ptr16 U8))
+
+	(while [ drop 2dup <> ] [
+		# ( val ptr end )
+		rot-bss>                  # ( end val  ptr  )
+		stak                      # ( end val  ptr  )
+		(sizeof $0) (as U16) +    # ( end val  ptr+ )
+		rot-sbs                   # ( val ptr+ end  )
+	])
+])
+
+(word main [
+	#0xbeefs print nl
+	#0x3b    print nl
+	#0x0d    print
+	#0xef    print
+	#0xaceds print
+	#0xcafes print nl
+	
+	#(word foobar (Any -- $0) [
+	#	(local baz $0 1)
+	#	1+ @baz sta
+	#	$baz
+	#])
+	
+	#0 foobar foobar foobar print nl
+	#0s foobar foobar foobar foobar print nl
+	
+	#(word variable (Any -- (Ptr16 $0)) [
+	#	(local _S $0 1)
+	#	drop
+	#	@_S
+	#])
+	#
+	#0s variable dbg drop
+	#0  variable dbg drop
+	#nl
+	
+	#(struct Foo
+	#	[bar U16]
+	#	[baz U8]
+	#)
+	
+	#(local foo Foo 0)
+	
+	#@foo :bar
+	#@foo :baz
+	#dbg
+	
+	#0xffffs @foo :bar sta
+	#     9  @foo :baz sta
+	#        @foo :bar lda print nl
+	
+	0xAA
+		here 0xffffs -
+	here memset8
+	
+	(asm "k" .Op/Odrop)
+
+	alloc/init
+	
+	(local ptrs (Ptr16 U8) 4)
+	107s alloc/get std/unwrap drop
+	107s alloc/get std/unwrap 0s @ptrs + <-
+	10s  alloc/get std/unwrap 2s @ptrs + <-
+	26s  alloc/get std/unwrap 4s @ptrs + <-
+	2s   alloc/get std/unwrap drop
+	#34s  alloc/get std/unwrap dealloc
+	30s  alloc/get std/unwrap drop
+	30s  alloc/get std/unwrap 6s @ptrs + <-
+	
+	0s @ptrs + -> alloc/de
+	2s @ptrs + -> alloc/de
+	4s @ptrs + -> alloc/de
+	6s @ptrs + -> alloc/de
+	
+	nl
+	
+	alloc/print-chunks
+	alloc/defrag
+	alloc/print-chunks
+	
+	#(struct Box (Any) [value $0])
+	
+	#(word box (Any -- (Ptr16 (Of Box $0))) [
+	#	(local retval (Of Box $0) 1)
+	#	@retval :value sta
+	#	@retval
+	#])
+	
+	#(word unbox ((Ptr16 (AnyOf Box)) -- (FieldType (Child $0) value)) [
+	#	:value lda
+	#])
+	
+	#0xffffs box
+	#0x02    box
+	
+	#unbox print nl
+	#unbox print nl
+])
