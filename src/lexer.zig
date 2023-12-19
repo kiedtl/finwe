@@ -12,24 +12,22 @@ pub const Node = struct {
     location: common.Srcloc,
 
     pub const NodeType = union(enum) {
-        T,
-        Nil,
-        U8: u8,
-        U16: u16,
         Char8: u8,
         Char16: u16,
+        U8: u8,
+        U16: u16,
         String: String,
         EnumLit: EnumLit,
         Keyword: []const u8,
         Var: []const u8,
-        VarPtr: []const u8,
         VarNum: u8,
         Child: []const u8,
         ChildNum: u8,
         List: NodeList,
         Quote: NodeList,
-        ListPtr: NodeList,
-        QuotePtr: NodeList,
+        At: *Node,
+        T,
+        Nil,
     };
 
     pub const EnumLit = struct {
@@ -44,15 +42,18 @@ pub const Node = struct {
 
     pub fn deinit(self: *Node, alloc: mem.Allocator) void {
         switch (self.node) {
+            .At => |node| {
+                node.deinit(alloc);
+                alloc.destroy(node);
+            },
             .String => |str| str.deinit(),
-            .VarPtr, .Var, .Keyword => |data| alloc.free(data),
-            .Child => |data| alloc.free(data),
+            .Var, .Child, .Keyword => |data| alloc.free(data),
             .EnumLit => |data| {
                 alloc.free(data.v);
                 if (data.of) |d|
                     alloc.free(d);
             },
-            .QuotePtr, .ListPtr, .Quote, .List => |list| {
+            .Quote, .List => |list| {
                 for (list.items) |*li| li.deinit(alloc);
                 list.deinit();
             },
@@ -102,12 +103,12 @@ pub const Lexer = struct {
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
-            '@', '$', 'k', ':', '.' => blk: {
+            '$', 'k', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
                         '$' => Node.NodeType{ .VarNum = node.U8 },
                         'k' => node,
-                        '@', '.' => error.InvalidEnumLiteral, // Cannot be numeric
+                        '.' => error.InvalidEnumLiteral, // Cannot be numeric
                         ':' => Node.NodeType{ .ChildNum = node.U8 },
                         else => unreachable,
                     };
@@ -137,7 +138,6 @@ pub const Lexer = struct {
                                 '.' => Node.NodeType{ .EnumLit = .{ .v = s, .of = null } },
                                 ':' => Node.NodeType{ .Child = s },
                                 '$' => Node.NodeType{ .Var = s },
-                                '@' => Node.NodeType{ .VarPtr = s },
                                 else => unreachable,
                             };
                         }
@@ -260,7 +260,37 @@ pub const Lexer = struct {
         return self.lexWord(vtype, word);
     }
 
-    pub fn lex(self: *Self, mode: Stack.Type) LexerError!NodeList {
+    fn lex(self: *Self) LexerError!?Node.NodeType {
+        const ch = self.input[self.index];
+        return switch (ch) {
+            '#' => {
+                while (self.index < self.input.len and self.input[self.index] != 0x0a)
+                    self.moar();
+                return null;
+            },
+            0x09...0x0d, 0x20 => null,
+            '"' => try self.lexString(),
+            '$', '.', ':', '\'' => try self.lexValue(ch),
+            '@' => b: {
+                if (self.index == self.input.len - 1) {
+                    @panic("TODO: lexer: lone @");
+                }
+
+                self.moar();
+                const ptr = try self.alloc.create(Node);
+                ptr.* = Node{
+                    .node = (try self.lex()) orelse @panic("TODO: lexer: lone @"),
+                    .location = .{ .line = self.line, .column = self.column },
+                };
+                break :b .{ .At = ptr };
+            },
+            '[' => Node.NodeType{ .Quote = try self.lexList(.Bracket) },
+            '(' => Node.NodeType{ .List = try self.lexList(.Paren) },
+            else => try self.lexValue('k'),
+        };
+    }
+
+    pub fn lexList(self: *Self, mode: Stack.Type) LexerError!NodeList {
         try self.stack.append(.{ .type = mode });
         var res = NodeList.init(self.alloc);
 
@@ -276,33 +306,7 @@ pub const Lexer = struct {
 
         while (self.index < self.input.len) : (self.moar()) {
             const ch = self.input[self.index];
-
-            const v: Node.NodeType = switch (ch) {
-                '#' => {
-                    while (self.index < self.input.len and self.input[self.index] != 0x0a)
-                        self.moar();
-                    continue;
-                },
-                0x09...0x0d, 0x20 => continue,
-                '"' => try self.lexString(),
-                '$', '.', ':', '\'' => try self.lexValue(ch),
-                '@' => b: {
-                    if (self.index == self.input.len - 1) {
-                        @panic("TODO: lexer: lone @");
-                    } else break :b switch (self.input[self.index + 1]) {
-                        '[' => z: {
-                            self.moar();
-                            break :z Node.NodeType{ .QuotePtr = try self.lex(.Bracket) };
-                        },
-                        '(' => z: {
-                            self.moar();
-                            break :z Node.NodeType{ .ListPtr = try self.lex(.Paren) };
-                        },
-                        else => try self.lexValue(ch),
-                    };
-                },
-                '[' => Node.NodeType{ .Quote = try self.lex(.Bracket) },
-                '(' => Node.NodeType{ .List = try self.lex(.Paren) },
+            switch (ch) {
                 ']', ')' => {
                     const expect: Stack.Type = if (ch == ']') .Bracket else .Paren;
                     if (self.stack.items.len <= 1 or
@@ -314,13 +318,11 @@ pub const Lexer = struct {
                     _ = self.stack.pop();
                     return res;
                 },
-                else => try self.lexValue('k'),
-            };
-
-            res.append(Node{
-                .node = v,
-                .location = .{ .line = self.line, .column = self.column },
-            }) catch return error.OutOfMemory;
+                else => res.append(Node{
+                    .node = (try self.lex()) orelse continue,
+                    .location = .{ .line = self.line, .column = self.column },
+                }) catch return error.OutOfMemory,
+            }
         }
 
         return res;
@@ -332,7 +334,7 @@ const testing = std.testing;
 test "basic lexing" {
     const input = "0xfe 0xf1 0xf0s fum (test :foo bar 0xAB) (12 ['ë] :0)";
     var lexer = Lexer.init(input, std.testing.allocator);
-    const result = try lexer.lex(.Root);
+    const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -390,7 +392,7 @@ test "basic lexing" {
 test "enum literals" {
     const input = ".foo .bar/baz";
     var lexer = Lexer.init(input, std.testing.allocator);
-    const result = try lexer.lex(.Root);
+    const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -408,7 +410,7 @@ test "enum literals" {
 test "string literals" {
     const input = "\"foo\"";
     var lexer = Lexer.init(input, std.testing.allocator);
-    const result = try lexer.lex(.Root);
+    const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -421,7 +423,7 @@ test "string literals" {
 test "sigils lexing" {
     const input = "bar $baz @foo @(foo) (@foo) @[@(@foo)]";
     var lexer = Lexer.init(input, std.testing.allocator);
-    const result = try lexer.lex(.Root);
+    const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
@@ -433,12 +435,14 @@ test "sigils lexing" {
     try testing.expectEqual(activeTag(result.items[1].node), .Var);
     try testing.expectEqualSlices(u8, "baz", result.items[1].node.Var);
 
-    try testing.expectEqual(activeTag(result.items[2].node), .VarPtr);
-    try testing.expectEqualSlices(u8, "foo", result.items[2].node.VarPtr);
+    try testing.expectEqual(activeTag(result.items[2].node), .At);
+    try testing.expectEqual(activeTag(result.items[2].node.At.node), .Keyword);
+    try testing.expectEqualSlices(u8, "foo", result.items[2].node.At.node.Keyword);
 
-    try testing.expectEqual(activeTag(result.items[3].node), .ListPtr);
+    try testing.expectEqual(activeTag(result.items[3].node), .At);
+    try testing.expectEqual(activeTag(result.items[3].node.At.node), .List);
     {
-        const list = result.items[3].node.ListPtr.items;
+        const list = result.items[3].node.At.node.List.items;
 
         try testing.expectEqual(activeTag(list[0].node), .Keyword);
         try testing.expectEqualSlices(u8, "foo", list[0].node.Keyword);
@@ -448,18 +452,22 @@ test "sigils lexing" {
     {
         const list = result.items[4].node.List.items;
 
-        try testing.expectEqual(activeTag(list[0].node), .VarPtr);
-        try testing.expectEqualSlices(u8, "foo", list[0].node.VarPtr);
+        try testing.expectEqual(activeTag(list[0].node), .At);
+        try testing.expectEqual(activeTag(list[0].node.At.node), .Keyword);
+        try testing.expectEqualSlices(u8, "foo", list[0].node.At.node.Keyword);
     }
 
-    try testing.expectEqual(activeTag(result.items[5].node), .QuotePtr);
+    try testing.expectEqual(activeTag(result.items[5].node), .At);
+    try testing.expectEqual(activeTag(result.items[5].node.At.node), .Quote);
     {
-        const list = result.items[5].node.QuotePtr.items;
-        try testing.expectEqual(activeTag(list[0].node), .ListPtr);
+        const list = result.items[5].node.At.node.Quote.items;
+        try testing.expectEqual(activeTag(list[0].node), .At);
+        try testing.expectEqual(activeTag(list[0].node.At.node), .List);
         {
-            const list2 = list[0].node.ListPtr.items;
-            try testing.expectEqual(activeTag(list2[0].node), .VarPtr);
-            try testing.expectEqualSlices(u8, "foo", list2[0].node.VarPtr);
+            const list2 = list[0].node.At.node.List.items;
+            try testing.expectEqual(activeTag(list2[0].node), .At);
+            try testing.expectEqual(activeTag(list2[0].node.At.node), .Keyword);
+            try testing.expectEqualSlices(u8, "foo", list2[0].node.At.node.Keyword);
         }
     }
 }

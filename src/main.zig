@@ -46,7 +46,7 @@ pub fn main() anyerror!void {
         _ = try file.readAll(buf);
 
         var lexer = lexerm.Lexer.init(buf, gpa.allocator());
-        const lexed = try lexer.lex(.Root);
+        const lexed = try lexer.lexList(.Root);
         defer lexer.deinit();
 
         var program = common.Program.init(gpa.allocator());

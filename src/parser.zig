@@ -195,15 +195,9 @@ pub const Parser = struct {
                         };
                 return r orelse self.program.perr(error.InvalidType, node.location);
             },
-            .VarPtr => |item| {
-                const n = lexer.Node{ .node = .{ .Keyword = item }, .location = node.location };
-                return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(&n)) } };
+            .At => |subnode| {
+                return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(subnode)) } };
             },
-            .ListPtr => |lst| {
-                const n = lexer.Node{ .node = .{ .List = lst }, .location = node.location };
-                return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(&n)) } };
-            },
-            .QuotePtr => @panic("TODO: @[type] syntax"),
             else => return self.program.perr(error.ExpectedNode, node.location),
         };
     }
@@ -235,12 +229,15 @@ pub const Parser = struct {
                 .node = .{ .GetChild = .{ .name = s } },
                 .srcloc = node.location,
             },
+            .At => |atsub| switch (atsub.node) {
+                .Keyword => |s| ASTNode{
+                    .node = .{ .VRef = .{ .name = s } },
+                    .srcloc = node.location,
+                },
+                else => @panic("@ can only be used on keywords, unless in type expression"),
+            },
             .Var => |s| ASTNode{
                 .node = .{ .VDeref = .{ .name = s } },
-                .srcloc = node.location,
-            },
-            .VarPtr => |s| ASTNode{
-                .node = .{ .VRef = .{ .name = s } },
                 .srcloc = node.location,
             },
             else => ASTNode{ .node = .{ .Value = try self.parseValue(node) }, .srcloc = node.location },
@@ -838,7 +835,7 @@ pub const Parser = struct {
             _ = try file.readAll(buf);
 
             var lex = lexer.Lexer.init(buf, parser_.alloc);
-            const lexed = try lex.lex(.Root);
+            const lexed = try lex.lexList(.Root);
             defer lex.deinit();
 
             for (lexed.items) |*node| try import.body.append(switch (node.node) {
