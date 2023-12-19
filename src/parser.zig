@@ -34,6 +34,7 @@ pub const Parser = struct {
     pub const ParserError = error{
         StrayToken,
         EmptyList,
+        ExpectedNum,
         ExpectedKeyword,
         ExpectedEnumLit,
         ExpectedOptionalNumber,
@@ -189,11 +190,33 @@ pub const Parser = struct {
                                 .of = of,
                                 .field = fld,
                             }) };
+                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .Array) {
+                            @panic("Must use []/@[] syntax for arrays");
                         } else {
                             const arg = self.program.btype(try self.parseType(&lst.items[1]));
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
                         };
                 return r orelse self.program.perr(error.InvalidType, node.location);
+            },
+            .Quote => |lst| {
+                if (lst.items.len == 0)
+                    return self.program.perr(error.ExpectedItems, node.location);
+                if (lst.items.len > 2)
+                    return self.program.perr(error.UnexpectedItems, node.location);
+
+                const t = try self.parseType(&lst.items[0]);
+                var count: ?u16 = null;
+
+                if (lst.items.len > 1)
+                    count = switch (lst.items[1].node) {
+                        .U8 => |u| u,
+                        .U16 => |u| u,
+                        else => return self.program.perr(error.ExpectedNum, lst.items[1].location),
+                    };
+                return .{ .Expr = .{ .Array = .{
+                    .typ = self.program.btype(t),
+                    .count = count,
+                } } };
             },
             .At => |subnode| {
                 return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(subnode)) } };
@@ -672,12 +695,19 @@ pub const Parser = struct {
                         }) catch unreachable;
                         const fields = &self.types.items[self.types.items.len - 1].def.Struct.fields;
 
-                        var offset: u8 = 0;
-                        for (strdef.fields.items) |field| {
+                        var offset: u16 = 0;
+                        for (strdef.fields.items, 0..) |field, i| {
                             if (strdef.args == null) {
                                 const f = try field.type.resolveTypeRef(null, self);
                                 const bits = f.bits(self) orelse
                                     return self.perr(error.InvalidFieldType, field.srcloc);
+
+                                if (f == .Array and f.Array.count == null and
+                                    i != strdef.fields.items.len - 1)
+                                {
+                                    @panic("Unbounded array must be at end");
+                                }
+
                                 fields.append(.{
                                     .name = field.name,
                                     .type = f,

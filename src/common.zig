@@ -59,6 +59,11 @@ pub const TypeFmt = struct {
             .Struct, .EnumLit => |n| try writer.print("{s}<{s}>", .{ s, self.prog.types.items[n].name }),
             .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
             .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ s, TypeFmt.from(self.prog.ztype(n.typ), self.prog), n.ind }),
+            .Array => |a| if (a.count) |c| {
+                try writer.print("[{}]{s}<{}>", .{ c, s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
+            } else {
+                try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
+            },
             else => try writer.print("{s}", .{s}),
         }
     }
@@ -76,6 +81,7 @@ pub const TypeInfo = union(enum) {
     AnyPtr16,
     Ptr8: Ptr,
     Ptr16: Ptr,
+    Array: Array,
     Any,
     Any8,
     Any16,
@@ -106,10 +112,24 @@ pub const TypeInfo = union(enum) {
         switch (self) {
             .Struct, .EnumLit, .TypeRef => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
             .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ @tagName(self), n.typ, n.ind }),
+            .Array => |a| if (a.count) |c| {
+                try writer.print("[{}]{s}<{}>", .{ c, @tagName(self), a.typ });
+            } else {
+                try writer.print("{s}<{}>", .{ @tagName(self), a.typ });
+            },
             else => try writer.print("{s}", .{@tagName(self)}),
         }
         try writer.print("", .{});
     }
+
+    pub const Array = struct {
+        typ: usize,
+        count: ?u16, // null for size unknown at comptime
+
+        pub fn eq(a: Array, b: Array) bool {
+            return a.typ == b.typ and a.count == b.count;
+        }
+    };
 
     pub const Ptr = struct {
         typ: usize,
@@ -128,6 +148,7 @@ pub const TypeInfo = union(enum) {
         Of: Of,
         // Ptr8: usize,
         Ptr16: usize,
+        Array: Array,
         FieldType: FieldType,
 
         pub const Tag = meta.Tag(@This());
@@ -140,7 +161,13 @@ pub const TypeInfo = union(enum) {
         pub const Of = struct {
             of: usize,
             // ptr because zig miscompiles otherwise
-            // TODO: remove ptr after a few releases
+            // TxODO: remove ptr after a few releases
+            //
+            // Note 23y03: miscompile was due to ridiculously large size of
+            // ASTNode struct (>26kb), I changed a few instances like this to
+            // ptrs and brought it down to about 2.5kb. Probably for the best
+            // that this remains a ptr.
+            //
             args: *StackBuffer(usize, 16),
         };
 
@@ -153,6 +180,7 @@ pub const TypeInfo = union(enum) {
                 .FieldType => |ft| ft.of == b.FieldType.of and
                     mem.eql(u8, ft.field, b.FieldType.field),
                 .Ptr16 => |ar| ar == b.Ptr16,
+                .Array => |ar| ar.eq(b.Array),
                 .AnySz => |ar| ar == b.AnySz,
                 .USz => |ar| ar == b.USz,
                 .AnyOf => |ar| ar == b.AnyOf,
@@ -177,6 +205,10 @@ pub const TypeInfo = union(enum) {
                     break :b .{ .Of = new };
                 },
                 .Ptr16 => |ar| .{ .Ptr16 = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .Array => |ar| .{ .Array = .{
+                    .typ = program.btype(program.ztype(ar.typ).resolveGeneric(with, program)),
+                    .count = ar.count,
+                } },
                 .AnySz => |ar| .{ .AnySz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .USz => |ar| .{ .USz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
@@ -193,6 +225,7 @@ pub const TypeInfo = union(enum) {
                         program.ztype(arg).getTypeRefs(buf, program);
                 },
                 .Ptr16 => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .Array => |ar| program.ztype(ar.typ).getTypeRefs(buf, program),
                 .AnySz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .USz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .AnyOf => |ar| program.ztype(ar).getTypeRefs(buf, program),
@@ -202,20 +235,21 @@ pub const TypeInfo = union(enum) {
 
         pub fn isGeneric(self: @This(), program: *Program) bool {
             return switch (self) {
-                .FieldType => |f| program.builtin_types.items[f.of].isGeneric(program),
+                .FieldType => |f| program.ztype(f.of).isGeneric(program),
                 .Of => |of| b: {
-                    if (program.builtin_types.items[of.of].isGeneric(program))
+                    if (program.ztype(of.of).isGeneric(program))
                         break :b true;
                     for (of.args.constSlice()) |arg|
-                        if (program.builtin_types.items[arg].isGeneric(program))
+                        if (program.ztype(arg).isGeneric(program))
                             break :b true;
                     break :b false;
                 },
-                .Ptr16 => |ar| program.builtin_types.items[ar].isGeneric(program),
-                .AnySz => |ar| program.builtin_types.items[ar].isGeneric(program),
-                .USz => |ar| program.builtin_types.items[ar].isGeneric(program),
-                .AnyOf => |ar| program.builtin_types.items[ar].isGeneric(program),
-                .Child => |ar| program.builtin_types.items[ar].isGeneric(program),
+                .Ptr16 => |ar| program.ztype(ar).isGeneric(program),
+                .Array => |ar| program.ztype(ar.typ).isGeneric(program),
+                .AnySz => |ar| program.ztype(ar).isGeneric(program),
+                .USz => |ar| program.ztype(ar).isGeneric(program),
+                .AnyOf => |ar| program.ztype(ar).isGeneric(program),
+                .Child => |ar| program.ztype(ar).isGeneric(program),
             };
         }
 
@@ -238,8 +272,14 @@ pub const TypeInfo = union(enum) {
                     } else @panic("no such field");
                 },
                 .Ptr16 => |s| b: {
-                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    const arg_t = try program.ztype(s).resolveTypeRef(arity, program);
                     break :b arg_t.ptrize16(program);
+                },
+                .Array => |s| b: {
+                    const arg_t = try program.ztype(s.typ).resolveTypeRef(arity, program);
+                    if (arg_t == .Array and arg_t.Array.count == null and s.count != null)
+                        @panic("Should be obvious, can't have unbounded array inside bounded");
+                    break :b .{ .Array = .{ .typ = program.btype(arg_t), .count = s.count } };
                 },
                 .AnyOf => |anyof| b: {
                     const arg_t = try program.builtin_types.items[anyof].resolveTypeRef(arity, program);
@@ -304,7 +344,7 @@ pub const TypeInfo = union(enum) {
                         field.type = try field.type.resolveTypeRef(arglist, program);
                     }
                     if (calculate_offset) {
-                        var offset: u8 = 0;
+                        var offset: u16 = 0;
                         for (new.def.Struct.fields.items) |*field| {
                             field.offset = offset;
                             offset += field.type.size(program).?;
@@ -411,12 +451,9 @@ pub const TypeInfo = union(enum) {
     pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
         return switch (self) {
             .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
-
             .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
-            //.Ptr16 => |p| program.ztype(p.typ).resolveGeneric(with, program).ptrize16(program),
             .Ptr16 => |p| program.ztype(p.typ).resolveGeneric(program.ztype(with.Ptr16.typ), program).ptrize16(program),
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
-            //.Struct => @panic("uh oh"), // (Of) expr resolved too soon
             else => self,
         };
     }
@@ -465,12 +502,16 @@ pub const TypeInfo = union(enum) {
         };
     }
 
-    pub fn size(self: @This(), program: *const Program) ?u8 {
+    pub fn size(self: @This(), program: *const Program) ?u16 {
         return switch (self) {
             .Struct => |s| b: {
                 const tstruct = program.types.items[s].def.Struct;
                 const last = tstruct.fields.items[tstruct.fields.items.len - 1];
                 break :b last.offset + (last.type.size(program) orelse break :b null);
+            },
+            .Array => |a| b: {
+                const tsize = program.ztype(a.typ).size(program) orelse break :b null;
+                break :b tsize * (a.count orelse break :b null);
             },
             else => return if (self.bits(program)) |b| b / 8 else null,
         };
@@ -483,6 +524,7 @@ pub const TypeInfo = union(enum) {
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
             .AnyOf => null,
+            .Array => null,
             .Struct => b: {
                 const sz = self.size(program) orelse return null;
                 break :b if (sz <= 2) @as(u5, @intCast(sz)) * 8 else null;
@@ -664,7 +706,7 @@ pub const ASTNode = struct {
             stk_two_b: struct { ind: u1 },
             stk_one_b,
             mem: struct {
-                offset: u8,
+                offset: u16,
                 is_short: bool,
             },
         } = .unresolved,
@@ -1065,7 +1107,7 @@ pub const UserType = struct {
     pub const StructField = struct {
         name: []const u8,
         type: TypeInfo,
-        offset: u8 = 0,
+        offset: u16 = 0,
 
         pub const AList = std.ArrayList(@This());
     };

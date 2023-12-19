@@ -114,7 +114,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             .Make => {},
             .SizeOf => |sizeof| {
                 const s = sizeof.resolved.size(program).?;
-                try emitIMM(buf, node, WK_STACK, false, .Olit, s);
+                if (s > 255) {
+                    try emitIMM16(buf, node, WK_STACK, false, .Olit, s);
+                } else {
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, @as(u8, @intCast(s)));
+                }
             },
         },
         .Breakpoint => |brk| {
@@ -151,7 +155,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 if (gchmem.is_short) {
                     try emitIMM16(buf, node, WK_STACK, false, .Olit, gchmem.offset);
                 } else {
-                    try emitIMM(buf, node, WK_STACK, false, .Olit, gchmem.offset);
+                    assert(gchmem.offset <= 255);
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, @intCast(gchmem.offset));
                 }
                 try emit(buf, null, 0, false, gchmem.is_short, .Oadd);
             },
