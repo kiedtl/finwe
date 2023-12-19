@@ -129,7 +129,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             program.breakpoints.items[program.breakpoints.items.len - 1].romloc = buf.items.len;
         },
         .Cast => |c| {
-            // std.log.info("codegen: casting {} -> {}", .{ c.of, c.to.builtin });
+            //std.log.info("codegen: {},{}: casting {} -> {}", .{ node.srcloc.line, node.srcloc.column, c.of, c.to });
             const from = c.of.bits(program).?;
             const to = c.to.bits(program).?;
             if (from == 16 and to == 8) {

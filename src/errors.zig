@@ -18,8 +18,8 @@ pub fn printError(e: Error, lines: []const []const u8) void {
         stderr.print(" ", .{}) catch unreachable;
     stderr.print("\x1b[91;1m^\x1b[m\n", .{}) catch unreachable;
     stderr.print("\x1b[91m{}:\x1b[37;1m {}\x1b[m\n", .{ e.e, e.e }) catch unreachable;
-    stderr.print("      \x1b[36mat \x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m\n", .{
-        e.l.line, e.l.column,
+    stderr.print("      \x1b[36mat \x1b[m{s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m\n", .{
+        e.l.file, e.l.line, e.l.column,
     }) catch unreachable;
 }
 

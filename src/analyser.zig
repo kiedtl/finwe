@@ -554,9 +554,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 try analyseAsm(i, a, program).mergeInto(a, program, node.srcloc);
             },
             .Value => |v| switch (v.typ) {
-                .StaticPtr => |ind| a.stack.append(
-                    program.statics.items[ind].type.ptrize16(program),
-                ) catch unreachable,
+                // .StaticPtr => |ind| a.stack.append(
+                //     program.statics.items[ind].type.ptrize16(program),
+                // ) catch unreachable,
+                .StaticPtr => |ind| a.stack.append((TypeInfo{ .Array = .{
+                    .typ = program.btype(program.statics.items[ind].type),
+                    .count = @intCast(program.statics.items[ind].count),
+                } }).ptrize16(program)) catch unreachable,
                 else => a.stack.append(v.typ) catch unreachable,
             },
             .VDecl => |*vd| {
@@ -643,7 +647,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         const tos = a.stack.pop() catch {
                             @panic("Must have known stack contents before breakpoint");
                         };
-                        if (!tos.eq(v.typ)) {
+                        if (!tos.doesInclude(v.typ, program) and
+                            tos.bits(program) == v.typ.bits(program))
+                        {
                             std.log.err("Type error: {} (breakpoint) != {} (stack)", .{
                                 v.typ, tos,
                             });

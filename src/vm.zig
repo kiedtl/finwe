@@ -42,6 +42,7 @@ pub const VM = struct {
     uxn: c.Uxn = undefined,
     ram: []u8,
     here: usize = 0,
+    assembled: []const Ins,
     program: *Program,
 
     is_testing: bool = false,
@@ -52,16 +53,13 @@ pub const VM = struct {
             @panic("please uninstall Chrome before proceeding (OOM)");
         @memset(ram, 0);
 
-        var fbstream = std.io.fixedBufferStream(ram);
-        var writer = fbstream.writer();
-        writer.writeByteNTimes(0, 0x0100) catch unreachable;
-        emitter.spitout(writer, assembled) catch unreachable;
-
         var self = VM{
             .ram = ram,
             .here = assembled.len,
             .program = program,
+            .assembled = assembled,
         };
+        self.load();
         self.uxn.ram = ram.ptr;
 
         c.system_connect(0x0, c.SYSTEM_VERSION, c.SYSTEM_DEIMASK, c.SYSTEM_DEOMASK);
@@ -82,6 +80,13 @@ pub const VM = struct {
             @panic("Emulator failed to init.");
 
         return self;
+    }
+
+    pub fn load(self: *VM) void {
+        var fbstream = std.io.fixedBufferStream(self.ram);
+        var writer = fbstream.writer();
+        writer.writeByteNTimes(0, 0x0100) catch unreachable;
+        emitter.spitout(writer, self.assembled) catch unreachable;
     }
 
     pub fn execute(self: *VM) void {
@@ -193,8 +198,8 @@ pub const VM = struct {
             // TODO: assert that stacks are empty after each test
             self.uxn.wst.ptr = 0;
             self.uxn.rst.ptr = 0;
-
-            @memset(self.ram[self.here..], 0);
+            @memset(self.ram[0..], 0);
+            self.load();
 
             var pc: c_ushort = @as(c_ushort, @intCast(decl_node.romloc)) + 0x100;
             assert(pc != 0xFFFF);

@@ -97,7 +97,7 @@ pub const Parser = struct {
             .Char16 => |c| .{ .typ = .Char16, .val = .{ .u16 = c } },
             .String => |s| b: {
                 self.program.statics.append(.{
-                    .type = .U8,
+                    .type = .Char8,
                     .count = s.items.len + 1,
                     .default = .{ .String = s },
                 }) catch unreachable;
@@ -183,7 +183,9 @@ pub const Parser = struct {
                                 .of = of,
                                 .args = buf,
                             }) };
-                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .FieldType) {
+                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .FieldType or
+                            @field(TypeInfo.Expr.Tag, field.name) == .Omit)
+                        {
                             const of = self.program.btype(try self.parseType(&lst.items[1]));
                             const fld = try self.expectNode(.Keyword, &lst.items[2]);
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
@@ -709,8 +711,12 @@ pub const Parser = struct {
                         for (strdef.fields.items, 0..) |field, i| {
                             if (strdef.args == null) {
                                 const f = try field.type.resolveTypeRef(null, self);
-                                const size = f.size(self) orelse
+                                const size = f.size(self) orelse b: {
+                                    if (f == .Array and f.Array.count == null and
+                                        i == strdef.fields.items.len - 1)
+                                        break :b @as(u16, 0); // Last field, no issues
                                     return self.perr(error.InvalidFieldType, field.srcloc);
+                                };
 
                                 common.UserType.checkStructField(f, i == strdef.fields.items.len - 1);
 
@@ -869,7 +875,7 @@ pub const Parser = struct {
             defer parser_.alloc.free(buf);
             _ = try file.readAll(buf);
 
-            var lex = lexer.Lexer.init(buf, parser_.alloc);
+            var lex = lexer.Lexer.init(buf, path, parser_.alloc);
             const lexed = try lex.lexList(.Root);
             defer lex.deinit();
 

@@ -69,6 +69,7 @@ pub const Lexer = struct {
     stack: Stack.List, // Lexing stack, not program one
     line: usize = 1,
     column: usize = 0,
+    file: []const u8,
 
     pub const Stack = struct {
         type: Type,
@@ -89,8 +90,9 @@ pub const Lexer = struct {
         BadString,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
-    pub fn init(input: []const u8, alloc: mem.Allocator) Self {
+    pub fn init(input: []const u8, filename: []const u8, alloc: mem.Allocator) Self {
         return .{
+            .file = filename,
             .input = input,
             .alloc = alloc,
             .stack = Stack.List.init(alloc),
@@ -280,7 +282,7 @@ pub const Lexer = struct {
                 const ptr = try self.alloc.create(Node);
                 ptr.* = Node{
                     .node = (try self.lex()) orelse @panic("TODO: lexer: lone @"),
-                    .location = .{ .line = self.line, .column = self.column },
+                    .location = .{ .file = self.file, .line = self.line, .column = self.column },
                 };
                 break :b .{ .At = ptr };
             },
@@ -320,7 +322,7 @@ pub const Lexer = struct {
                 },
                 else => res.append(Node{
                     .node = (try self.lex()) orelse continue,
-                    .location = .{ .line = self.line, .column = self.column },
+                    .location = .{ .file = self.file, .line = self.line, .column = self.column },
                 }) catch return error.OutOfMemory,
             }
         }

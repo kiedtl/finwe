@@ -45,7 +45,7 @@ pub fn main() anyerror!void {
         defer gpa.allocator().free(buf);
         _ = try file.readAll(buf);
 
-        var lexer = lexerm.Lexer.init(buf, gpa.allocator());
+        var lexer = lexerm.Lexer.init(buf, filename, gpa.allocator());
         const lexed = try lexer.lexList(.Root);
         defer lexer.deinit();
 

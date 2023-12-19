@@ -152,8 +152,14 @@ pub const TypeInfo = union(enum) {
         Ptr16: usize,
         Array: Array,
         FieldType: FieldType,
+        Omit: Omit,
 
         pub const Tag = meta.Tag(@This());
+
+        pub const Omit = struct {
+            of: usize,
+            field: []const u8,
+        };
 
         pub const FieldType = struct {
             of: usize,
@@ -187,6 +193,8 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| ar == b.USz,
                 .AnyOf => |ar| ar == b.AnyOf,
                 .Child => |ar| ar == b.Child,
+                .Omit => |omit| omit.of == b.Omit.of and
+                    mem.eql(u8, omit.field, b.Omit.field),
             };
         }
 
@@ -215,6 +223,10 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| .{ .USz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .Omit => |omit| .{ .Omit = .{
+                    .of = program.btype(program.ztype(omit.of).resolveGeneric(with, program)),
+                    .field = omit.field,
+                } },
             };
         }
 
@@ -232,6 +244,7 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .AnyOf => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .Child => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .Omit => |ar| program.ztype(ar.of).getTypeRefs(buf, program),
             }
         }
 
@@ -252,6 +265,7 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| program.ztype(ar).isGeneric(program),
                 .AnyOf => |ar| program.ztype(ar).isGeneric(program),
                 .Child => |ar| program.ztype(ar).isGeneric(program),
+                .Omit => |ar| program.ztype(ar.of).isGeneric(program),
             };
         }
 
@@ -357,13 +371,38 @@ pub const TypeInfo = union(enum) {
                     program.types.append(new) catch unreachable;
                     break :b .{ .Struct = program.types.items.len - 1 };
                 },
+                // TODO: Childish (for only one level of Childification)
                 .Child => |s| b: {
-                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
-                    break :b switch (arg_t) {
+                    const arg_t = try program.ztype(s).resolveTypeRef(arity, program);
+                    var b = switch (arg_t) {
                         .AnyPtr, .AnyPtr16 => .Any,
                         .Ptr8, .Ptr16 => arg_t.deptrize(program),
+                        .Array => |a| program.ztype(a.typ),
                         else => unreachable,
                     };
+
+                    if ((arg_t == .Ptr16 or arg_t == .Ptr8) and
+                        b == .Array)
+                    {
+                        b = program.ztype(b.Array.typ);
+                    }
+
+                    break :b b;
+                },
+                .Omit => |omit| b: {
+                    const strct_typ = try program.ztype(omit.of).resolveTypeRef(arity, program);
+                    if (strct_typ != .Struct)
+                        @panic("invalid argument to Omit()");
+
+                    var new = program.types.items[strct_typ.Struct].deepclone();
+                    for (new.def.Struct.fields.items, 0..) |field, i|
+                        if (mem.eql(u8, field.name, omit.field)) {
+                            _ = new.def.Struct.fields.orderedRemove(i);
+                            break;
+                        };
+
+                    program.types.append(new) catch unreachable;
+                    break :b .{ .Struct = program.types.items.len - 1 };
                 },
             };
         }
@@ -505,6 +544,8 @@ pub const TypeInfo = union(enum) {
             .AnyPtr => other == .Ptr8 or other == .Ptr16,
             .AnyPtr16 => other == .Ptr16 or other == .StaticPtr,
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
+            .Char8 => other == .U8,
+            .U8 => other == .Char8,
             else => false, // self == other case already handled earlier
         };
     }
@@ -883,7 +924,7 @@ pub const Breakpoint = struct {
 pub const Srcloc = struct {
     line: usize = 0,
     column: usize = 0,
-    // file: []const u8,
+    file: []const u8 = "<unknown>",
 };
 
 pub const Error = struct {
@@ -1146,7 +1187,7 @@ pub const UserType = struct {
     }
 
     pub fn checkStructField(t: TypeInfo, is_last: bool) void {
-        if (t == .Array and t.Array.count == null and is_last) {
+        if (t == .Array and t.Array.count == null and !is_last) {
             @panic("Unbounded array must be at end");
         } else if (t == .Opaque) {
             @panic("Struct cannot contain bare opaque");
