@@ -720,7 +720,6 @@ pub const ASTNode = struct {
         name: []const u8,
         lind: usize,
         utyp: TypeInfo,
-        llen: usize,
     };
 
     pub const VRef = struct {
@@ -803,7 +802,6 @@ pub const ASTNode = struct {
             name: []const u8,
             ind: usize,
             rtyp: TypeInfo,
-            llen: usize,
         };
     };
 

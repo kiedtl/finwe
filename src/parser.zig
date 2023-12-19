@@ -385,16 +385,14 @@ pub const Parser = struct {
                         .scope = Scope.create(p_scope),
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "local")) {
-                    try self.validateListLength(ast, 4);
+                    try self.validateListLength(ast, 3);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);
-                    const llen = try self.expectNode(.U8, &ast[3]);
 
                     break :b ASTNode{
                         .node = .{ .VDecl = .{
                             .name = name,
                             .utyp = ltyp,
-                            .llen = llen,
                             .lind = 0xFFFF,
                         } },
                         .srcloc = ast[0].location,
@@ -770,7 +768,6 @@ pub const Parser = struct {
                         parent.?.node.Decl.locals.append(.{
                             .name = vd.name,
                             .rtyp = vd.utyp,
-                            .llen = vd.llen,
                             .ind = 0xFFFF,
                         }) catch unreachable;
                         vd.lind = parent.?.node.Decl.locals.len - 1;

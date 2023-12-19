@@ -55,7 +55,10 @@ pub const BlockAnalysis = struct {
             if (r.isGeneric(p)) {
                 if (!r.doesInclude(argtyp, p)) {
                     if (!r.isResolvable(p)) {
-                        std.log.err("Generic {} does not encompass {}", .{ r, argtyp });
+                        std.log.err("Generic {} does not encompass {}", .{
+                            TypeFmt.from(r, p),
+                            TypeFmt.from(argtyp, p),
+                        });
                         return p.aerr(error.GenericNotMatching, caller.srcloc);
                     }
                 } else {
@@ -104,7 +107,10 @@ pub const BlockAnalysis = struct {
         const resolved = try _resolveFully(r.args.slice()[i], calleritem, r.*, call_node, p);
 
         if (!resolved.doesInclude(calleritem, p)) {
-            std.log.err("Type {} does not encompass {}", .{ resolved, calleritem });
+            std.log.err("Type {} does not encompass {}", .{
+                TypeFmt.from(resolved, p),
+                TypeFmt.from(calleritem, p),
+            });
             return p.aerr(error.TypeNotMatching, call_node.srcloc);
         }
 
@@ -738,7 +744,7 @@ pub fn postProcess(self: *Program) Error!void {
 
                     program.statics.append(.{
                         .type = parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
-                        .count = vd.llen,
+                        .count = 1,
                         .default = .None,
                     }) catch unreachable;
                     parent.?.node.Decl.locals.slice()[vd.lind].ind = program.statics.items.len - 1;
