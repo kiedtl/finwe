@@ -4,6 +4,20 @@
 (use std)
 (use alloc)
 
+(test lang_array_sizeof [
+	(sizeof @[@Opaque])  (should eq 2)
+	(sizeof [@Opaque 1]) (should eq 2)
+	(sizeof [@Opaque 2]) (should eq 4)
+	(sizeof [U8 2])      (should eq 2)
+	(sizeof @[U8 2])     (should eq 2)
+	(sizeof [@U8 2])     (should eq 4)
+	(sizeof [U8 100])    (should eq 100)
+	(sizeof [@U8 100])   (should eq 200)
+
+	(struct Fee [fi U8] [fo [U16 2]] [fum @[Char8]])
+	(sizeof Fee)         (should eq 7)
+])
+
 (test lang_decl_scoping [
 	(word foobar [ 1 ])
 	(word baz [

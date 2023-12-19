@@ -699,7 +699,7 @@ pub const Parser = struct {
                         for (strdef.fields.items, 0..) |field, i| {
                             if (strdef.args == null) {
                                 const f = try field.type.resolveTypeRef(null, self);
-                                const bits = f.bits(self) orelse
+                                const size = f.size(self) orelse
                                     return self.perr(error.InvalidFieldType, field.srcloc);
 
                                 common.UserType.checkStructField(f, i == strdef.fields.items.len - 1);
@@ -709,7 +709,7 @@ pub const Parser = struct {
                                     .type = f,
                                     .offset = offset,
                                 }) catch unreachable;
-                                offset += bits / 8;
+                                offset += size;
                             } else {
                                 fields.append(
                                     .{ .name = field.name, .type = field.type },

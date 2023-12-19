@@ -668,8 +668,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     try b.mergeInto(a, program, node.srcloc);
                 },
                 .SizeOf => |*sizeof| {
-                    a.stack.append(.U8) catch unreachable;
                     sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
+                    const s = sizeof.resolved.size(program);
+                    if (s == null or s.? <= 255) {
+                        a.stack.append(.U8) catch unreachable;
+                    } else if (s.? > 255) {
+                        a.stack.append(.U16) catch unreachable;
+                    } else unreachable;
                 },
             },
             .Cast => |*c| {

@@ -69,7 +69,7 @@
 ])
 
 (word print-base (Any U8 --) [
-	(local base U8 1)
+	(local base U8)
 	@base <-
 
 	dup 0= (when [ drop '0 emit return ])
