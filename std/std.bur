@@ -17,3 +17,55 @@
        swap :value dup 0= (when [ drop ] [ nip ])
 ])
 (test orelse [ 0 (make (Of Maybe0 U8)) 12 orelse (should eq 12) ])
+
+(word strlen ( @[Char8] -- U16 ) [ # TODO: move to str module
+	0s swap
+	(while [ -> 0<> ] [ swap 1+ swap 1+ ])
+	drop
+])
+(test strlen [
+	""                    strlen (should eq  0s)
+	"Glory to the Empire" strlen (should eq 19s)
+	"Hello, world!"       strlen (should eq 13s)
+])
+
+# TODO: cleanup once always-inline directive and (r) are added
+# ( len src* dst* -- )
+(word memcpy ( U16 $0 AnyPtr -- ) [
+	#move
+	(asm "s" .Op/Osth)
+
+	dup rot                        # ( src src len      | dst* )
+	(sizeof (Child $0)) (as U16) * # ( src src len*sz   | dst* )
+	swap + swap                    # ( src*+len*sz src* | dst* )
+
+	(while [ drop 2dup <> ] [
+		#dup -> (r copy) <-
+		dup ->
+		(asm "srk" .Op/Osth) <-
+
+		(sizeof (Child $0)) (as U16) +
+
+		#(r [ (sizeof (Child $0)) (as U16) + ])
+		(sizeof (Child $0)) (as U16)
+			(asm "s" .Op/Osth)
+			(asm "sr" .Op/Oadd)
+	])
+	
+	(asm "sr" .Op/Odrop)
+	drop drop
+])
+(test memcpy [
+	(local foo [Char8 10])
+	"Hail FORTH" dup strlen swap @foo memcpy
+	0s @foo + -> (should eq 'H)
+	1s @foo + -> (should eq 'a)
+	2s @foo + -> (should eq 'i)
+	3s @foo + -> (should eq 'l)
+	4s @foo + -> (should eq  0x20)
+	5s @foo + -> (should eq 'F)
+	6s @foo + -> (should eq 'O)
+	7s @foo + -> (should eq 'R)
+	8s @foo + -> (should eq 'T)
+	9s @foo + -> (should eq 'H)
+])

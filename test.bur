@@ -4,6 +4,11 @@
 (use std)
 (use alloc)
 
+(test lang_Omit [
+	(struct Fo [foo U8] [bar U16] [baz [U8]])
+	(sizeof (Omit Fo baz)) (should eq 3)
+])
+
 (test lang_array_sizeof [
 	(sizeof @[@Opaque])  (should eq 2)
 	(sizeof [@Opaque 1]) (should eq 2)

@@ -91,6 +91,9 @@
 	(make (Of Maybe0 @Opaque))
 ])
 
+(word re (AnyPtr16 -- (Of Maybe0 $0)) [
+])
+
 (word de (AnyPtr16 -- ) [
 	(sizeof Header) (as U16) -
 	(as @Header)
