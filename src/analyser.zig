@@ -117,8 +117,7 @@ pub const BlockAnalysis = struct {
         r.args.slice()[i] = resolved;
     }
 
-    pub fn conformGenericTo(generic: @This(), caller: *const @This(), call_node: *ASTNode, p: *Program) Error!@This() {
-
+    pub fn conformGenericTo(generic: @This(), extra_type_args: []const TypeInfo, p_caller: *const @This(), call_node: *ASTNode, p: *Program) Error!@This() {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
@@ -126,12 +125,16 @@ pub const BlockAnalysis = struct {
         // std.log.info("TO ARGS {}", .{caller});
 
         //std.log.info("\n", .{});
+        var caller = p_caller.*;
         var r = generic;
+
+        for (extra_type_args, 0..) |_, i|
+            caller.stack.append(extra_type_args[extra_type_args.len - i - 1]) catch unreachable;
 
         var i = r.args.len;
         while (i > 0) {
             i -= 1;
-            try _resolveFullyRecurse(&r, caller, call_node, p, i);
+            try _resolveFullyRecurse(&r, &caller, call_node, p, i);
         }
 
         for (r.stack.slice()) |*stack|
@@ -417,7 +420,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 if (cdecl.arity) |d_arity| {
                     if (!cdecl.is_analysed) {
-                        const ungenericified = try d_arity.conformGenericTo(a, node, program);
+                        const ungenericified = try d_arity.conformGenericTo(c.args.constSlice(), a, node, program);
                         assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
                         for (ungenericified.args.constSlice()) |arg|
                             cdecl.analysis.stack.append(arg) catch unreachable;
@@ -430,7 +433,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!d_arity.isGeneric(program))
                             cdecl.calls += 1;
                     } else if (d_arity.isGeneric(program)) {
-                        const ungenericified = try d_arity.conformGenericTo(a, node, program);
+                        const ungenericified = try d_arity.conformGenericTo(c.args.constSlice(), a, node, program);
                         assert(!ungenericified.isGeneric(program));
                         const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                             if (ungenericified.eqExact(an.node.Decl.arity.?))

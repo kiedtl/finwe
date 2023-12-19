@@ -28,6 +28,12 @@
 	0xfe    first :guard2 <-
 ])
 
+(word for ( Type -- (Of Maybe0 @$0) ) [
+	(sizeof $0) (as U16) get
+	dup std/maybe? (when [ std/unwrap ] [ drop 0s (as @$0) ])
+	(make (Of Maybe0 @$0))
+])
+
 # ( bytes -- *ptr )
 (word get ( U16 -- (Of Maybe0 @Opaque) ) [
 	(local size U16)

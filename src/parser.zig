@@ -443,6 +443,16 @@ pub const Parser = struct {
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "here")) {
                     break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "of")) {
+                    const name = try self.expectNode(.Keyword, &ast[1]);
+                    var args = StackBuffer(TypeInfo, 2).init(null);
+                    for (ast[2..]) |item| {
+                        args.append(try self.parseType(&item)) catch unreachable;
+                    }
+                    break :b ASTNode{ .node = .{ .Call = .{
+                        .name = name,
+                        .args = args,
+                    } }, .srcloc = ast[1].location };
                 } else if (mem.eql(u8, k, "make")) {
                     try self.validateListLength(ast, 2);
                     const typ = try self.parseType(&ast[1]);

@@ -70,6 +70,7 @@ pub const TypeFmt = struct {
 };
 
 pub const TypeInfo = union(enum) {
+    Type,
     Opaque,
     Bool,
     U8,
@@ -396,7 +397,10 @@ pub const TypeInfo = union(enum) {
                     .Struct => .{ .Struct = i },
                     .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
                 };
-            } else return error.NoSuchType,
+            } else {
+                std.log.info("No such type {s}", .{k});
+                return error.NoSuchType;
+            },
             else => a,
         };
         return if (r.isResolvable(program)) try r.resolveTypeRef(arity, program) else r;
@@ -452,7 +456,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
         return switch (self) {
-            .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
+            .Type, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
             .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
             .Ptr16 => |p| program.ztype(p.typ).resolveGeneric(program.ztype(with.Ptr16.typ), program).ptrize16(program),
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
@@ -462,7 +466,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn isGeneric(self: @This(), program: *Program) bool {
         return switch (self) {
-            .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .Type, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             .Expr => |e| e.isGeneric(program),
             .Ptr8, .Ptr16 => |ptr| program.ztype(ptr.typ).isGeneric(program),
             .Struct => |s| program.types.items[s].def.Struct.args != null,
@@ -486,6 +490,7 @@ pub const TypeInfo = union(enum) {
             else => if (@as(Tag, self) == @as(Tag, other)) return true,
         }
         return switch (self) {
+            .Type => true,
             .AnyOf => |anyof| mem.eql(
                 u8,
                 program.types.items[
@@ -522,7 +527,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
-            .Opaque => null,
+            .Type, .Opaque => null,
             .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
@@ -748,6 +753,7 @@ pub const ASTNode = struct {
     pub const Call = struct {
         name: []const u8,
         variant: usize = 0, // 0 if not generic
+        args: StackBuffer(TypeInfo, 2) = StackBuffer(TypeInfo, 2).init(null),
         node: ?*ASTNode = null,
         goto: bool = false,
     };
