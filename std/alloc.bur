@@ -29,7 +29,7 @@
 ])
 
 # ( bytes -- *ptr )
-(word get ( U16 -- (Of Maybe0 @U8)) [
+(word get ( U16 -- (Of Maybe0 @Opaque) ) [
 	(local size U16 1)
 	@size <-
 
@@ -52,7 +52,7 @@
 		#"    Skipping " print-string dup print nl
 
 		dup :next -> 0= (when [
-			0s (as @U8) (make (Of Maybe0 @U8))
+			0s (as @Opaque) (make (Of Maybe0 @Opaque))
 			return
 		])
 		    :next ->
@@ -81,8 +81,8 @@
 		0xfe             $chosen :guard2 <-
 	])
 
-	$chosen (sizeof Header) (as @U8) +
-	(make (Of Maybe0 @U8))
+	$chosen (sizeof Header) (as @Opaque) +
+	(make (Of Maybe0 @Opaque))
 ])
 
 (word de (AnyPtr16 -- ) [

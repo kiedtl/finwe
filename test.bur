@@ -92,7 +92,7 @@
 	
 	alloc/init
 	
-	(local ptrs @U8 4)
+	(local ptrs @Opaque 4)
 	107s alloc/get std/unwrap drop
 	107s alloc/get std/unwrap 0s @ptrs + <-
 	10s  alloc/get std/unwrap 2s @ptrs + <-

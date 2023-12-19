@@ -682,8 +682,10 @@ pub const Parser = struct {
         // Add typedefs
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn _f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+                if (node.node != .TypeDef) return;
+
                 // FIXME: check for name collisions
-                if (node.node == .TypeDef) switch (node.node.TypeDef.def) {
+                switch (node.node.TypeDef.def) {
                     .Struct => |strdef| {
                         self.types.append(UserType{
                             .node = node,
@@ -702,11 +704,7 @@ pub const Parser = struct {
                                 const bits = f.bits(self) orelse
                                     return self.perr(error.InvalidFieldType, field.srcloc);
 
-                                if (f == .Array and f.Array.count == null and
-                                    i != strdef.fields.items.len - 1)
-                                {
-                                    @panic("Unbounded array must be at end");
-                                }
+                                common.UserType.checkStructField(f, i == strdef.fields.items.len - 1);
 
                                 fields.append(.{
                                     .name = field.name,
@@ -732,7 +730,7 @@ pub const Parser = struct {
                             .def = .{ .Device = .{ .start = devdef.start, .fields = fields } },
                         }) catch unreachable;
                     },
-                };
+                }
             }
         }._f);
 

@@ -70,6 +70,7 @@ pub const TypeFmt = struct {
 };
 
 pub const TypeInfo = union(enum) {
+    Opaque,
     Bool,
     U8,
     U16,
@@ -340,8 +341,9 @@ pub const TypeInfo = union(enum) {
                         }
                     }
                     const arglist = analyser.BlockAnalysis{ .args = new.def.Struct.args.? };
-                    for (new.def.Struct.fields.items) |*field| {
+                    for (new.def.Struct.fields.items, 0..) |*field, i| {
                         field.type = try field.type.resolveTypeRef(arglist, program);
+                        common.UserType.checkStructField(field.type, i == new.def.Struct.fields.items.len - 1);
                     }
                     if (calculate_offset) {
                         var offset: u16 = 0;
@@ -504,6 +506,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn size(self: @This(), program: *const Program) ?u16 {
         return switch (self) {
+            .Opaque => null,
             .Struct => |s| b: {
                 const tstruct = program.types.items[s].def.Struct;
                 const last = tstruct.fields.items[tstruct.fields.items.len - 1];
@@ -519,6 +522,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
+            .Opaque => null,
             .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
             .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
@@ -1135,6 +1139,14 @@ pub const UserType = struct {
             .Enum => {},
         }
         return new;
+    }
+
+    pub fn checkStructField(t: TypeInfo, is_last: bool) void {
+        if (t == .Array and t.Array.count == null and is_last) {
+            @panic("Unbounded array must be at end");
+        } else if (t == .Opaque) {
+            @panic("Struct cannot contain bare opaque");
+        }
     }
 };
 
