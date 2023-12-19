@@ -33,8 +33,8 @@
 
 # ( val len ptr -- )
 (word memset8 (Any8 U16 AnyPtr16 -- ) [
-	(as (Ptr16 U8))
-	dup rot + (as (Ptr16 U8))
+	(as @U8)
+	dup rot + (as @U8)
 
 	(while [ drop 2dup <> ] [
 		# ( val ptr end )
@@ -92,7 +92,7 @@
 	
 	alloc/init
 	
-	(local ptrs (Ptr16 U8) 4)
+	(local ptrs @U8 4)
 	107s alloc/get std/unwrap drop
 	107s alloc/get std/unwrap 0s @ptrs + <-
 	10s  alloc/get std/unwrap 2s @ptrs + <-
@@ -115,13 +115,13 @@
 	
 	#(struct Box (Any) [value $0])
 	
-	#(word box (Any -- (Ptr16 (Of Box $0))) [
+	#(word box (Any -- @(Of Box $0)) [
 	#	(local retval (Of Box $0) 1)
 	#	@retval :value sta
 	#	@retval
 	#])
 	
-	#(word unbox ((Ptr16 (AnyOf Box)) -- (FieldType (Child $0) value)) [
+	#(word unbox (@(AnyOf Box) -- (FieldType (Child $0) value)) [
 	#	:value lda
 	#])
 	

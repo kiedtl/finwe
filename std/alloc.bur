@@ -9,18 +9,18 @@
 #
 (struct Header
 	[guard1 U8]
-	[prev (Ptr16 Header)]
-	[next (Ptr16 Header)]
+	[prev @Header]
+	[next @Header]
 	[free Bool]
 	[guard2 U8]
 )
 
-(word first  (-- (Ptr16 Header)) [ here (as (Ptr16 Header)) ])
+(word first  (-- @Header) [ here (as @Header) ])
 
 (word init ( -- ) [
-	0s (as (Ptr16 Header))
+	0s (as @Header)
 		first :prev <-
-	0xFFFFs (as (Ptr16 Header))
+	0xFFFFs (as @Header)
 		first :next <-
 	T
 		first :free <-
@@ -29,7 +29,7 @@
 ])
 
 # ( bytes -- *ptr )
-(word get ( U16 -- (Of Maybe0 (Ptr16 U8))) [
+(word get ( U16 -- (Of Maybe0 @U8)) [
 	(local size U16 1)
 	@size <-
 
@@ -52,7 +52,7 @@
 		#"    Skipping " print-string dup print nl
 
 		dup :next -> 0= (when [
-			0s (as (Ptr16 U8)) (make (Of Maybe0 (Ptr16 U8)))
+			0s (as @U8) (make (Of Maybe0 @U8))
 			return
 		])
 		    :next ->
@@ -60,7 +60,7 @@
 
 	#"Chosen: " print-string dup print nl nl
 
-	(local chosen (Ptr16 Header) 1)
+	(local chosen @Header 1)
 	@chosen <-
 
 
@@ -69,7 +69,7 @@
 	$chosen chunk-size $size -
 		(sizeof Header) (as U16) 1+
 	< not (when [
-		(local next (Ptr16 Header) 1)
+		(local next @Header 1)
 		(sizeof Header) (as U16) $size $chosen + + @next <-
 
 		$chosen          $next   :prev <-
@@ -81,13 +81,13 @@
 		0xfe             $chosen :guard2 <-
 	])
 
-	$chosen (sizeof Header) (as (Ptr16 U8)) +
-	(make (Of Maybe0 (Ptr16 U8)))
+	$chosen (sizeof Header) (as @U8) +
+	(make (Of Maybe0 @U8))
 ])
 
 (word de (AnyPtr16 -- ) [
 	(sizeof Header) (as U16) -
-	(as (Ptr16 Header))
+	(as @Header)
 	#"Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
@@ -97,7 +97,7 @@
 	T swap-sb :free <-
 ])
 
-(word chunk-size ((Ptr16 Header) -- U16) [
+(word chunk-size (@Header -- U16) [
 	dup :next -> swap -
 	(sizeof Header) (as U16) -
 ])
@@ -130,7 +130,7 @@
 	])
 ])
 
-(word print-chunk ((Ptr16 Header) -- ) [
+(word print-chunk (@Header -- ) [
 	dup print " \t" print-string
 	dup :free -> print-bool "\t" print-string
 	dup :prev -> print " \t" print-string

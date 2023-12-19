@@ -195,6 +195,15 @@ pub const Parser = struct {
                         };
                 return r orelse self.program.perr(error.InvalidType, node.location);
             },
+            .VarPtr => |item| {
+                const n = lexer.Node{ .node = .{ .Keyword = item }, .location = node.location };
+                return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(&n)) } };
+            },
+            .ListPtr => |lst| {
+                const n = lexer.Node{ .node = .{ .List = lst }, .location = node.location };
+                return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(&n)) } };
+            },
+            .QuotePtr => @panic("TODO: @[type] syntax"),
             else => return self.program.perr(error.ExpectedNode, node.location),
         };
     }
