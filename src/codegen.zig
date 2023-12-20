@@ -113,6 +113,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Builtin => |builtin| switch (builtin.type) {
             .Make => {},
             .SizeOf => |sizeof| {
+                //std.log.info("sizeof: {}", .{sizeof.resolved});
                 const s = sizeof.resolved.size(program).?;
                 if (s > 255) {
                     try emitIMM16(buf, node, WK_STACK, false, .Olit, s);

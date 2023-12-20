@@ -122,13 +122,15 @@
 	
 	0s @ptrs + (as @@Opaque) -> alloc/de
 	2s @ptrs + (as @@Opaque) -> alloc/de
-	4s @ptrs + (as @@Opaque) -> alloc/de
+	#4s @ptrs + (as @@Opaque) -> alloc/de
 	6s @ptrs + (as @@Opaque) -> alloc/de
 	
 	nl
 	
 	alloc/print-chunks
 	alloc/defrag
+	alloc/print-chunks
+	14s 4s @ptrs + (as @@U8) -> (of alloc/re U16)
 	alloc/print-chunks
 	
 	#(struct Box (Any) [value $0])

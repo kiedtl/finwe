@@ -378,7 +378,12 @@ pub const TypeInfo = union(enum) {
                         .AnyPtr, .AnyPtr16 => .Any,
                         .Ptr8, .Ptr16 => arg_t.deptrize(program),
                         .Array => |a| program.ztype(a.typ),
-                        else => unreachable,
+                        else => {
+                            std.log.info("{}: invalid argument to Child", .{
+                                TypeFmt.from(arg_t, program),
+                            });
+                            @panic("nah");
+                        },
                     };
 
                     if ((arg_t == .Ptr16 or arg_t == .Ptr8) and

@@ -8,6 +8,11 @@
 ])
 (test maybe? [ 0 (make (Of Maybe0 U8)) maybe? (should eq nil) ])
 
+(word maybe-not? ((AnyOf Maybe0) -- Bool) [
+	:value 0=
+])
+(test maybe-not? [ 0 (make (Of Maybe0 U8)) maybe-not? (should eq t) ])
+
 (word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
        :value
        dup 0= (when [ "Unwrapped 0 value" panic ])
@@ -33,6 +38,7 @@
 # ( len src* dst* -- )
 (word memcpy ( U16 $0 AnyPtr -- ) [
 	#move
+	(as @U8) swap (as @U8) swap
 	(asm "s" .Op/Osth)
 
 	dup rot                        # ( src src len      | dst* )
@@ -40,23 +46,18 @@
 	swap + swap                    # ( src*+len*sz src* | dst* )
 
 	(while [ drop 2dup <> ] [
-		#dup -> (r copy) <-
-		dup ->
-		(asm "srk" .Op/Osth) <-
-
-		(sizeof (Child $0)) (as U16) +
-
-		#(r [ (sizeof (Child $0)) (as U16) + ])
-		(sizeof (Child $0)) (as U16)
-			(asm "s" .Op/Osth)
-			(asm "sr" .Op/Oadd)
+		dup -> (asm "srk" .Op/Osth) <- #dup -> (r copy) <-
+		1+
+		(asm "sr" .Op/Oinc) # (r 1+)
 	])
 	
 	(asm "sr" .Op/Odrop)
 	drop drop
 ])
 (test memcpy [
-	(local foo [Char8 10])
+	(local foo [Char8 11])
+	'X 10s @foo + <-
+
 	"Hail FORTH" dup strlen swap @foo memcpy
 	0s @foo + -> (should eq 'H)
 	1s @foo + -> (should eq 'a)
@@ -68,4 +69,6 @@
 	7s @foo + -> (should eq 'R)
 	8s @foo + -> (should eq 'T)
 	9s @foo + -> (should eq 'H)
+
+	10s @foo + -> (should eq 'X)
 ])

@@ -411,8 +411,6 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "as")) {
-                    try self.validateListLength(ast, 2);
-
                     var ref: ?usize = null;
                     var to: TypeInfo = .Any;
 

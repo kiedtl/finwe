@@ -25,6 +25,48 @@ pub const Error = error{
     StructNotForStack,
 };
 
+pub const AnalysisFmt = struct {
+    an: *const BlockAnalysis,
+    prog: *const Program,
+
+    pub fn from(an: *const BlockAnalysis, p: *const Program) @This() {
+        return .{ .an = an, .prog = p };
+    }
+
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        var short = false;
+
+        if (comptime mem.eql(u8, f, "s")) {
+            short = true;
+        } else if (comptime !mem.eql(u8, f, "")) {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        if (!short) {
+            try writer.print("\n    args:   ", .{});
+            for (self.an.args.constSlice()) |i|
+                try writer.print("{}, ", .{TypeFmt.from(i, self.prog)});
+            try writer.print("\n    stack:  ", .{});
+            for (self.an.stack.constSlice()) |i|
+                try writer.print("{}, ", .{TypeFmt.from(i, self.prog)});
+            try writer.print("\n    rargs:  ", .{});
+            for (self.an.rargs.constSlice()) |i|
+                try writer.print("{}, ", .{TypeFmt.from(i, self.prog)});
+            try writer.print("\n    rstack: ", .{});
+            for (self.an.rstack.constSlice()) |i|
+                try writer.print("{}, ", .{TypeFmt.from(i, self.prog)});
+        } else {
+            try writer.print("(", .{});
+            for (self.an.args.constSlice()) |i|
+                try writer.print("{} ", .{TypeFmt.from(i, self.prog)});
+            try writer.print("--", .{});
+            for (self.an.stack.constSlice()) |i|
+                try writer.print(" {}", .{TypeFmt.from(i, self.prog)});
+            try writer.print(")", .{});
+        }
+    }
+};
+
 pub const BlockAnalysis = struct {
     args: VTList16 = VTList16.init(null),
     stack: VTList16 = VTList16.init(null),
@@ -131,6 +173,10 @@ pub const BlockAnalysis = struct {
         for (extra_type_args, 0..) |_, i|
             caller.stack.append(extra_type_args[extra_type_args.len - i - 1]) catch unreachable;
 
+        // std.log.info("Calling {s}: {s}", .{
+        //     call_node.node.Call.name, AnalysisFmt.from(&caller, p),
+        // });
+
         var i = r.args.len;
         while (i > 0) {
             i -= 1;
@@ -170,33 +216,6 @@ pub const BlockAnalysis = struct {
         };
         return S.f(self.args, program) or S.f(self.rargs, program) or
             S.f(self.stack, program) or S.f(self.rstack, program);
-    }
-
-    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        var short = false;
-
-        if (comptime mem.eql(u8, f, "s")) {
-            short = true;
-        } else if (comptime !mem.eql(u8, f, "")) {
-            @compileError("Unknown format string: '" ++ f ++ "'");
-        }
-
-        if (!short) {
-            try writer.print("\n    args:   ", .{});
-            for (self.args.constSlice()) |i| try writer.print("{}, ", .{i});
-            try writer.print("\n    stack:  ", .{});
-            for (self.stack.constSlice()) |i| try writer.print("{}, ", .{i});
-            try writer.print("\n    rargs:  ", .{});
-            for (self.rargs.constSlice()) |i| try writer.print("{}, ", .{i});
-            try writer.print("\n    rstack: ", .{});
-            for (self.rstack.constSlice()) |i| try writer.print("{}, ", .{i});
-        } else {
-            try writer.print("(", .{});
-            for (self.args.constSlice()) |i| try writer.print("{} ", .{i});
-            try writer.print("--", .{});
-            for (self.stack.constSlice()) |i| try writer.print(" {}", .{i});
-            try writer.print(")", .{});
-        }
     }
 
     pub fn mergeInto(self: @This(), b: *@This(), p: *Program, srcloc: common.Srcloc) !void {
@@ -404,7 +423,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .None => {},
             .Import => {},
             .TypeDef => {},
-            .Debug => std.log.debug("analysis: {}", .{a}),
+            .Debug => std.log.debug("[debug] Current analysis: {s}", .{
+                AnalysisFmt.from(a, program),
+            }),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
             .Decl => {}, // Only analyse if/when called
             .Wild => |w| {
@@ -422,8 +443,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (!cdecl.is_analysed) {
                         const ungenericified = try d_arity.conformGenericTo(c.args.constSlice(), a, node, program);
                         assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
-                        for (ungenericified.args.constSlice()) |arg|
+                        const end = ungenericified.args.len - c.args.len;
+                        for (ungenericified.args.constSlice()[0..end]) |arg| {
                             cdecl.analysis.stack.append(arg) catch unreachable;
+                        }
                         _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
                         cdecl.is_analysed = true;
                     }
@@ -459,7 +482,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             newdef.node.Decl.arity = ungenericified;
 
                             var ab = BlockAnalysis{};
-                            for (ungenericified.args.constSlice()) |arg|
+                            const end = ungenericified.args.len - c.args.len;
+                            for (ungenericified.args.constSlice()[0..end]) |arg|
                                 ab.stack.append(arg) catch unreachable;
                             newdef.node.Decl.arity = ungenericified;
                             newdef.node.Decl.calls += 1;

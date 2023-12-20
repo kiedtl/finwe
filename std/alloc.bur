@@ -28,10 +28,16 @@
 	0xfe    first :guard2 <-
 ])
 
-(word for ( Type -- (Of Maybe0 @$0) ) [
-	(sizeof $0) (as U16) get
-	dup std/maybe? (when [ std/unwrap ] [ drop 0s (as @$0) ])
-	(make (Of Maybe0 @$0))
+# ( block-count oldptr block-type -- (sizeof block-type)*block-count )
+(word re ( U16 @$0 Type -- (Of Maybe0 @$0) ) [
+	swap (sizeof $0) (as U16) * swap reget
+	:value (make (Of Maybe0 @$0))
+])
+
+# ( block-count block-type -- (sizeof block-type)*block-count )
+(word for ( U16 Type -- (Of Maybe0 @$0) ) [
+	(sizeof $0) (as U16) * get
+	:value (make (Of Maybe0 @$0))
 ])
 
 # ( bytes -- *ptr )
@@ -91,12 +97,23 @@
 	(make (Of Maybe0 @Opaque))
 ])
 
-(word re (AnyPtr16 -- (Of Maybe0 $0)) [
+# ( bytes oldptr -- Maybe<newptr> )
+(word reget (U16 @Opaque -- (Of Maybe0 @Opaque)) [
+	(as @U8)
+	dup get-header chunk-size
+	rot
+	# ( old old-sz new-sz )
+	get :value dup 0= (when [ nip nip (make (Of Maybe0 @Opaque)) return ])
+	# ( old old-chunk-sz new-unwrapped )
+	rot 2dup (asm "s" .Op/Osth) (asm "s" .Op/Osth)
+	# ( old-chunk-sz old new | new old )
+	(as @U8) std/memcpy
+	(asm "rs" .Op/Osth) (make (Of Maybe0 @Opaque))
+	(asm "rs" .Op/Osth) (as @U8) de
 ])
 
 (word de (AnyPtr16 -- ) [
-	(sizeof Header) (as U16) -
-	(as @Header)
+	get-header
 	#"Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
@@ -104,6 +121,10 @@
 	or (when [ "Bad ptr\n" print-string return ])
 
 	T swap-sb :free <-
+])
+
+(word get-header (@Opaque -- @Header) [
+	(sizeof Header) (as U16) - (as @Header)
 ])
 
 (word chunk-size (@Header -- U16) [
