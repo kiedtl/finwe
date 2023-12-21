@@ -55,7 +55,7 @@
 	drop drop
 ])
 (test memcpy [
-	(local foo [Char8 11])
+	(var foo [Char8 11])
 	'X 10s @foo + <-
 
 	"Hail FORTH" dup strlen swap @foo memcpy

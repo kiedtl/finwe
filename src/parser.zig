@@ -386,7 +386,7 @@ pub const Parser = struct {
                         .variations = undefined,
                         .scope = Scope.create(p_scope),
                     } }, .srcloc = ast[0].location };
-                } else if (mem.eql(u8, k, "local")) {
+                } else if (mem.eql(u8, k, "var")) {
                     try self.validateListLength(ast, 3);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);

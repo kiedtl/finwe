@@ -42,7 +42,7 @@
 
 # ( bytes -- *ptr )
 (word get ( U16 -- (Of Maybe0 @Opaque) ) [
-	(local size U16)
+	(var size U16)
 	@size <-
 
 	#"*** Allocating " print-string
@@ -72,7 +72,7 @@
 
 	#"Chosen: " print-string dup print nl nl
 
-	(local chosen @Header)
+	(var chosen @Header)
 	@chosen <-
 
 
@@ -81,7 +81,7 @@
 	$chosen chunk-size $size -
 		(sizeof Header) (as U16) 1+
 	< not (when [
-		(local next @Header)
+		(var next @Header)
 		(sizeof Header) (as U16) $size $chosen + + @next <-
 
 		$chosen          $next   :prev <-

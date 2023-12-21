@@ -72,7 +72,7 @@
 	#0xcafes print nl
 	
 	#(word foobar (Any -- $0) [
-	#	(local baz $0 1)
+	#	(var baz $0 1)
 	#	1+ @baz sta
 	#	$baz
 	#])
@@ -81,7 +81,7 @@
 	#0s foobar foobar foobar foobar print nl
 	
 	#(word variable (Any -- (Ptr16 $0)) [
-	#	(local _S $0 1)
+	#	(var _S $0 1)
 	#	drop
 	#	@_S
 	#])
@@ -95,7 +95,7 @@
 	#	[baz U8]
 	#)
 	
-	#(local foo Foo 0)
+	#(var foo Foo 0)
 	
 	#@foo :bar
 	#@foo :baz
@@ -111,7 +111,7 @@
 	
 	alloc/init
 	
-	(local ptrs [@Opaque 4])
+	(var ptrs [@Opaque 4])
 	107s alloc/get std/unwrap drop
 	107s alloc/get std/unwrap 0s @ptrs + (as @@Opaque) <-
 	10s  alloc/get std/unwrap 2s @ptrs + (as @@Opaque) <-
@@ -136,7 +136,7 @@
 	#(struct Box (Any) [value $0])
 	
 	#(word box (Any -- @(Of Box $0)) [
-	#	(local retval (Of Box $0) 1)
+	#	(var retval (Of Box $0) 1)
 	#	@retval :value sta
 	#	@retval
 	#])
