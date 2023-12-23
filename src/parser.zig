@@ -411,16 +411,10 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "as")) {
-                    var ref: ?usize = null;
-                    var to: TypeInfo = .Any;
-
-                    switch (ast[1].node) {
-                        .VarNum => |n| ref = n,
-                        else => to = try self.parseType(&ast[1]),
-                    }
-
                     break :b ASTNode{
-                        .node = .{ .Cast = .{ .to = to, .ref = ref } },
+                        .node = .{ .Cast = .{
+                            .original = try self.parseType(&ast[1]),
+                        } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "use") or mem.eql(u8, k, "use*")) {

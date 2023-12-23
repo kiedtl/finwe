@@ -72,3 +72,15 @@
 
 	10s @foo + -> (should eq 'X)
 ])
+
+(word panic (@U8 -- ) [
+	"Panic: " print-string print-string nl
+	.System/rst (asm "" .Op/Odei) 2 /
+	(while [ 0> ] [
+		"  at " print-string
+		(asm "sr" .Op/Osth) print nl
+		1-
+	])
+	"Aborting.\n" print-string
+	(asm "" .Op/Ohalt)
+])

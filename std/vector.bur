@@ -1,8 +1,0 @@
-(use* core)
-(use alloc)
-
-(struct Vector (Any)
-	[capacity U16]
-	[len U16]
-	[items @[$0]]
-)

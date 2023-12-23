@@ -163,8 +163,8 @@ pub const BlockAnalysis = struct {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
-        // std.log.info("CONFORM {}", .{generic});
-        // std.log.info("TO ARGS {}", .{caller});
+        // std.log.info("CONFORM {s}", .{AnalysisFmt.from(&generic, p)});
+        // std.log.info("TO ARGS {s}", .{AnalysisFmt.from(p_caller, p)});
 
         //std.log.info("\n", .{});
         var caller = p_caller.*;
@@ -172,6 +172,9 @@ pub const BlockAnalysis = struct {
 
         for (extra_type_args, 0..) |_, i|
             caller.stack.append(extra_type_args[extra_type_args.len - i - 1]) catch unreachable;
+
+        // if (extra_type_args.len > 0)
+        //     std.log.info("ARGS v2 {s}", .{AnalysisFmt.from(&caller, p)});
 
         // std.log.info("Calling {s}: {s}", .{
         //     call_node.node.Call.name, AnalysisFmt.from(&caller, p),
@@ -188,7 +191,7 @@ pub const BlockAnalysis = struct {
                 stack.* = try stack.resolveTypeRef(r, p);
             };
 
-        // std.log.info("RESULTS {}\n\n", .{r});
+        // std.log.info("RESULTS {s}\n\n", .{AnalysisFmt.from(&r, p)});
 
         return r;
     }
@@ -440,24 +443,31 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 c.node = d;
 
                 if (cdecl.arity) |d_arity| {
-                    if (!cdecl.is_analysed) {
-                        const ungenericified = try d_arity.conformGenericTo(c.args.constSlice(), a, node, program);
-                        assert(a.isGeneric(program) or !ungenericified.isGeneric(program));
-                        const end = ungenericified.args.len - c.args.len;
-                        for (ungenericified.args.constSlice()[0..end]) |arg| {
-                            cdecl.analysis.stack.append(arg) catch unreachable;
+                    if (a.isGeneric(program)) {
+                        unreachable;
+                    } else if (!d_arity.isGeneric(program)) {
+                        if (!cdecl.is_analysed) {
+                            var type_args = @TypeOf(c.args).init(null);
+                            for (c.args.constSlice()) |arg|
+                                type_args.append(try arg.resolveTypeRef(parent.arity, program)) catch unreachable;
+                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), a, node, program);
+                            const end = ungenericified.args.len - c.args.len;
+                            for (ungenericified.args.constSlice()[0..end]) |arg| {
+                                assert(a.isGeneric(program) or !arg.isGeneric(program));
+                                cdecl.analysis.stack.append(arg) catch unreachable;
+                            }
+                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                            cdecl.is_analysed = true;
                         }
-                        _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
-                        cdecl.is_analysed = true;
-                    }
 
-                    if (a.isGeneric(program) or !d_arity.isGeneric(program)) {
                         try (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a, program, node.srcloc);
                         if (!d_arity.isGeneric(program))
                             cdecl.calls += 1;
                     } else if (d_arity.isGeneric(program)) {
-                        const ungenericified = try d_arity.conformGenericTo(c.args.constSlice(), a, node, program);
-                        assert(!ungenericified.isGeneric(program));
+                        var type_args = @TypeOf(c.args).init(null);
+                        for (c.args.constSlice()) |arg|
+                            type_args.append(try arg.resolveTypeRef(parent.arity, program)) catch unreachable;
+                        const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), a, node, program);
                         const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                             if (ungenericified.eqExact(an.node.Decl.arity.?))
                                 break i;
@@ -657,7 +667,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     }
                     a.stack.append(tstruct.fields.items[i].type) catch unreachable;
                 } else {
-                    const generic = program.ztype(b.Ptr16.typ).isGeneric(program);
+                    const generic = program.ztype(b.Ptr16.typ).isGeneric(program) or
+                        tstruct.fields.items[i].offset == 0xFFFF;
                     gch.kind = if (generic) .unresolved else .{ .mem = .{
                         .offset = tstruct.fields.items[i].offset,
                         .is_short = b == .Ptr16,
@@ -711,23 +722,25 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 },
             },
             .Cast => |*c| {
-                if (c.ref) |r| {
-                    c.to = parent.arity.?.args.constSlice()[
-                        parent.arity.?.args.len - r - 1
-                    ];
-                }
-                c.to = try c.to.resolveTypeRef(parent.arity, program);
+                c.resolved = try c.original.resolveTypeRef(parent.arity, program);
 
                 const into = a.stack.last() orelse .Any;
 
                 var casta = BlockAnalysis{};
                 casta.args.append(into) catch unreachable;
-                casta.stack.append(c.to) catch unreachable;
+                casta.stack.append(c.resolved) catch unreachable;
                 try casta.mergeInto(a, program, node.srcloc);
 
                 if (!into.isGeneric(program)) c.of = into;
 
-                // std.log.info("{s}_{}: casting {} -> {} (ref: {?}) {s}", .{ parent.name, parent.variant, c.of, c.to, c.ref, parent.arity.? });
+                // std.log.info("{s}_{}: casting {} -> {} (ref: {?}) {s}", .{
+                //     parent.name,
+                //     parent.variant,
+                //     TypeFmt.from(c.of, program),
+                //     TypeFmt.from(c.to, program),
+                //     c.ref,
+                //     AnalysisFmt.from(&parent.arity.?, program),
+                // });
             },
         }
     }

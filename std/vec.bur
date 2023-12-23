@@ -1,0 +1,73 @@
+(use* core)
+(use std)
+(use alloc)
+
+(struct Vector (Any)
+	[capacity U16]
+	[len U16]
+	[items [$0]]
+)
+
+(word new ( Type -- @(Of Vector $0) ) [
+	0s (of new-sized $0)
+])
+
+(use* varvara)
+(word new-sized ( U16 Type -- @(Of Vector $0) ) [
+	dup
+	(sizeof $0) (as U16) *
+	(sizeof (Omit (Of Vector $0) items)) (as U16) +
+	alloc/get std/unwrap (as @(Of Vector $0))
+	tuck :capacity <-
+	dup 0s over :len <-
+])
+
+(word append ( (Child (FieldType (Child $0) items)) @(AnyOf Vector) -- ) [
+	dup :len -> 1+ over :len <-
+	dup :len -> swap ensure-capacity
+])
+
+(word ensure-capacity ( U16 @(AnyOf Vector) -- ) [
+	2dup :capacity -> over > (when [
+		swap
+		2dup :capacity <-
+		swap (sizeof (Child (FieldType (Child $0) items))) (as U16) *
+		swap (as @Opaque) alloc/reget
+		std/unwrap drop
+	] [ drop ])
+])
+
+(word deinit ( @(AnyOf Vector) -- ) [
+	alloc/de
+])
+
+(test Vector/new-sized [
+	alloc/init
+
+	20s (of new-sized U8)
+	dup :len -> (should eq 0s)
+	dup :capacity -> (should eq 20s)
+	deinit
+
+	10s (of new-sized U16)
+	dup :capacity -> (should eq 10s)
+	deinit
+])
+
+(test Vector/append [
+	alloc/init
+	(var lst @(Of Vector U16))
+	(of new U16) @lst <-
+
+	   8s $lst append
+	 314s $lst append
+	   7s $lst append
+	1002s $lst append
+	 388s $lst append
+
+	0s $lst :items + -> (should eq    8s)
+	2s $lst :items + -> (should eq  314s)
+	4s $lst :items + -> (should eq    7s)
+	6s $lst :items + -> (should eq 1002s)
+	8s $lst :items + -> (should eq  388s)
+])

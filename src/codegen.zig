@@ -3,6 +3,7 @@ const mem = std.mem;
 const assert = std.debug.assert;
 
 // const vm = @import("vm.zig");
+const analyser = @import("analyser.zig");
 
 const StackBufferError = @import("buffer.zig").StackBufferError;
 
@@ -132,7 +133,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Cast => |c| {
             //std.log.info("codegen: {},{}: casting {} -> {}", .{ node.srcloc.line, node.srcloc.column, c.of, c.to });
             const from = c.of.bits(program).?;
-            const to = c.to.bits(program).?;
+            const to = c.resolved.bits(program).?;
             if (from == 16 and to == 8) {
                 try emit(buf, node, WK_STACK, false, false, .Onip);
             } else if (from == 8 and to == 16) {
@@ -153,6 +154,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             },
             .stk_one_b => {},
             .mem => |gchmem| {
+                assert(gchmem.offset != 0xFFFF);
                 if (gchmem.is_short) {
                     try emitIMM16(buf, node, WK_STACK, false, .Olit, gchmem.offset);
                 } else {
@@ -331,10 +333,10 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             continue;
         }
         def.romloc = buf.items.len;
-        // const a = d.arity orelse @import("analyser.zig").BlockAnalysis{};
+        // const a = d.arity orelse analyser.BlockAnalysis{};
         // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
         //     d.name,             d.variant,
-        //     def.romloc + 0x100, a,
+        //     def.romloc + 0x100, analyser.AnalysisFmt.from(&a, program),
         // });
         try genNodeList(program, &buf, d.body, &ual);
         if (d.is_test) {

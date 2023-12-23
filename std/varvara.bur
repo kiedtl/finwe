@@ -94,15 +94,3 @@
 
 (word print (Any --) [ 16 print-base ])
 (word print-dec (Any --) [ 10 print-base ])
-
-(word panic (@U8 -- ) [
-	"Panic: " print-string print-string nl
-	.System/rst (asm "" .Op/Odei) 2 /
-	(while [ 0> ] [
-		"  at " print-string
-		(asm "sr" .Op/Osth) print nl
-		1-
-	])
-	"Aborting.\n" print-string
-	(asm "" .Op/Ohalt)
-])

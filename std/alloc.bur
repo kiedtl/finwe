@@ -22,8 +22,7 @@
 		first :prev <-
 	0xFFFFs (as @Header)
 		first :next <-
-	T
-		first :free <-
+	T       first :free <-
 	0xc0    first :guard1 <-
 	0xfe    first :guard2 <-
 ])
@@ -118,7 +117,7 @@
 
 		dup     :guard1 -> 0xc0 <>
 		over-sb :guard2 -> 0xfe <>
-	or (when [ "Bad ptr\n" print-string return ])
+	or (when [ "Bad ptr" std/panic ])
 
 	T swap-sb :free <-
 ])

@@ -56,9 +56,13 @@ pub const TypeFmt = struct {
 
         switch (self.typ) {
             .TypeRef => |n| try writer.print("{s}<{}>", .{ s, n }),
-            .Struct, .EnumLit => |n| try writer.print("{s}<{s}>", .{ s, self.prog.types.items[n].name }),
+            .Struct, .EnumLit => |n| try writer.print("{s}<{}>", .{ self.prog.types.items[n].name, n }),
             .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
-            .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ s, TypeFmt.from(self.prog.ztype(n.typ), self.prog), n.ind }),
+            .Ptr8 => |n| try writer.print("{s}<{} @{}>", .{ s, TypeFmt.from(self.prog.ztype(n.typ), self.prog), n.ind }),
+            .Ptr16 => |n| {
+                for (0..n.ind) |_| try writer.print("@", .{});
+                try writer.print("{}", .{TypeFmt.from(self.prog.ztype(n.typ), self.prog)});
+            },
             .Array => |a| if (a.count) |c| {
                 try writer.print("[{}]{s}<{}>", .{ c, s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
             } else {
@@ -263,7 +267,7 @@ pub const TypeInfo = union(enum) {
                 .Array => |ar| program.ztype(ar.typ).isGeneric(program),
                 .AnySz => |ar| program.ztype(ar).isGeneric(program),
                 .USz => |ar| program.ztype(ar).isGeneric(program),
-                .AnyOf => |ar| program.ztype(ar).isGeneric(program),
+                .AnyOf => true,
                 .Child => |ar| program.ztype(ar).isGeneric(program),
                 .Omit => |ar| program.ztype(ar.of).isGeneric(program),
             };
@@ -277,15 +281,29 @@ pub const TypeInfo = union(enum) {
             return switch (self) {
                 .FieldType => |ft| b: {
                     const arg_t = try program.builtin_types.items[ft.of].resolveTypeRef(arity, program);
-                    if (arg_t != .Struct) {
-                        std.log.err("{}: invalid argument to FieldType()", .{TypeFmt.from(arg_t, program)});
-                        @panic("whups");
-                    }
-                    const strct_def = program.types.items[arg_t.Struct];
+                    switch (arg_t) {
+                        // .AnyOf => |anyof| {
+                        //     const n = program.ztype(anyof).Struct;
+                        //     const strct_def = program.types.items[n];
 
-                    break :b for (strct_def.def.Struct.fields.items) |f| {
-                        if (mem.eql(u8, ft.field, f.name)) break f.type;
-                    } else @panic("no such field");
+                        //     const fieldt = for (strct_def.def.Struct.fields.items) |f| {
+                        //         if (mem.eql(u8, ft.field, f.name)) break f.type;
+                        //     } else @panic("no such field");
+
+                        //     return if (fieldt.isResolvable(program)) .Any else fieldt;
+                        // },
+                        .Struct => |n| {
+                            const strct_def = program.types.items[n];
+
+                            break :b for (strct_def.def.Struct.fields.items) |f| {
+                                if (mem.eql(u8, ft.field, f.name)) break f.type;
+                            } else @panic("no such field");
+                        },
+                        else => {
+                            std.log.err("FieldType(): {}: invalid arg", .{TypeFmt.from(arg_t, program)});
+                            @panic("whups");
+                        },
+                    }
                 },
                 .Ptr16 => |s| b: {
                     const arg_t = try program.ztype(s).resolveTypeRef(arity, program);
@@ -345,9 +363,10 @@ pub const TypeInfo = union(enum) {
                     var calculate_offset = true;
                     for (new.def.Struct.args.?.slice(), 0..) |*arg, i| {
                         assert(arg.isGeneric(program));
-                        const val = program.builtin_types.items[of.args.slice()[i]];
-                        if (val.size(program) == null)
+                        const val = try program.ztype(of.args.slice()[i]).resolveTypeRef(arity, program);
+                        if (val.size(program) == null) {
                             calculate_offset = false;
+                        }
                         if (arg.doesInclude(val, program)) {
                             arg.* = try val.resolveTypeRef(arity, program);
                         } else {
@@ -362,9 +381,16 @@ pub const TypeInfo = union(enum) {
                     }
                     if (calculate_offset) {
                         var offset: u16 = 0;
-                        for (new.def.Struct.fields.items) |*field| {
+                        for (new.def.Struct.fields.items, 0..) |*field, i| {
                             field.offset = offset;
-                            offset += field.type.size(program).?;
+                            offset += field.type.size(program) orelse {
+                                if (field.type == .Array and
+                                    i == new.def.Struct.fields.items.len - 1)
+                                {
+                                    // all is well
+                                    continue;
+                                } else unreachable;
+                            };
                         }
                     }
                     new.def.Struct.args = null;
@@ -561,6 +587,7 @@ pub const TypeInfo = union(enum) {
             .Struct => |s| b: {
                 const tstruct = program.types.items[s].def.Struct;
                 const last = tstruct.fields.items[tstruct.fields.items.len - 1];
+                if (last.offset == 0xFFFF) return null;
                 break :b last.offset + (last.type.size(program) orelse break :b null);
             },
             .Array => |a| b: {
@@ -792,8 +819,8 @@ pub const ASTNode = struct {
 
     pub const Cast = struct {
         of: TypeInfo = .Any,
-        to: TypeInfo,
-        ref: ?usize = null,
+        resolved: TypeInfo = .Any,
+        original: TypeInfo,
     };
 
     pub const Call = struct {
@@ -1161,7 +1188,7 @@ pub const UserType = struct {
     pub const StructField = struct {
         name: []const u8,
         type: TypeInfo,
-        offset: u16 = 0,
+        offset: u16 = 0xFFFF,
 
         pub const AList = std.ArrayList(@This());
     };
