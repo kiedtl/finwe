@@ -32,6 +32,13 @@
 	swap :items -> + <-
 ])
 
+(word shrink-by ( U16 @(AnyOf Vector) -- ) [
+	tuck
+	:len -> swap - # TODO: check for overflow
+	# ( vec* new-len )
+	swap :len <-
+])
+
 (word ensure-capacity ( U16 @(AnyOf Vector) -- ) [
 	2dup :capacity -> over < (when [
 		swap
@@ -76,9 +83,29 @@
 	  1002s @lst append
 	 0x184s @lst append
 
+	@lst :len -> (should eq 5s)
 	8s @lst :items -> + -> (should eq 0x0184s)
 	6s @lst :items -> + -> (should eq   1002s)
 	4s @lst :items -> + -> (should eq    0x7s)
 	2s @lst :items -> + -> (should eq    314s)
 	0s @lst :items -> + -> (should eq    0x8s)
+])
+
+# It should shrink the len while retaining capacity.
+(test Vector/shrink-by [
+	alloc/init
+	(var lst (Of Vector U16))
+	@lst init
+
+	1s @lst append
+	2s @lst append
+	3s @lst append
+	4s @lst append
+
+	2s @lst shrink-by
+
+	@lst :len -> (should eq 2s)
+	@lst :capacity -> (should eq 4s)
+	0s @lst :items -> + -> (should eq 1s)
+	2s @lst :items -> + -> (should eq 2s)
 ])
