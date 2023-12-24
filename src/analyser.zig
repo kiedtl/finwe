@@ -333,7 +333,12 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             a.args.append(if (i.short) .Dev16 else .Dev8) catch unreachable;
             a.stack.append(if (i.short) .U16 else .U8) catch unreachable;
         },
-        .Oinc, .Odup => {
+        .Odup => {
+            a.args.append(a1 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+            a.stack.append(a1 orelse any) catch unreachable;
+        },
+        .Oinc => {
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
@@ -426,7 +431,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .None => {},
             .Import => {},
             .TypeDef => {},
-            .Debug => std.log.debug("[debug] Current analysis: {s}", .{
+            .Debug => std.log.debug("[debug] Current analysis: {}", .{
                 AnalysisFmt.from(a, program),
             }),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,

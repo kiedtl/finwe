@@ -35,15 +35,16 @@
 ])
 
 # TODO: cleanup once always-inline directive and (r) are added
-# ( len src* dst* -- )
-(word memcpy ( U16 $0 AnyPtr -- ) [
+# ( len src* dst* -- dst* )
+(word memcpy ( U16 $0 AnyPtr -- $0 ) [
 	#move
 	(as @U8) swap (as @U8) swap
 	(asm "s" .Op/Osth)
+	(asm "sr" .Op/Odup)
 
-	dup rot                        # ( src src len      | dst* )
-	(sizeof (Child $0)) (as U16) * # ( src src len*sz   | dst* )
-	swap + swap                    # ( src*+len*sz src* | dst* )
+	dup rot                        # ( src src len      | dst* dst* )
+	(sizeof (Child $0)) (as U16) * # ( src src len*sz   | dst* dst* )
+	swap + swap                    # ( src*+len*sz src* | dst* dst* )
 
 	(while [ drop 2dup <> ] [
 		dup -> (asm "srk" .Op/Osth) <- #dup -> (r copy) <-
@@ -53,12 +54,14 @@
 	
 	(asm "sr" .Op/Odrop)
 	drop drop
+
+	(asm "sr" .Op/Osth)
 ])
 (test memcpy [
 	(var foo [Char8 11])
 	'X 10s @foo + <-
 
-	"Hail FORTH" dup strlen swap @foo memcpy
+	"Hail FORTH" dup strlen swap @foo memcpy drop
 	0s @foo + -> (should eq 'H)
 	1s @foo + -> (should eq 'a)
 	2s @foo + -> (should eq 'i)

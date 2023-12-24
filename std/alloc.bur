@@ -104,11 +104,22 @@
 	# ( old old-sz new-sz )
 	get :value dup 0= (when [ nip nip (make (Of Maybe0 @Opaque)) return ])
 	# ( old old-chunk-sz new-unwrapped )
-	rot 2dup (asm "s" .Op/Osth) (asm "s" .Op/Osth)
+	rot (asm "sk" .Op/Osth) swap
 	# ( old-chunk-sz old new | new old )
-	(as @U8) std/memcpy
-	(asm "rs" .Op/Osth) (make (Of Maybe0 @Opaque))
+	(as @U8) std/memcpy (make (Of Maybe0 @Opaque))
 	(asm "rs" .Op/Osth) (as @U8) de
+])
+(test reget_copies_correctly [
+	init
+
+	"Foo"
+	dup std/strlen swap
+	over get std/unwrap (as @U8)
+	std/memcpy
+	100s swap reget
+	std/unwrap
+
+	(as @Char8) -> (should eq 'F)
 ])
 
 (word de (AnyPtr16 -- ) [

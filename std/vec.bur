@@ -1,73 +1,84 @@
 (use* core)
 (use std)
 (use alloc)
+(use* varvara)
 
 (struct Vector (Any)
 	[capacity U16]
 	[len U16]
-	[items [$0]]
+	[items @[$0]]
 )
 
-(word new ( Type -- @(Of Vector $0) ) [
-	0s (of new-sized $0)
+(word init ( @(AnyOf Vector) -- ) [
+	0s swap init-sized
 ])
 
-(use* varvara)
-(word new-sized ( U16 Type -- @(Of Vector $0) ) [
-	dup
-	(sizeof $0) (as U16) *
-	(sizeof (Omit (Of Vector $0) items)) (as U16) +
-	alloc/get std/unwrap (as @(Of Vector $0))
-	tuck :capacity <-
-	dup 0s over :len <-
+(word init-sized ( U16 @(AnyOf Vector) -- ) [
+	2dup :capacity <-
+	0s over :len <-
+	swap
+	# ( vec* capacity )
+	(sizeof (Child (FieldType (Child $0) items))) (as U16) *
+		alloc/get std/unwrap (as @(Of Vector $0))
+	# ( vec* items* )
+	swap :items <-
 ])
 
 (word append ( (Child (FieldType (Child $0) items)) @(AnyOf Vector) -- ) [
 	dup :len -> 1+ over :len <-
-	dup :len -> swap ensure-capacity
+	dup :len -> over ensure-capacity
+	dup :len -> 1-
+		(sizeof (Child (FieldType (Child $0) items))) (as U16) *
+	swap :items -> + <-
 ])
 
 (word ensure-capacity ( U16 @(AnyOf Vector) -- ) [
-	2dup :capacity -> over > (when [
+	2dup :capacity -> over < (when [
 		swap
 		2dup :capacity <-
 		swap (sizeof (Child (FieldType (Child $0) items))) (as U16) *
-		swap (as @Opaque) alloc/reget
-		std/unwrap drop
-	] [ drop ])
+		# ( new-len vec* computed-size )
+		over :items -> (as @Opaque) alloc/reget
+		std/unwrap (as $0)
+		# ( new-len vec* item* )
+		swap :items <-
+		drop
+	] [ 2drop drop ])
 ])
 
 (word deinit ( @(AnyOf Vector) -- ) [
-	alloc/de
+	:items -> alloc/de
 ])
 
-(test Vector/new-sized [
+(test Vector/init-sized [
 	alloc/init
 
-	20s (of new-sized U8)
-	dup :len -> (should eq 0s)
-	dup :capacity -> (should eq 20s)
-	deinit
+	(var v1 (Of Vector U8))
+	20s @v1 init-sized
+	@v1 :len -> (should eq 0s)
+	@v1 :capacity -> (should eq 20s)
+	@v1 deinit
 
-	10s (of new-sized U16)
-	dup :capacity -> (should eq 10s)
-	deinit
+	(var v2 (Of Vector U16))
+	10s @v2 init-sized
+	@v2 :capacity -> (should eq 10s)
+	@v2 deinit
 ])
 
 (test Vector/append [
 	alloc/init
-	(var lst @(Of Vector U16))
-	(of new U16) @lst <-
+	(var lst (Of Vector U16))
+	@lst init
 
-	   8s $lst append
-	 314s $lst append
-	   7s $lst append
-	1002s $lst append
-	 388s $lst append
+	   0x8s @lst append
+	   314s @lst append
+	   0x7s @lst append
+	  1002s @lst append
+	 0x184s @lst append
 
-	0s $lst :items + -> (should eq    8s)
-	2s $lst :items + -> (should eq  314s)
-	4s $lst :items + -> (should eq    7s)
-	6s $lst :items + -> (should eq 1002s)
-	8s $lst :items + -> (should eq  388s)
+	8s @lst :items -> + -> (should eq 0x0184s)
+	6s @lst :items -> + -> (should eq   1002s)
+	4s @lst :items -> + -> (should eq    0x7s)
+	2s @lst :items -> + -> (should eq    314s)
+	0s @lst :items -> + -> (should eq    0x8s)
 ])
