@@ -60,60 +60,60 @@
 	1 2 (make C) 3 4 (make C) swap :foo (should eq 2)
 ])
 
-# ( val len ptr -- )
+// ( val len ptr -- )
 (word memset8 (Any8 U16 AnyPtr16 -- ) [
 	(as @U8)
 	dup rot + (as @U8)
 
 	(while [ drop 2dup <> ] [
-		# ( val ptr end )
-		rot-bss>                  # ( end val  ptr  )
-		stak                      # ( end val  ptr  )
-		1+ rot-sbs                # ( val ptr+ end  )
+		// ( val ptr end )
+		rot-bss>                  // ( end val  ptr  )
+		stak                      // ( end val  ptr  )
+		1+ rot-sbs                // ( val ptr+ end  )
 	])
 ])
 
 (word main [
-	#0xbeefs print nl
-	#0x3b    print nl
-	#0x0d    print
-	#0xef    print
-	#0xaceds print
-	#0xcafes print nl
+	//0xbeefs print nl
+	//0x3b    print nl
+	//0x0d    print
+	//0xef    print
+	//0xaceds print
+	//0xcafes print nl
 	
-	#(word foobar (Any -- $0) [
-	#	(var baz $0 1)
-	#	1+ @baz sta
-	#	$baz
-	#])
+	//word foobar (Any -- $0) [
+	//	(var baz $0 1)
+	//	1+ @baz sta
+	//	$baz
+	//
 	
-	#0 foobar foobar foobar print nl
-	#0s foobar foobar foobar foobar print nl
+	//0 foobar foobar foobar print nl
+	//0s foobar foobar foobar foobar print nl
 	
-	#(word variable (Any -- (Ptr16 $0)) [
-	#	(var _S $0 1)
-	#	drop
-	#	@_S
-	#])
-	#
-	#0s variable dbg drop
-	#0  variable dbg drop
-	#nl
+	//word variable (Any -- (Ptr16 $0)) [
+	//	(var _S $0 1)
+	//	drop
+	//	@_S
+	//
+	//
+	//0s variable dbg drop
+	//0  variable dbg drop
+	//nl
 	
-	#(struct Foo
-	#	[bar U16]
-	#	[baz U8]
-	#)
+	//struct Foo
+	//	[bar U16]
+	//	[baz U8]
+	//
 	
-	#(var foo Foo 0)
+	//var foo Foo 0)
 	
-	#@foo :bar
-	#@foo :baz
-	#dbg
+	//foo :bar
+	//foo :baz
+	//dbg
 	
-	#0xffffs @foo :bar sta
-	#     9  @foo :baz sta
-	#        @foo :bar lda print nl
+	//0xffffs @foo :bar sta
+	//     9  @foo :baz sta
+	//        @foo :bar lda print nl
 	
 	0xAA
 		0xffffs here (as U16) -
@@ -122,17 +122,17 @@
 	alloc/init
 	
 	(var ptrs [@Opaque 4])
-	107s alloc/get std/unwrap drop
-	107s alloc/get std/unwrap 0s @ptrs + (as @@Opaque) <-
-	10s  alloc/get std/unwrap 2s @ptrs + (as @@Opaque) <-
-	26s  alloc/get std/unwrap 4s @ptrs + (as @@Opaque) <-
-	2s   alloc/get std/unwrap drop
-	30s  alloc/get std/unwrap drop
-	30s  alloc/get std/unwrap 6s @ptrs + (as @@Opaque) <-
+	107s alloc/get ;unwrap drop
+	107s alloc/get ;unwrap 0s @ptrs + (as @@Opaque) <-
+	10s  alloc/get ;unwrap 2s @ptrs + (as @@Opaque) <-
+	26s  alloc/get ;unwrap 4s @ptrs + (as @@Opaque) <-
+	2s   alloc/get ;unwrap drop
+	30s  alloc/get ;unwrap drop
+	30s  alloc/get ;unwrap 6s @ptrs + (as @@Opaque) <-
 	
 	0s @ptrs + (as @@Opaque) -> alloc/de
 	2s @ptrs + (as @@Opaque) -> alloc/de
-	#4s @ptrs + (as @@Opaque) -> alloc/de
+	//4s @ptrs + (as @@Opaque) -> alloc/de
 	6s @ptrs + (as @@Opaque) -> alloc/de
 	
 	nl
@@ -143,21 +143,21 @@
 	14s 4s @ptrs + (as @@U8) -> (of alloc/re U16)
 	alloc/print-chunks
 	
-	#(struct Box (Any) [value $0])
+	//struct Box (Any) [value $0])
 	
-	#(word box (Any -- @(Of Box $0)) [
-	#	(var retval (Of Box $0) 1)
-	#	@retval :value sta
-	#	@retval
-	#])
+	//word box (Any -- @(Of Box $0)) [
+	//	(var retval (Of Box $0) 1)
+	//	@retval :value sta
+	//	@retval
+	//
 	
-	#(word unbox (@(AnyOf Box) -- (FieldType (Child $0) value)) [
-	#	:value lda
-	#])
+	//word unbox (@(AnyOf Box) -- (FieldType (Child $0) value)) [
+	//	:value lda
+	//
 	
-	#0xffffs box
-	#0x02    box
+	//0xffffs box
+	//0x02    box
 	
-	#unbox print nl
-	#unbox print nl
+	//unbox print nl
+	//unbox print nl
 ])
