@@ -33,6 +33,16 @@
 	baz    (should eq 2)
 ])
 
+(test lang_type_scoping [
+	(struct A [foo U8])
+	(word baz [
+		(struct A [foo U16] [bar U16] [baz U8])
+		(sizeof A)
+	])
+	(sizeof A)  (should eq 1)
+	baz         (should eq 5)
+])
+
 (test lang_stack_structs [
 	(struct A [ foo U8 ])
 	(struct B [ foo U16 ])
