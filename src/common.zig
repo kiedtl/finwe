@@ -105,7 +105,7 @@ pub const TypeInfo = union(enum) {
 
     AmbigEnumLit,
     TypeRef: usize,
-    Unresolved: []const u8,
+    Unresolved: Unresolved,
 
     pub const Tag = meta.Tag(@This());
     pub const List16 = @import("buffer.zig").StackBuffer(@This(), 16);
@@ -127,6 +127,11 @@ pub const TypeInfo = union(enum) {
         }
         try writer.print("", .{});
     }
+
+    pub const Unresolved = struct {
+        ident: []const u8,
+        srcloc: Srcloc,
+    };
 
     pub const Array = struct {
         typ: usize,
@@ -275,12 +280,13 @@ pub const TypeInfo = union(enum) {
 
         pub fn resolveTypeRef(
             self: @This(),
+            scope: ?*Scope,
             arity: ?analyser.BlockAnalysis,
             program: *Program,
         ) analyser.Error!TypeInfo {
             return switch (self) {
                 .FieldType => |ft| b: {
-                    const arg_t = try program.builtin_types.items[ft.of].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[ft.of].resolveTypeRef(scope, arity, program);
                     switch (arg_t) {
                         // .AnyOf => |anyof| {
                         //     const n = program.ztype(anyof).Struct;
@@ -306,17 +312,17 @@ pub const TypeInfo = union(enum) {
                     }
                 },
                 .Ptr16 => |s| b: {
-                    const arg_t = try program.ztype(s).resolveTypeRef(arity, program);
+                    const arg_t = try program.ztype(s).resolveTypeRef(scope, arity, program);
                     break :b arg_t.ptrize16(program);
                 },
                 .Array => |s| b: {
-                    const arg_t = try program.ztype(s.typ).resolveTypeRef(arity, program);
+                    const arg_t = try program.ztype(s.typ).resolveTypeRef(scope, arity, program);
                     if (arg_t == .Array and arg_t.Array.count == null and s.count != null)
                         @panic("Should be obvious, can't have unbounded array inside bounded");
                     break :b .{ .Array = .{ .typ = program.btype(arg_t), .count = s.count } };
                 },
                 .AnyOf => |anyof| b: {
-                    const arg_t = try program.builtin_types.items[anyof].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[anyof].resolveTypeRef(scope, arity, program);
                     if (arg_t != .Struct or
                         program.types.items[arg_t.Struct].def.Struct.args == null)
                     {
@@ -326,7 +332,7 @@ pub const TypeInfo = union(enum) {
                     break :b .{ .AnyOf = program.btype(arg_t) };
                 },
                 .USz => |s| b: {
-                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(scope, arity, program);
                     if (arg_t == .Dev8 or arg_t == .Dev16) {
                         break :b if (arg_t == .Dev8) .U8 else .U16;
                     } else if (arg_t.bits(program)) |b| {
@@ -337,7 +343,7 @@ pub const TypeInfo = union(enum) {
                     }
                 },
                 .AnySz => |s| b: {
-                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(arity, program);
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(scope, arity, program);
                     if (arg_t == .Dev8 or arg_t == .Dev16) {
                         break :b if (arg_t == .Dev8) .Any8 else .Any16;
                     } else if (arg_t.bits(program)) |b| {
@@ -349,7 +355,7 @@ pub const TypeInfo = union(enum) {
                 },
                 .Of => |of| b: {
                     const strct_typ = try program.builtin_types.items[of.of]
-                        .resolveTypeRef(arity, program);
+                        .resolveTypeRef(scope, arity, program);
                     if (strct_typ != .Struct)
                         @panic("invalid argument to Of()");
 
@@ -363,12 +369,12 @@ pub const TypeInfo = union(enum) {
                     var calculate_offset = true;
                     for (new.def.Struct.args.?.slice(), 0..) |*arg, i| {
                         assert(arg.isGeneric(program));
-                        const val = try program.ztype(of.args.slice()[i]).resolveTypeRef(arity, program);
+                        const val = try program.ztype(of.args.slice()[i]).resolveTypeRef(scope, arity, program);
                         if (val.size(program) == null) {
                             calculate_offset = false;
                         }
                         if (arg.doesInclude(val, program)) {
-                            arg.* = try val.resolveTypeRef(arity, program);
+                            arg.* = try val.resolveTypeRef(scope, arity, program);
                         } else {
                             std.log.err("Generic {} does not include {}", .{ arg, val });
                             @panic("whups");
@@ -376,7 +382,7 @@ pub const TypeInfo = union(enum) {
                     }
                     const arglist = analyser.BlockAnalysis{ .args = new.def.Struct.args.? };
                     for (new.def.Struct.fields.items, 0..) |*field, i| {
-                        field.type = try field.type.resolveTypeRef(arglist, program);
+                        field.type = try field.type.resolveTypeRef(scope, arglist, program);
                         common.UserType.checkStructField(field.type, i == new.def.Struct.fields.items.len - 1);
                     }
                     if (calculate_offset) {
@@ -399,7 +405,7 @@ pub const TypeInfo = union(enum) {
                 },
                 // TODO: Childish (for only one level of Childification)
                 .Child => |s| b: {
-                    const arg_t = try program.ztype(s).resolveTypeRef(arity, program);
+                    const arg_t = try program.ztype(s).resolveTypeRef(scope, arity, program);
                     var b = switch (arg_t) {
                         .AnyPtr, .AnyPtr16 => .Any,
                         .Ptr8, .Ptr16 => arg_t.deptrize(program),
@@ -421,7 +427,7 @@ pub const TypeInfo = union(enum) {
                     break :b b;
                 },
                 .Omit => |omit| b: {
-                    const strct_typ = try program.ztype(omit.of).resolveTypeRef(arity, program);
+                    const strct_typ = try program.ztype(omit.of).resolveTypeRef(scope, arity, program);
                     if (strct_typ != .Struct)
                         @panic("invalid argument to Omit()");
 
@@ -456,24 +462,26 @@ pub const TypeInfo = union(enum) {
         }
     }
 
-    pub fn resolveTypeRef(a: @This(), arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
+    pub fn resolveTypeRef(a: @This(), p_scope: ?*Scope, arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
+        const scope = p_scope orelse program.global_scope;
         const r: TypeInfo = switch (a) {
             .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
-            .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(arity, program)) },
-            .Expr => |e| try e.resolveTypeRef(arity, program),
-            .Unresolved => |k| for (program.types.items, 0..) |t, i| {
-                if (mem.eql(u8, t.name, k)) break switch (t.def) {
-                    .Enum => .{ .EnumLit = i },
-                    .Struct => .{ .Struct = i },
+            .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(scope, arity, program)) },
+            .Expr => |e| try e.resolveTypeRef(scope, arity, program),
+            .Unresolved => |k| if (scope.findType(k.ident, program)) |n| b: {
+                const def = program.types.items[n];
+                break :b switch (def.def) {
+                    .Enum => .{ .EnumLit = n },
+                    .Struct => .{ .Struct = n },
                     .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
                 };
             } else {
-                std.log.info("No such type {s}", .{k});
-                return error.NoSuchType;
+                std.log.info("No such type {s}", .{k.ident});
+                return program.aerr(error.NoSuchType, k.srcloc);
             },
             else => a,
         };
-        return if (r.isResolvable(program)) try r.resolveTypeRef(arity, program) else r;
+        return if (r.isResolvable(program)) try r.resolveTypeRef(scope, arity, program) else r;
     }
 
     pub fn eq(a: @This(), b: @This()) bool {
@@ -482,6 +490,8 @@ pub const TypeInfo = union(enum) {
             if (mem.eql(u8, field.name, @tagName(a)))
                 if (field.type == usize or field.type == void)
                     return @field(a, field.name) == @field(b, field.name)
+                else if (field.type == TypeInfo.Unresolved)
+                    return mem.eql(u8, @field(a, field.name).ident, @field(b, field.name).ident)
                 else if (field.type == []const u8)
                     return mem.eql(u8, @field(a, field.name), @field(b, field.name))
                 else
@@ -829,6 +839,7 @@ pub const ASTNode = struct {
         args: StackBuffer(TypeInfo, 2) = StackBuffer(TypeInfo, 2).init(null),
         node: ?*ASTNode = null,
         goto: bool = false,
+        is_method: bool = false,
     };
 
     pub const When = struct {
@@ -985,6 +996,7 @@ pub const Scope = struct {
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
     imports: ASTNodePtrList,
+    types: std.ArrayList(usize),
     parent: ?*Scope,
 
     pub const AList = std.ArrayList(Scope);
@@ -995,6 +1007,7 @@ pub const Scope = struct {
             .defs = ASTNodePtrList.init(gpa.allocator()),
             .macs = ASTNodePtrList.init(gpa.allocator()),
             .imports = ASTNodePtrList.init(gpa.allocator()),
+            .types = std.ArrayList(usize).init(gpa.allocator()),
             .parent = parent,
         };
         return p;
@@ -1011,11 +1024,10 @@ pub const Scope = struct {
                 // });
                 if (import.node.Import.scope.findDecl(name)) |n|
                     return n;
-            } else {
-                if (mem.indexOfScalar(u8, name, '/')) |n|
-                    if (mem.eql(u8, name[0..n], import.node.Import.name))
-                        if (import.node.Import.scope.findDecl(name[n + 1 ..])) |d|
-                            return d;
+            } else if (mem.indexOfScalar(u8, name, '/')) |n| {
+                if (mem.eql(u8, name[0..n], import.node.Import.name))
+                    if (import.node.Import.scope.findDecl(name[n + 1 ..])) |d|
+                        return d;
             }
         }
         // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
@@ -1029,6 +1041,26 @@ pub const Scope = struct {
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
             break :b parent.findDecl(name);
+        } else null;
+    }
+
+    pub fn findType(self: *Scope, name: []const u8, p: *Program) ?usize {
+        for (self.imports.items) |import| {
+            if (import.node.Import.is_defiling) {
+                if (import.node.Import.scope.findType(name, p)) |n|
+                    return n;
+            } else if (mem.indexOfScalar(u8, name, '/')) |n| {
+                if (mem.eql(u8, name[0..n], import.node.Import.name))
+                    if (import.node.Import.scope.findType(name[n + 1 ..], p)) |d|
+                        return d;
+            }
+        }
+        return for (self.types.items) |type_ind| {
+            const typedef = p.types.items[type_ind];
+            if (mem.eql(u8, typedef.name, name))
+                break type_ind;
+        } else if (self.parent) |parent| b: {
+            break :b parent.findType(name, p);
         } else null;
     }
 
@@ -1113,10 +1145,15 @@ pub const Program = struct {
             .Enum => |info| {
                 if (info.tag_type != u16 and info.tag_type != u8)
                     @compileError("Enum type must be either u8 or u16");
-                var t = UserType{ .node = null, .name = name, .def = .{ .Enum = .{
-                    .is_short = info.tag_type == u16,
-                    .fields = std.ArrayList(UserType.EnumField).init(gpa.allocator()),
-                } } };
+                var t = UserType{
+                    .node = null,
+                    .name = name,
+                    .scope = Scope.create(null),
+                    .def = .{ .Enum = .{
+                        .is_short = info.tag_type == u16,
+                        .fields = std.ArrayList(UserType.EnumField).init(gpa.allocator()),
+                    } },
+                };
                 inline for (info.fields) |field| {
                     const va: u8 = if (info.tag_type == u16) @as(u16, @intCast(field.value)) & 0xFF else @intCast(field.value);
                     const vb: ?u8 = if (info.tag_type == u16) (@as(u16, @intCast(field.value)) >> 4) & 0xFF else null;
@@ -1157,6 +1194,7 @@ pub const UserType = struct {
     node: ?*ASTNode, // null means native (i.e. compiler internal)
     name: []const u8,
     def: Def,
+    scope: *Scope, // for methods etc
 
     pub const AList = std.ArrayList(UserType);
 

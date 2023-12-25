@@ -19,6 +19,7 @@ pub const Node = struct {
         String: String,
         EnumLit: EnumLit,
         Keyword: []const u8,
+        MethodCall: []const u8,
         Var: []const u8,
         VarNum: u8,
         Child: []const u8,
@@ -47,7 +48,7 @@ pub const Node = struct {
                 alloc.destroy(node);
             },
             .String => |str| str.deinit(),
-            .Var, .Child, .Keyword => |data| alloc.free(data),
+            .MethodCall, .Var, .Child, .Keyword => |data| alloc.free(data),
             .EnumLit => |data| {
                 alloc.free(data.v);
                 if (data.of) |d|
@@ -105,7 +106,7 @@ pub const Lexer = struct {
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
-            '$', 'k', ':', '.' => blk: {
+            '$', 'k', ';', ':', '.' => blk: {
                 if (self.lexWord('#', word)) |node| {
                     break :blk switch (vtype) {
                         '$' => Node.NodeType{ .VarNum = node.U8 },
@@ -138,6 +139,7 @@ pub const Lexer = struct {
                             break :blk switch (vtype) {
                                 'k' => Node.NodeType{ .Keyword = s },
                                 '.' => Node.NodeType{ .EnumLit = .{ .v = s, .of = null } },
+                                ';' => Node.NodeType{ .MethodCall = s },
                                 ':' => Node.NodeType{ .Child = s },
                                 '$' => Node.NodeType{ .Var = s },
                                 else => unreachable,
@@ -272,7 +274,7 @@ pub const Lexer = struct {
             },
             0x09...0x0d, 0x20 => null,
             '"' => try self.lexString(),
-            '$', '.', ':', '\'' => try self.lexValue(ch),
+            '$', '.', ';', ':', '\'' => try self.lexValue(ch),
             '@' => b: {
                 if (self.index == self.input.len - 1) {
                     @panic("TODO: lexer: lone @");
@@ -334,13 +336,13 @@ pub const Lexer = struct {
 const testing = std.testing;
 
 test "basic lexing" {
-    const input = "0xfe 0xf1 0xf0s fum (test :foo bar 0xAB) (12 ['ë] :0)";
-    var lexer = Lexer.init(input, std.testing.allocator);
+    const input = "0xfe 0xf1 0xf0s fum (test :foo bar 0xAB) (12 ['ë] :0) ;fab";
+    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
 
-    try testing.expectEqual(@as(usize, 6), result.items.len);
+    try testing.expectEqual(@as(usize, 7), result.items.len);
 
     try testing.expectEqual(activeTag(result.items[0].node), .U8);
     try testing.expectEqual(@as(u8, 0xfe), result.items[0].node.U8);
@@ -389,11 +391,14 @@ test "basic lexing" {
         try testing.expectEqual(activeTag(list[2].node), .ChildNum);
         try testing.expectEqual(@as(u8, 0), list[2].node.ChildNum);
     }
+
+    try testing.expectEqual(activeTag(result.items[6].node), .MethodCall);
+    try testing.expectEqualSlices(u8, "fab", result.items[6].node.MethodCall);
 }
 
 test "enum literals" {
     const input = ".foo .bar/baz";
-    var lexer = Lexer.init(input, std.testing.allocator);
+    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
@@ -411,7 +416,7 @@ test "enum literals" {
 
 test "string literals" {
     const input = "\"foo\"";
-    var lexer = Lexer.init(input, std.testing.allocator);
+    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
@@ -424,7 +429,7 @@ test "string literals" {
 
 test "sigils lexing" {
     const input = "bar $baz @foo @(foo) (@foo) @[@(@foo)]";
-    var lexer = Lexer.init(input, std.testing.allocator);
+    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);

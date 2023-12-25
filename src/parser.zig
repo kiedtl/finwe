@@ -156,7 +156,10 @@ pub const Parser = struct {
                         return self.program.perr(error.InvalidType, node.location);
                     }
                 } else {
-                    break :b TypeInfo{ .Unresolved = item };
+                    break :b TypeInfo{ .Unresolved = .{
+                        .ident = item,
+                        .srcloc = node.location,
+                    } };
                 }
             },
             .List => |lst| {
@@ -249,6 +252,9 @@ pub const Parser = struct {
                     break :b ASTNode{ .node = .Debug, .srcloc = node.location };
                 }
                 break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
+            },
+            .MethodCall => |m| b: {
+                break :b ASTNode{ .node = .{ .Call = .{ .name = m, .is_method = true } }, .srcloc = node.location };
             },
             .Child => |s| ASTNode{
                 .node = .{ .GetChild = .{ .name = s } },
@@ -438,6 +444,8 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "here")) {
                     break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "of")) {
+                    if (ast[1].node == .MethodCall)
+                        @panic("TODO: of() w/ method calls");
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     var args = StackBuffer(TypeInfo, 2).init(null);
                     for (ast[2..]) |item| {
@@ -683,8 +691,14 @@ pub const Parser = struct {
     pub fn postProcess(parser_: *Parser) ErrorSet!void {
         // Add typedefs
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn _f(node: *ASTNode, _: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+            pub fn _f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
                 if (node.node != .TypeDef) return;
+
+                const scope = if (parent) |p| switch (p.node) {
+                    .Decl => |d| d.scope,
+                    .Import => |i| i.scope,
+                    else => unreachable,
+                } else self.global_scope;
 
                 // FIXME: check for name collisions
                 switch (node.node.TypeDef.def) {
@@ -692,17 +706,19 @@ pub const Parser = struct {
                         self.types.append(UserType{
                             .node = node,
                             .name = node.node.TypeDef.name,
+                            .scope = Scope.create(scope),
                             .def = .{ .Struct = .{
                                 .args = strdef.args,
                                 .fields = UserType.StructField.AList.init(parser.alloc),
                             } },
                         }) catch unreachable;
+                        scope.types.append(self.types.items.len - 1) catch unreachable;
                         const fields = &self.types.items[self.types.items.len - 1].def.Struct.fields;
 
                         var offset: u16 = 0;
                         for (strdef.fields.items, 0..) |field, i| {
                             if (strdef.args == null) {
-                                const f = try field.type.resolveTypeRef(null, self);
+                                const f = try field.type.resolveTypeRef(scope, null, self);
                                 const size = f.size(self) orelse b: {
                                     if (f == .Array and f.Array.count == null and
                                         i == strdef.fields.items.len - 1)
@@ -733,8 +749,10 @@ pub const Parser = struct {
                         self.types.append(UserType{
                             .node = node,
                             .name = node.node.TypeDef.name,
+                            .scope = Scope.create(scope),
                             .def = .{ .Device = .{ .start = devdef.start, .fields = fields } },
                         }) catch unreachable;
+                        scope.types.append(self.types.items.len - 1) catch unreachable;
                     },
                 }
             }
@@ -752,7 +770,7 @@ pub const Parser = struct {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
-                    .Call => |c| if (c.node == null) {
+                    .Call => |c| if (c.node == null and !c.is_method) {
                         const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
                         if (scope.findAny(c.name)) |found| {
                             switch (found.node) {

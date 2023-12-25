@@ -7,6 +7,7 @@ const common = @import("common.zig");
 
 const Program = common.Program;
 const ASTNode = common.ASTNode;
+const Scope = common.Scope;
 const ASTNodeList = common.ASTNodeList;
 const TypeInfo = common.TypeInfo;
 const TypeFmt = common.TypeFmt;
@@ -73,25 +74,25 @@ pub const BlockAnalysis = struct {
     rargs: VTList16 = VTList16.init(null),
     rstack: VTList16 = VTList16.init(null),
 
-    pub fn resolveTypeRefs(self: @This(), arity: ?@This(), program: *Program) !@This() {
+    pub fn resolveTypeRefs(self: @This(), scope: ?*Scope, arity: ?@This(), program: *Program) !@This() {
         // std.log.info("resolving {}\n with {}", .{ self, arity });
         var r = self;
         for (r.stack.slice()) |*stack|
             if (stack.isResolvable(program)) {
-                stack.* = try stack.resolveTypeRef(arity, program);
+                stack.* = try stack.resolveTypeRef(scope, arity, program);
                 assert(!stack.isResolvable(program));
             };
         // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
             if (arg.isResolvable(program)) {
-                arg.* = try arg.resolveTypeRef(arity, program);
+                arg.* = try arg.resolveTypeRef(scope, arity, program);
                 assert(!arg.isResolvable(program));
             };
         // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
         return r;
     }
 
-    fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, arity: BlockAnalysis, caller: *ASTNode, p: *Program) Error!TypeInfo {
+    fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, scope: ?*Scope, arity: BlockAnalysis, caller: *ASTNode, p: *Program) Error!TypeInfo {
         var r = paramspec;
         while (!r.eq(argtyp) and (r.isResolvable(p) or r.isGeneric(p))) {
             if (r.isGeneric(p)) {
@@ -110,7 +111,7 @@ pub const BlockAnalysis = struct {
             // std.log.info("- after generic: {}", .{TypeFmt.from(r, p)});
 
             if (r.isResolvable(p)) {
-                r = try r.resolveTypeRef(arity, p);
+                r = try r.resolveTypeRef(scope, arity, p);
             }
             // std.log.info("- after typeref: {}", .{TypeFmt.from(r, p)});
 
@@ -131,7 +132,7 @@ pub const BlockAnalysis = struct {
         };
     }
 
-    pub fn _resolveFullyRecurse(r: *@This(), caller: *const @This(), call_node: *ASTNode, p: *Program, i: usize) Error!void {
+    pub fn _resolveFullyRecurse(r: *@This(), caller: *const @This(), scope: ?*Scope, call_node: *ASTNode, p: *Program, i: usize) Error!void {
         // std.log.info("\n", .{});
         // std.log.info("- beginning  {}", .{i});
 
@@ -143,10 +144,10 @@ pub const BlockAnalysis = struct {
         }
 
         for (refs.constSlice()) |ref| if (ref < i)
-            try _resolveFullyRecurse(r, caller, call_node, p, ref);
+            try _resolveFullyRecurse(r, caller, scope, call_node, p, ref);
 
         const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
-        const resolved = try _resolveFully(r.args.slice()[i], calleritem, r.*, call_node, p);
+        const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p);
 
         if (!resolved.doesInclude(calleritem, p)) {
             std.log.err("Type {} does not encompass {}", .{
@@ -159,7 +160,14 @@ pub const BlockAnalysis = struct {
         r.args.slice()[i] = resolved;
     }
 
-    pub fn conformGenericTo(generic: @This(), extra_type_args: []const TypeInfo, p_caller: *const @This(), call_node: *ASTNode, p: *Program) Error!@This() {
+    pub fn conformGenericTo(
+        generic: @This(),
+        extra_type_args: []const TypeInfo,
+        scope: ?*Scope,
+        p_caller: *const @This(),
+        call_node: *ASTNode,
+        p: *Program,
+    ) Error!@This() {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
 
@@ -183,12 +191,12 @@ pub const BlockAnalysis = struct {
         var i = r.args.len;
         while (i > 0) {
             i -= 1;
-            try _resolveFullyRecurse(&r, &caller, call_node, p, i);
+            try _resolveFullyRecurse(&r, &caller, scope, call_node, p, i);
         }
 
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef or stack.* == .Expr) {
-                stack.* = try stack.resolveTypeRef(r, p);
+                stack.* = try stack.resolveTypeRef(scope, r, p);
             };
 
         // std.log.info("RESULTS {s}\n\n", .{AnalysisFmt.from(&r, p)});
@@ -439,7 +447,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Wild => |w| {
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa);
-                try (try w.arity.resolveTypeRefs(parent.arity, program)).mergeInto(a, program, node.srcloc);
+                try (try w.arity.resolveTypeRefs(parent.scope, parent.arity, program))
+                    .mergeInto(a, program, node.srcloc);
             },
             .Call => |*c| {
                 const d = parent.scope.findAny(c.name).?;
@@ -454,8 +463,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!cdecl.is_analysed) {
                             var type_args = @TypeOf(c.args).init(null);
                             for (c.args.constSlice()) |arg|
-                                type_args.append(try arg.resolveTypeRef(parent.arity, program)) catch unreachable;
-                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), a, node, program);
+                                type_args.append(try arg.resolveTypeRef(cdecl.scope.parent, parent.arity, program)) catch unreachable;
+                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
                             const end = ungenericified.args.len - c.args.len;
                             for (ungenericified.args.constSlice()[0..end]) |arg| {
                                 assert(a.isGeneric(program) or !arg.isGeneric(program));
@@ -465,14 +474,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             cdecl.is_analysed = true;
                         }
 
-                        try (try d_arity.resolveTypeRefs(d_arity, program)).mergeInto(a, program, node.srcloc);
+                        try (try d_arity.resolveTypeRefs(cdecl.scope.parent, d_arity, program))
+                            .mergeInto(a, program, node.srcloc);
                         if (!d_arity.isGeneric(program))
                             cdecl.calls += 1;
                     } else if (d_arity.isGeneric(program)) {
                         var type_args = @TypeOf(c.args).init(null);
                         for (c.args.constSlice()) |arg|
-                            type_args.append(try arg.resolveTypeRef(parent.arity, program)) catch unreachable;
-                        const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), a, node, program);
+                            type_args.append(try arg.resolveTypeRef(cdecl.scope.parent, parent.arity, program)) catch unreachable;
+                        const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
                         const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                             if (ungenericified.eqExact(an.node.Decl.arity.?))
                                 break i;
@@ -603,7 +613,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 else => a.stack.append(v.typ) catch unreachable,
             },
             .VDecl => |*vd| {
-                parent.locals.slice()[vd.lind].rtyp = try vd.utyp.resolveTypeRef(parent.arity, program);
+                parent.locals.slice()[vd.lind].rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program);
             },
             .VRef => |v| {
                 const t = parent.locals.slice()[v.lind.?].rtyp;
@@ -700,7 +710,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Builtin => |*builtin| switch (builtin.type) {
                 .Make => |*make| {
-                    make.resolved = try make.original.resolveTypeRef(parent.arity, program);
+                    make.resolved = try make.original.resolveTypeRef(parent.scope, parent.arity, program);
                     var b = BlockAnalysis{};
                     if (make.resolved.size(program)) |sz| {
                         if (sz > 2) {
@@ -717,7 +727,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     try b.mergeInto(a, program, node.srcloc);
                 },
                 .SizeOf => |*sizeof| {
-                    sizeof.resolved = try sizeof.original.resolveTypeRef(parent.arity, program);
+                    sizeof.resolved = try sizeof.original.resolveTypeRef(parent.scope, parent.arity, program);
                     const s = sizeof.resolved.size(program);
                     if (s == null or s.? <= 255) {
                         a.stack.append(.U8) catch unreachable;
@@ -727,7 +737,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 },
             },
             .Cast => |*c| {
-                c.resolved = try c.original.resolveTypeRef(parent.arity, program);
+                c.resolved = try c.original.resolveTypeRef(parent.scope, parent.arity, program);
 
                 const into = a.stack.last() orelse .Any;
 

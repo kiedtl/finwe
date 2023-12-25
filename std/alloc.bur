@@ -28,19 +28,19 @@
 ])
 
 # ( block-count oldptr block-type -- (sizeof block-type)*block-count )
-(word re ( U16 @$0 Type -- (Of Maybe0 @$0) ) [
+(word re ( U16 @$0 Type -- (Of std/Maybe0 @$0) ) [
 	swap (sizeof $0) (as U16) * swap reget
-	:value (make (Of Maybe0 @$0))
+	:value (make (Of std/Maybe0 @$0))
 ])
 
 # ( block-count block-type -- (sizeof block-type)*block-count )
-(word for ( U16 Type -- (Of Maybe0 @$0) ) [
+(word for ( U16 Type -- (Of std/Maybe0 @$0) ) [
 	(sizeof $0) (as U16) * get
-	:value (make (Of Maybe0 @$0))
+	:value (make (Of std/Maybe0 @$0))
 ])
 
 # ( bytes -- *ptr )
-(word get ( U16 -- (Of Maybe0 @Opaque) ) [
+(word get ( U16 -- (Of std/Maybe0 @Opaque) ) [
 	(var size U16)
 	@size <-
 
@@ -63,7 +63,7 @@
 		#"    Skipping " print-string dup print nl
 
 		dup :next -> 0= (when [
-			0s (as @Opaque) (make (Of Maybe0 @Opaque))
+			0s (as @Opaque) (make (Of std/Maybe0 @Opaque))
 			return
 		])
 		    :next ->
@@ -93,20 +93,20 @@
 	])
 
 	$chosen (sizeof Header) (as @Opaque) +
-	(make (Of Maybe0 @Opaque))
+	(make (Of std/Maybe0 @Opaque))
 ])
 
 # ( bytes oldptr -- Maybe<newptr> )
-(word reget (U16 @Opaque -- (Of Maybe0 @Opaque)) [
+(word reget (U16 @Opaque -- (Of std/Maybe0 @Opaque)) [
 	(as @U8)
 	dup get-header chunk-size
 	rot
 	# ( old old-sz new-sz )
-	get :value dup 0= (when [ nip nip (make (Of Maybe0 @Opaque)) return ])
+	get :value dup 0= (when [ nip nip (make (Of std/Maybe0 @Opaque)) return ])
 	# ( old old-chunk-sz new-unwrapped )
 	rot (asm "sk" .Op/Osth) swap
 	# ( old-chunk-sz old new | new old )
-	(as @U8) std/memcpy (make (Of Maybe0 @Opaque))
+	(as @U8) std/memcpy (make (Of std/Maybe0 @Opaque))
 	(asm "rs" .Op/Osth) (as @U8) de
 ])
 (test reget_copies_correctly [
