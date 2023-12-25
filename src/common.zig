@@ -473,6 +473,7 @@ pub const TypeInfo = union(enum) {
                 break :b switch (def.def) {
                     .Enum => .{ .EnumLit = n },
                     .Struct => .{ .Struct = n },
+                    .Alias => |alias| alias.val,
                     .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
                 };
             } else {
@@ -769,7 +770,12 @@ pub const ASTNode = struct {
         def: union(enum) {
             Device: DeviceDef,
             Struct: StructDef,
+            Alias: AliasDef,
         },
+
+        pub const AliasDef = struct {
+            val: TypeInfo,
+        };
 
         pub const Field = struct {
             name: []const u8,
@@ -1224,6 +1230,11 @@ pub const UserType = struct {
         Enum: Enum,
         Device: Device,
         Struct: Struct,
+        Alias: Alias,
+    };
+
+    pub const Alias = struct {
+        val: TypeInfo,
     };
 
     pub const Device = struct {
@@ -1267,13 +1278,9 @@ pub const UserType = struct {
     pub fn deepclone(self: @This()) @This() {
         var new = self;
         switch (new.def) {
-            .Struct => |*s| {
-                var new_fields = StructField.AList.init(gpa.allocator());
-                for (s.fields.items) |f| new_fields.append(f) catch unreachable;
-                s.fields = new_fields;
-            },
+            .Struct => |*s| s.fields = s.fields.clone() catch unreachable,
             .Device => @panic("TODO"),
-            .Enum => {},
+            .Alias, .Enum => {},
         }
         return new;
     }

@@ -1,17 +1,15 @@
 (use* core)
 (use* varvara)
 
-(struct Maybe0 (Any) [value $0])
+(struct Maybe0 (Any) [value $0])//{{{
 
 #(method Maybe0) (word maybe? ((AnyOf Maybe0) -- Bool) [
 	:value 0<>
 ])
-(test maybe? [ 0 (make (Of Maybe0 U8)) ;maybe? (should eq nil) ])
 
 #(method Maybe0) (word maybe-not? ((AnyOf Maybe0) -- Bool) [
 	:value 0=
 ])
-(test maybe-not? [ 0 (make (Of Maybe0 U8)) ;maybe-not? (should eq t) ])
 
 #(method Maybe0) (word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
        :value
@@ -23,7 +21,44 @@
 ) [
        :value dup 0= (when [ drop ] [ nip ])
 ])
-(test orelse [ 0 (make (Of Maybe0 U8)) 12 swap ;orelse (should eq 12) ])
+
+(test Maybe0/maybe? [ 0 (make (Of Maybe0 U8)) ;maybe? (should eq nil) ])
+(test Maybe0/maybe-not? [ 0 (make (Of Maybe0 U8)) ;maybe-not? (should eq t) ])
+(test Maybe0/orelse [ 0 (make (Of Maybe0 U8)) 12 swap ;orelse (should eq 12) ])
+//}}}
+
+// MaybeFF {{{
+// Magic value is 0xFFFF for 2-byte types, 0xFF for 1-byte types
+//
+(struct MaybeFF (Any) [value $0])
+
+#(method MaybeFF) (word maybe? ((AnyOf MaybeFF) -- Bool) [
+	:value  (as (USz (FieldType $0 value)))
+	0xFFFFs (as (USz (FieldType $0 value))) <>
+])
+
+#(method MaybeFF) (word maybe-not? ((AnyOf MaybeFF) -- Bool) [
+	:value  (as (USz (FieldType $0 value)))
+	0xFFFFs (as (USz (FieldType $0 value))) =
+])
+
+#(method MaybeFF) (word unwrap ((AnyOf MaybeFF) -- (FieldType $0 value)) [
+	:value dup
+	0xFFFFs (as (FieldType $0 value)) = (when [ "Unwrapped FF value" panic ])
+])
+
+#(method MaybeFF) (word orelse (
+	(FieldType $0 value) (AnyOf Maybe0) -- (FieldType $0 value)
+) [
+       :value dup 0= (when [ drop ] [ nip ])
+])
+
+(test MaybeFF/maybe? [
+	0     (make (Of MaybeFF U8)) ;maybe? (should eq t)
+	0xFF  (make (Of MaybeFF U8)) ;maybe? (should eq nil)
+	0xFFs (make (Of MaybeFF U16)) ;maybe? (should eq t)
+])
+//}}}
 
 (word strlen ( @[Char8] -- U16 ) [ // TODO: move to str module
 	0s swap

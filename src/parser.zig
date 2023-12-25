@@ -347,6 +347,16 @@ pub const Parser = struct {
             };
         } else if (mem.eql(u8, k, "struct")) {
             return self.parseStructDecl(ast);
+        } else if (mem.eql(u8, k, "typealias")) {
+            const name = try self.expectNode(.Keyword, &ast[1]);
+            const val = try self.parseType(&ast[2]);
+            return ASTNode{
+                .node = .{ .TypeDef = .{
+                    .name = name,
+                    .def = .{ .Alias = .{ .val = val } },
+                } },
+                .srcloc = ast[0].location,
+            };
         } else unreachable;
     }
 
@@ -621,6 +631,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "device") or
+                    mem.eql(u8, k, "typealias") or
                     mem.eql(u8, k, "struct"))
                 {
                     break :b try self.parseTypeDecl(ast);
@@ -738,6 +749,17 @@ pub const Parser = struct {
 
                 // FIXME: check for name collisions
                 switch (node.node.TypeDef.def) {
+                    .Alias => |aliasdef| {
+                        self.types.append(UserType{
+                            .node = node,
+                            .name = node.node.TypeDef.name,
+                            .scope = Scope.create(scope),
+                            .def = .{ .Alias = .{
+                                .val = try aliasdef.val.resolveTypeRef(scope, null, self),
+                            } },
+                        }) catch unreachable;
+                        scope.types.append(self.types.items.len - 1) catch unreachable;
+                    },
                     .Struct => |strdef| {
                         self.types.append(UserType{
                             .node = node,
