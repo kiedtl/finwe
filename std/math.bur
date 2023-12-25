@@ -1,0 +1,23 @@
+(use* core)
+(use std)
+
+(use* varvara)
+
+(word +safe ((AnySz $0) Any -- $0 Bool) [ tuck + tuck <= ])
+
+(test +safe [
+	1 1 +safe (should eq t) (should eq 2)
+	9 9 +safe (should eq t) (should eq 18)
+
+	0xFF 0xFF +safe (should eq nil) (should eq 0xFE)
+	0xFF    1 +safe (should eq nil) (should eq 0)
+	0xFF    0 +safe (should eq t)   (should eq 0xFF)
+	1    0xFF +safe (should eq nil) (should eq 0)
+	0    0xFF +safe (should eq t)   (should eq 0xFF)
+
+	0xFF (while [ 0<> ] [
+		dup 0xFF      +safe (should eq nil) drop
+		dup 0xFF swap +safe (should eq nil) drop
+		1-
+	])
+])
