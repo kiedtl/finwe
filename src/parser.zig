@@ -60,6 +60,7 @@ pub const Parser = struct {
         NoMainFunction,
         InvalidCall,
         InvalidImport,
+        InvalidMetadata,
     } || mem.Allocator.Error || std.fs.File.GetSeekPosError || std.fs.File.ReadError;
 
     pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
@@ -116,7 +117,7 @@ pub const Parser = struct {
         var norm_stack = true;
         var before = true;
 
-        const ast_arity = try self.expectNode(.List, node);
+        const ast_arity = (try self.expectNode(.List, node)).body;
         for (ast_arity.items) |*arity_item| {
             var dst: *TypeInfo.List16 = undefined;
             if (before) {
@@ -162,7 +163,8 @@ pub const Parser = struct {
                     } };
                 }
             },
-            .List => |lst| {
+            .List => |lst_obj| {
+                const lst = lst_obj.body;
                 if (lst.items.len == 0)
                     return error.EmptyList;
 
@@ -233,8 +235,7 @@ pub const Parser = struct {
     fn parseStatement(self: *Parser, node: *const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
         return switch (node.node) {
             .List => |l| {
-                const lst = l.items;
-                return self.parseList(lst, p_scope);
+                return self.parseList(l.body.items, l.metadata.items, p_scope);
             },
             .Quote => |q| blk: {
                 const body = try self.parseStatements(q.items, p_scope);
@@ -285,7 +286,7 @@ pub const Parser = struct {
     fn parseStructDecl(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
         const name = try self.expectNode(.Keyword, &ast[1]);
         const args = if (ast[2].node == .List) b: {
-            const list = self.expectNode(.List, &ast[2]) catch unreachable;
+            const list = (self.expectNode(.List, &ast[2]) catch unreachable).body;
             var buff = TypeInfo.List16.init(null);
             for (list.items) |item| {
                 const t = try self.parseType(&item);
@@ -349,7 +350,7 @@ pub const Parser = struct {
         } else unreachable;
     }
 
-    fn parseList(self: *Parser, ast: []const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
+    fn parseList(self: *Parser, ast: []const lexer.Node, metadata: []const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
         if (ast.len == 0)
             return error.EmptyList;
 
@@ -357,6 +358,26 @@ pub const Parser = struct {
             .Keyword => |k| b: {
                 if (mem.eql(u8, k, "word")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
+
+                    var is_method: ?TypeInfo = null;
+
+                    for (metadata) |item| switch (item.node.Metadata.node) {
+                        .List => |lst| {
+                            const mt = try self.expectNode(.Keyword, &lst.body.items[0]);
+                            if (mem.eql(u8, mt, "method")) {
+                                try self.validateListLength(lst.body.items, 2);
+                                is_method = TypeInfo{ .Unresolved = .{
+                                    .ident = try self.expectNode(.Keyword, &lst.body.items[1]),
+                                    .srcloc = lst.body.items[1].location,
+                                } };
+                            } else {
+                                return self.program.perr(error.InvalidMetadata, lst.body.items[0].location);
+                            }
+                        },
+                        else => {
+                            return self.program.perr(error.InvalidMetadata, item.location);
+                        },
+                    };
 
                     var arity: ?BlockAnalysis = null;
                     if (ast.len == 4)
@@ -373,6 +394,7 @@ pub const Parser = struct {
                         .arity = arity,
                         .body = body,
                         .scope = scope,
+                        .is_method = is_method,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -607,7 +629,7 @@ pub const Parser = struct {
                     break :b error.UnknownKeyword;
                 }
             },
-            .List => |l| try self.parseList(l.items, p_scope),
+            .List => |l| try self.parseList(l.body.items, l.metadata.items, p_scope),
             else => try self.parseStatement(&ast[0], p_scope),
         };
     }
@@ -616,22 +638,36 @@ pub const Parser = struct {
     pub fn extractDefs(parser_: *Parser) ErrorSet!void {
         try parser_.program.walkNodes(null, parser_.program.ast, {}, struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: void) ErrorSet!void {
-                const scope = if (parent) |p| switch (p.node) {
-                    .Decl => |d| d.scope,
-                    .Import => |i| i.scope,
-                    else => unreachable,
-                } else self.global_scope;
-
                 switch (node.node) {
-                    .Decl => {
+                    .Decl => |d| {
                         // const pname: []const u8 = if (parent) |p| switch (p.node) {
                         //     .Decl => |d| d.name,
                         //     .Import => |i| i.name,
                         //     else => unreachable,
                         // } else "<global>";
-                        // std.log.info("function: {s} -> {s}", .{ node.node.Decl.name, pname });
+                        // std.log.info("function: {s} -> {s}", .{
+                        //     node.node.Decl.name,
+                        //     pname,
+                        // });
 
-                        try scope.defs.append(node);
+                        const scope = if (parent) |p| switch (p.node) {
+                            .Decl => |de| de.scope,
+                            .Import => |i| i.scope,
+                            else => unreachable,
+                        } else self.global_scope;
+
+                        const method_scope = if (d.is_method) |method_type|
+                            if (scope.findType(method_type.Unresolved.ident, self)) |t|
+                                self.types.items[t].scope
+                            else
+                                return self.aerr(
+                                    error.NoSuchType,
+                                    method_type.Unresolved.srcloc,
+                                )
+                        else
+                            null;
+
+                        try (method_scope orelse scope).defs.append(node);
                         try self.defs.append(node);
                     },
                     else => {},
@@ -688,7 +724,7 @@ pub const Parser = struct {
         return self.program.perr(error.NoSuchType, srcloc);
     }
 
-    pub fn postProcess(parser_: *Parser) ErrorSet!void {
+    pub fn extractTypes(parser_: *Parser) ErrorSet!void {
         // Add typedefs
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn _f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
@@ -757,7 +793,9 @@ pub const Parser = struct {
                 }
             }
         }._f);
+    }
 
+    pub fn postProcess(parser_: *Parser) ErrorSet!void {
         // Earlier we couldn't know what type an Enum literal belonged to. At this
         // stage we find and set that information.
         //
@@ -770,25 +808,9 @@ pub const Parser = struct {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
-                    .Call => |c| if (c.node == null and !c.is_method) {
+                    .Call => |*c| if (c.node == null and !c.is_method) {
                         const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
-                        if (scope.findAny(c.name)) |found| {
-                            switch (found.node) {
-                                .Decl => {
-                                    node.node.Call.variant = 0;
-                                    node.node.Call.node = found;
-                                },
-                                else => {
-                                    std.log.info("Expected word, got {s}", .{
-                                        @tagName(found.node),
-                                    });
-                                    return self.perr(error.InvalidCall, node.srcloc);
-                                },
-                            }
-                        } else {
-                            std.log.info("Unknown ident {s}", .{c.name});
-                            return self.perr(error.UnknownIdent, node.srcloc);
-                        }
+                        try c.resolve(scope, self, node.srcloc);
                     },
                     .VDecl => |*vd| {
                         parent.?.node.Decl.locals.append(.{
@@ -890,7 +912,7 @@ pub const Parser = struct {
             defer lex.deinit();
 
             for (lexed.items) |*node| try import.body.append(switch (node.node) {
-                .List => |l| try parser_.parseList(l.items, import.scope),
+                .List => |l| try parser_.parseList(l.body.items, l.metadata.items, import.scope),
                 else => try parser_.parseStatement(node, import.scope),
             });
         }
@@ -926,11 +948,12 @@ pub const Parser = struct {
 
     pub fn parse(self: *Parser, lexed: *const lexer.NodeList) ErrorSet!void {
         for (lexed.items) |*node| try self.program.ast.append(switch (node.node) {
-            .List => |l| try self.parseList(l.items, self.program.global_scope),
+            .List => |l| try self.parseList(l.body.items, l.metadata.items, self.program.global_scope),
             else => try self.parseStatement(node, self.program.global_scope),
         });
 
         try self.importModules();
+        try self.extractTypes();
         try self.extractDefs();
         try self.setupMainFunc();
         try self.postProcess();

@@ -2,10 +2,10 @@
 
 (device System 0x00
 	[_unused   U16]
-	[expansion U16] # @ExpansionCmd
+	[expansion U16] // @ExpansionCmd
 	[wst        U8]
 	[rst        U8]
-	[metadata  U16] # @Metadata
+	[metadata  U16] // @Metadata
 	[red       U16]
 	[green     U16]
 	[blue      U16]
@@ -14,15 +14,15 @@
 )
 
 (device Console 0x10
-	[vector U16] #[vector (Fn u8 --)]
+	[vector U16] //vector (Fn u8 --)]
 	[read U8]
-	[exec U8]          # ? (not documented)
-	[mode U8]          # ? (not documented)
-	[dead U8]          # ? (not documented)
-	[exit U8]          # ? (not documented)
-	[type U8] #[type ConsoleType] # enum
-	[write U8]         # ? (not documented)
-	[error U8]         # ? (not documented)
+	[exec U8]          // ? (not documented)
+	[mode U8]          // ? (not documented)
+	[dead U8]          // ? (not documented)
+	[exit U8]          // ? (not documented)
+	[type U8] //type ConsoleType] // enum
+	[write U8]         // ? (not documented)
+	[error U8]         // ? (not documented)
 )
 
 (word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
@@ -37,23 +37,23 @@
 (word print8 (U8 --) [
 	dup 0= (when [ drop '0 emit return ])
 
-	0x99 swap # stop indicator
+	0x99 swap // stop indicator
 	
 	(until [ 0= ] [
 		16 /mod
 		dup 9 > (when [ 10 - 'a + ] [ '0 + ])
 		swap
 	])
-# TODO: drop null byte?
+// TODO: drop null byte?
 	(until [ 0x99 = ] [ emit ])
 
-	drop # drop stop indicator
+	drop // drop stop indicator
 ])
 
 (word print16 (U16 --) [
 	dup 0= (when [ drop '0 emit return ])
 
-	0x99s swap # stop indicator
+	0x99s swap // stop indicator
 	
 	(wild (U16 U16 -- U16) [
 		(until [ 0= ] [
@@ -65,7 +65,7 @@
 		(until [ 0x99s = ] [ (as U8) emit ])
 	])
 
-	drop # drop stop indicator
+	drop // drop stop indicator
 ])
 
 (word print-base (Any U8 --) [
@@ -74,7 +74,7 @@
 
 	dup 0= (when [ drop '0 emit return ])
 
-	0x99 (as $1) swap # stop indicator
+	0x99 (as $1) swap // stop indicator
 
 	(wild ($1 $1 -- $1) [
 		(until [ 0= ] [
@@ -89,7 +89,7 @@
 		(until [ 0x99 (as $1) = ] [ (as U8) emit ])
 	])
 
-	drop # drop stop indicator
+	drop // drop stop indicator
 ])
 
 (word print (Any --) [ 16 print-base ])

@@ -17,10 +17,10 @@
 	2dup :capacity <-
 	0s over :len <-
 	swap
-	# ( vec* capacity )
+	// ( vec* capacity )
 	(sizeof (Child (FieldType (Child $0) items))) (as U16) *
-		alloc/get std/unwrap (as @(Of Vector $0))
-	# ( vec* items* )
+		alloc/get ;unwrap (as @(Of Vector $0))
+	// ( vec* items* )
 	swap :items <-
 ])
 
@@ -34,8 +34,8 @@
 
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
 	tuck
-	:len -> swap - # TODO: check for overflow
-	# ( vec* new-len )
+	:len -> swap - // TODO: check for overflow
+	// ( vec* new-len )
 	swap :len <-
 ])
 
@@ -44,10 +44,10 @@
 		swap
 		2dup :capacity <-
 		swap (sizeof (Child (FieldType (Child $0) items))) (as U16) *
-		# ( new-len vec* computed-size )
+		// ( new-len vec* computed-size )
 		over :items -> (as @Opaque) alloc/reget
-		std/unwrap (as $0)
-		# ( new-len vec* item* )
+		;unwrap (as $0)
+		// ( new-len vec* item* )
 		swap :items <-
 		drop
 	] [ 2drop drop ])
@@ -91,7 +91,7 @@
 	0s @lst :items -> + -> (should eq    0x8s)
 ])
 
-# It should shrink the len while retaining capacity.
+// It should shrink the len while retaining capacity.
 (test Vector/shrink-by [
 	alloc/init
 	(var lst (Of Vector U16))

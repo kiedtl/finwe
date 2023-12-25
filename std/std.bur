@@ -3,27 +3,29 @@
 
 (struct Maybe0 (Any) [value $0])
 
-(word maybe? ((AnyOf Maybe0) -- Bool) [
+#(method Maybe0) (word maybe? ((AnyOf Maybe0) -- Bool) [
 	:value 0<>
 ])
-(test maybe? [ 0 (make (Of Maybe0 U8)) maybe? (should eq nil) ])
+(test maybe? [ 0 (make (Of Maybe0 U8)) ;maybe? (should eq nil) ])
 
-(word maybe-not? ((AnyOf Maybe0) -- Bool) [
+#(method Maybe0) (word maybe-not? ((AnyOf Maybe0) -- Bool) [
 	:value 0=
 ])
-(test maybe-not? [ 0 (make (Of Maybe0 U8)) maybe-not? (should eq t) ])
+(test maybe-not? [ 0 (make (Of Maybe0 U8)) ;maybe-not? (should eq t) ])
 
-(word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
+#(method Maybe0) (word unwrap ((AnyOf Maybe0) -- (FieldType $0 value)) [
        :value
        dup 0= (when [ "Unwrapped 0 value" panic ])
 ])
 
-(word orelse ((AnyOf Maybe0) (FieldType $1 value) -- (FieldType $1 value)) [
-       swap :value dup 0= (when [ drop ] [ nip ])
+#(method Maybe0) (word orelse (
+	(FieldType $0 value) (AnyOf Maybe0) -- (FieldType $0 value)
+) [
+       :value dup 0= (when [ drop ] [ nip ])
 ])
-(test orelse [ 0 (make (Of Maybe0 U8)) 12 orelse (should eq 12) ])
+(test orelse [ 0 (make (Of Maybe0 U8)) 12 swap ;orelse (should eq 12) ])
 
-(word strlen ( @[Char8] -- U16 ) [ # TODO: move to str module
+(word strlen ( @[Char8] -- U16 ) [ // TODO: move to str module
 	0s swap
 	(while [ -> 0<> ] [ swap 1+ swap 1+ ])
 	drop
@@ -34,22 +36,22 @@
 	"Hello, world!"       strlen (should eq 13s)
 ])
 
-# TODO: cleanup once always-inline directive and (r) are added
-# ( len src* dst* -- dst* )
+// TODO: cleanup once always-inline directive and (r) are added
+// ( len src* dst* -- dst* )
 (word memcpy ( U16 $0 AnyPtr -- $0 ) [
-	#move
+	//move
 	(as @U8) swap (as @U8) swap
 	(asm "s" .Op/Osth)
 	(asm "sr" .Op/Odup)
 
-	dup rot                        # ( src src len      | dst* dst* )
-	(sizeof (Child $0)) (as U16) * # ( src src len*sz   | dst* dst* )
-	swap + swap                    # ( src*+len*sz src* | dst* dst* )
+	dup rot                        // ( src src len      | dst* dst* )
+	(sizeof (Child $0)) (as U16) * // ( src src len*sz   | dst* dst* )
+	swap + swap                    // ( src*+len*sz src* | dst* dst* )
 
 	(while [ drop 2dup <> ] [
-		dup -> (asm "srk" .Op/Osth) <- #dup -> (r copy) <-
+		dup -> (asm "srk" .Op/Osth) <- //dup -> (r copy) <-
 		1+
-		(asm "sr" .Op/Oinc) # (r 1+)
+		(asm "sr" .Op/Oinc) // (r 1+)
 	])
 	
 	(asm "sr" .Op/Odrop)

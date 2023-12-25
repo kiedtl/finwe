@@ -8,6 +8,7 @@ const common = @import("common.zig");
 const Program = common.Program;
 const ASTNode = common.ASTNode;
 const Scope = common.Scope;
+const ErrorSet = common.Error.Set;
 const ASTNodeList = common.ASTNodeList;
 const TypeInfo = common.TypeInfo;
 const TypeFmt = common.TypeFmt;
@@ -416,7 +417,7 @@ pub const AnalyserInfo = struct {
     early_return: bool = false,
 };
 
-fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) Error!AnalyserInfo {
+fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) ErrorSet!AnalyserInfo {
     //std.log.info("analysing {s}", .{parent.name});
 
     var info = AnalyserInfo{};
@@ -451,7 +452,16 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     .mergeInto(a, program, node.srcloc);
             },
             .Call => |*c| {
-                const d = parent.scope.findAny(c.name).?;
+                if (c.is_method) {
+                    const scope = switch (a.stack.last().?) {
+                        .Struct => |n| program.types.items[n].scope,
+                        else => @panic("Can't call method on whatever this is"),
+                    };
+
+                    try c.resolve(scope, program, node.srcloc);
+                }
+
+                const d = c.node.?;
                 const cdecl = &d.node.Decl;
 
                 c.node = d;
@@ -836,7 +846,7 @@ pub fn postProcess(self: *Program) Error!void {
             try _S.walkNodes(self, def, def.node.Decl.body);
 }
 
-pub fn analyse(program: *Program, tests: bool) Error!void {
+pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
     // for (program.defs.items) |decl_node| {
     //     const decl = &decl_node.node.Decl;
     //     if (!decl.is_analysed) {

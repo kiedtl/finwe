@@ -24,11 +24,17 @@ pub const Node = struct {
         VarNum: u8,
         Child: []const u8,
         ChildNum: u8,
-        List: NodeList,
+        List: List,
         Quote: NodeList,
         At: *Node,
+        Metadata: *Node,
         T,
         Nil,
+    };
+
+    pub const List = struct {
+        metadata: NodeList,
+        body: NodeList,
     };
 
     pub const EnumLit = struct {
@@ -37,7 +43,10 @@ pub const Node = struct {
     };
 
     pub fn deinitMain(list: NodeList, alloc: mem.Allocator) void {
-        var n = Node{ .node = .{ .List = list }, .location = undefined };
+        var n = Node{
+            .node = .{ .List = .{ .metadata = undefined, .body = list } },
+            .location = undefined,
+        };
         n.deinit(alloc);
     }
 
@@ -54,9 +63,15 @@ pub const Node = struct {
                 if (data.of) |d|
                     alloc.free(d);
             },
-            .Quote, .List => |list| {
+            .Quote => |list| {
                 for (list.items) |*li| li.deinit(alloc);
                 list.deinit();
+            },
+            .List => |list| {
+                for (list.body.items) |*li| li.deinit(alloc);
+                list.body.deinit();
+                for (list.metadata.items) |*li| li.deinit(alloc);
+                list.metadata.deinit();
             },
             else => {},
         }
@@ -71,6 +86,7 @@ pub const Lexer = struct {
     line: usize = 1,
     column: usize = 0,
     file: []const u8,
+    metadata: NodeList,
 
     pub const Stack = struct {
         type: Type,
@@ -83,6 +99,7 @@ pub const Lexer = struct {
     const Self = @This();
 
     pub const LexerError = error{
+        InvalidMetadata,
         NoMatchingParen,
         UnexpectedClosingParen,
         InvalidEnumLiteral,
@@ -97,6 +114,7 @@ pub const Lexer = struct {
             .input = input,
             .alloc = alloc,
             .stack = Stack.List.init(alloc),
+            .metadata = NodeList.init(alloc),
         };
     }
 
@@ -107,7 +125,7 @@ pub const Lexer = struct {
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
         return switch (vtype) {
             '$', 'k', ';', ':', '.' => blk: {
-                if (self.lexWord('#', word)) |node| {
+                if (self.lexWord('N', word)) |node| {
                     break :blk switch (vtype) {
                         '$' => Node.NodeType{ .VarNum = node.U8 },
                         'k' => node,
@@ -150,7 +168,7 @@ pub const Lexer = struct {
             },
             // Never called by lexValue, only by lexWord to check if something
             // can be parsed as a number.
-            '#' => blk: {
+            'N' => blk: {
                 var base: u8 = 10;
                 var offset: usize = 0;
 
@@ -244,13 +262,17 @@ pub const Lexer = struct {
     }
 
     pub fn lexValue(self: *Self, vtype: u21) LexerError!Node.NodeType {
-        if (vtype != 'k' and vtype != '#')
+        if (vtype != 'k' and vtype != 'N')
             self.moar();
         const oldi = self.index;
 
         const word_end = for (self.index..self.input.len) |ind| {
-            switch (self.input[ind]) {
-                0x09...0x0d, 0x20, '(', ')', '[', ']', '#' => break ind,
+            if (self.input[ind] == '/' and ind < self.input.len - 1 and
+                self.input[ind + 1] == '/')
+            {
+                break ind;
+            } else switch (self.input[ind]) {
+                0x09...0x0d, 0x20, '(', ')', '[', ']' => break ind,
                 else => {},
             }
         } else self.input.len;
@@ -266,30 +288,44 @@ pub const Lexer = struct {
 
     fn lex(self: *Self) LexerError!?Node.NodeType {
         const ch = self.input[self.index];
+        if (ch == '/' and self.index < self.input.len - 1 and
+            self.input[self.index + 1] == '/')
+        {
+            while (self.index < self.input.len and self.input[self.index] != 0x0a)
+                self.moar();
+            return null;
+        }
+
         return switch (ch) {
-            '#' => {
-                while (self.index < self.input.len and self.input[self.index] != 0x0a)
-                    self.moar();
-                return null;
-            },
             0x09...0x0d, 0x20 => null,
             '"' => try self.lexString(),
             '$', '.', ';', ':', '\'' => try self.lexValue(ch),
-            '@' => b: {
+            '#', '@' => b: {
                 if (self.index == self.input.len - 1) {
-                    @panic("TODO: lexer: lone @");
+                    @panic("TODO: lexer: lone @ or #");
                 }
 
                 self.moar();
                 const ptr = try self.alloc.create(Node);
                 ptr.* = Node{
-                    .node = (try self.lex()) orelse @panic("TODO: lexer: lone @"),
+                    .node = (try self.lex()) orelse @panic("TODO: lexer: lone @ or #"),
                     .location = .{ .file = self.file, .line = self.line, .column = self.column },
                 };
-                break :b .{ .At = ptr };
+                if (ch == '#' and ptr.node == .Metadata)
+                    @panic("Error: nested metadata not allowed (eg ##foo)");
+                if (ch == '#' and ptr.node == .Quote)
+                    @panic("TODO: #[] syntax");
+                break :b if (ch == '@') .{ .At = ptr } else .{ .Metadata = ptr };
             },
             '[' => Node.NodeType{ .Quote = try self.lexList(.Bracket) },
-            '(' => Node.NodeType{ .List = try self.lexList(.Paren) },
+            '(' => b: {
+                const metadata = self.metadata;
+                self.metadata = NodeList.init(self.alloc);
+                break :b Node.NodeType{ .List = .{
+                    .metadata = metadata,
+                    .body = try self.lexList(.Paren),
+                } };
+            },
             else => try self.lexValue('k'),
         };
     }
@@ -322,10 +358,22 @@ pub const Lexer = struct {
                     _ = self.stack.pop();
                     return res;
                 },
-                else => res.append(Node{
-                    .node = (try self.lex()) orelse continue,
-                    .location = .{ .file = self.file, .line = self.line, .column = self.column },
-                }) catch return error.OutOfMemory,
+                else => {
+                    const node = (try self.lex()) orelse continue;
+                    if (node == .Metadata) {
+                        self.metadata.append(Node{ .node = node, .location = .{
+                            .file = self.file,
+                            .line = self.line,
+                            .column = self.column,
+                        } }) catch return error.OutOfMemory;
+                    } else {
+                        res.append(Node{ .node = node, .location = .{
+                            .file = self.file,
+                            .line = self.line,
+                            .column = self.column,
+                        } }) catch return error.OutOfMemory;
+                    }
+                },
             }
         }
 
@@ -358,7 +406,7 @@ test "basic lexing" {
 
     try testing.expectEqual(activeTag(result.items[4].node), .List);
     {
-        const list = result.items[4].node.List.items;
+        const list = result.items[4].node.List.body.items;
 
         try testing.expectEqual(activeTag(list[0].node), .Keyword);
         try testing.expectEqualSlices(u8, "test", list[0].node.Keyword);
@@ -375,7 +423,7 @@ test "basic lexing" {
 
     try testing.expectEqual(activeTag(result.items[5].node), .List);
     {
-        const list = result.items[5].node.List.items;
+        const list = result.items[5].node.List.body.items;
 
         try testing.expectEqual(activeTag(list[0].node), .U8);
         try testing.expectEqual(@as(u8, 12), list[0].node.U8);
@@ -449,7 +497,7 @@ test "sigils lexing" {
     try testing.expectEqual(activeTag(result.items[3].node), .At);
     try testing.expectEqual(activeTag(result.items[3].node.At.node), .List);
     {
-        const list = result.items[3].node.At.node.List.items;
+        const list = result.items[3].node.At.node.List.body.items;
 
         try testing.expectEqual(activeTag(list[0].node), .Keyword);
         try testing.expectEqualSlices(u8, "foo", list[0].node.Keyword);
@@ -457,7 +505,7 @@ test "sigils lexing" {
 
     try testing.expectEqual(activeTag(result.items[4].node), .List);
     {
-        const list = result.items[4].node.List.items;
+        const list = result.items[4].node.List.body.items;
 
         try testing.expectEqual(activeTag(list[0].node), .At);
         try testing.expectEqual(activeTag(list[0].node.At.node), .Keyword);
@@ -471,7 +519,7 @@ test "sigils lexing" {
         try testing.expectEqual(activeTag(list[0].node), .At);
         try testing.expectEqual(activeTag(list[0].node.At.node), .List);
         {
-            const list2 = list[0].node.At.node.List.items;
+            const list2 = list[0].node.At.node.List.body.items;
             try testing.expectEqual(activeTag(list2[0].node), .At);
             try testing.expectEqual(activeTag(list2[0].node.At.node), .Keyword);
             try testing.expectEqualSlices(u8, "foo", list2[0].node.At.node.Keyword);

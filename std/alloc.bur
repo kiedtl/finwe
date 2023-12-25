@@ -2,11 +2,11 @@
 (use* varvara)
 (use std)
 
-# I wanted to have U16 guards, that way we could have 0x1cedc0fe
-#
-# Sadly that blows up the size to 9 bytes, so we have to settle with
-# just lukewarm 0xc0fe
-#
+// I wanted to have U16 guards, that way we could have 0x1cedc0fe
+//
+// Sadly that blows up the size to 9 bytes, so we have to settle with
+// just lukewarm 0xc0fe
+//
 (struct Header
 	[guard1 U8]
 	[prev @Header]
@@ -27,40 +27,40 @@
 	0xfe    first :guard2 <-
 ])
 
-# ( block-count oldptr block-type -- (sizeof block-type)*block-count )
+// ( block-count oldptr block-type -- (sizeof block-type)*block-count )
 (word re ( U16 @$0 Type -- (Of std/Maybe0 @$0) ) [
 	swap (sizeof $0) (as U16) * swap reget
 	:value (make (Of std/Maybe0 @$0))
 ])
 
-# ( block-count block-type -- (sizeof block-type)*block-count )
+// ( block-count block-type -- (sizeof block-type)*block-count )
 (word for ( U16 Type -- (Of std/Maybe0 @$0) ) [
 	(sizeof $0) (as U16) * get
 	:value (make (Of std/Maybe0 @$0))
 ])
 
-# ( bytes -- *ptr )
+// ( bytes -- *ptr )
 (word get ( U16 -- (Of std/Maybe0 @Opaque) ) [
 	(var size U16)
 	@size <-
 
-	#"*** Allocating " print-string
-	#$size             print-dec
-	#" bytes\n"        print-string
+	// Allocating " print-string
+	//size             print-dec
+	// bytes\n"        print-string
 
 	first
 	(while [
-		#dup "Sz: " print-string chunk-size print-dec nl
-		#    "Rq: " print-string $size print-dec nl
-		#dup "Nx: " print-string :next -> print nl
-		#dup "Av: " print-string :free -> print-bool nl
-		#nl
+		//dup "Sz: " print-string chunk-size print-dec nl
+		//    "Rq: " print-string $size print-dec nl
+		//dup "Nx: " print-string :next -> print nl
+		//dup "Av: " print-string :free -> print-bool nl
+		//nl
 
 		dup :free -> not
 		swap-sb chunk-size $size <
 		or
 	] [
-		#"    Skipping " print-string dup print nl
+		//    Skipping " print-string dup print nl
 
 		dup :next -> 0= (when [
 			0s (as @Opaque) (make (Of std/Maybe0 @Opaque))
@@ -69,7 +69,7 @@
 		    :next ->
 	])
 
-	#"Chosen: " print-string dup print nl nl
+	//Chosen: " print-string dup print nl nl
 
 	(var chosen @Header)
 	@chosen <-
@@ -96,16 +96,16 @@
 	(make (Of std/Maybe0 @Opaque))
 ])
 
-# ( bytes oldptr -- Maybe<newptr> )
+// ( bytes oldptr -- Maybe<newptr> )
 (word reget (U16 @Opaque -- (Of std/Maybe0 @Opaque)) [
 	(as @U8)
 	dup get-header chunk-size
 	rot
-	# ( old old-sz new-sz )
+	// ( old old-sz new-sz )
 	get :value dup 0= (when [ nip nip (make (Of std/Maybe0 @Opaque)) return ])
-	# ( old old-chunk-sz new-unwrapped )
+	// ( old old-chunk-sz new-unwrapped )
 	rot (asm "sk" .Op/Osth) swap
-	# ( old-chunk-sz old new | new old )
+	// ( old-chunk-sz old new | new old )
 	(as @U8) std/memcpy (make (Of std/Maybe0 @Opaque))
 	(asm "rs" .Op/Osth) (as @U8) de
 ])
@@ -114,17 +114,17 @@
 
 	"Foo"
 	dup std/strlen swap
-	over get std/unwrap (as @U8)
+	over get ;unwrap (as @U8)
 	std/memcpy
 	100s swap reget
-	std/unwrap
+	;unwrap
 
 	(as @Char8) -> (should eq 'F)
 ])
 
 (word de (AnyPtr16 -- ) [
 	get-header
-	#"Dealloc'ing: " print-string dup print nl
+	//Dealloc'ing: " print-string dup print nl
 
 		dup     :guard1 -> 0xc0 <>
 		over-sb :guard2 -> 0xfe <>
@@ -150,20 +150,20 @@
 		(when [
 			dup :next ->
 
-			# current->next = next->next
-			# ( current next )
+			// current->next = next->next
+			// ( current next )
 			over :next
-				# ( current next @current->next )
+				// ( current next @current->next )
 				over :next -> swap <-
 
 			dup :next -> 0<> (when [
-				# ( current next )
+				// ( current next )
 				:next ->
-					# ( current $next->next )
+					// ( current $next->next )
 					:prev
-					# ( current $next->next->prev )
+					// ( current $next->next->prev )
 					over swap <-
-					# ( current )
+					// ( current )
 
 			] [ drop ])
 		] [ :next -> ])

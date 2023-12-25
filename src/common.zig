@@ -840,6 +840,27 @@ pub const ASTNode = struct {
         node: ?*ASTNode = null,
         goto: bool = false,
         is_method: bool = false,
+
+        // Note: doesn't care about is_method at all
+        pub fn resolve(self: *@This(), scope: *Scope, program: *Program, srcloc: Srcloc) Error.Set!void {
+            if (scope.findAny(self.name)) |found| {
+                switch (found.node) {
+                    .Decl => {
+                        self.variant = 0;
+                        self.node = found;
+                    },
+                    else => {
+                        std.log.info("Expected word, got {s}", .{
+                            @tagName(found.node),
+                        });
+                        return program.perr(error.InvalidCall, srcloc);
+                    },
+                }
+            } else {
+                std.log.info("Unknown ident {s}", .{self.name});
+                return program.perr(error.UnknownIdent, srcloc);
+            }
+        }
     };
 
     pub const When = struct {
@@ -885,6 +906,7 @@ pub const ASTNode = struct {
         calls: usize = 0,
         locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
         scope: *Scope,
+        is_method: ?TypeInfo = null,
         is_analysed: bool = false,
         is_test: bool = false,
 
