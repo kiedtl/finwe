@@ -406,7 +406,7 @@ pub const TypeInfo = union(enum) {
                 // TODO: Childish (for only one level of Childification)
                 .Child => |s| b: {
                     const arg_t = try program.ztype(s).resolveTypeRef(scope, arity, program);
-                    var b = switch (arg_t) {
+                    const b = switch (arg_t) {
                         .AnyPtr, .AnyPtr16 => .Any,
                         .Ptr8, .Ptr16 => arg_t.deptrize(program),
                         .Array => |a| program.ztype(a.typ),
@@ -421,7 +421,11 @@ pub const TypeInfo = union(enum) {
                     if ((arg_t == .Ptr16 or arg_t == .Ptr8) and
                         b == .Array)
                     {
-                        b = program.ztype(b.Array.typ);
+                        // This was deptrize()'s job
+                        //
+                        //b = program.ztype(b.Array.typ);
+                        //
+                        unreachable;
                     }
 
                     break :b b;
@@ -507,17 +511,20 @@ pub const TypeInfo = union(enum) {
         };
     }
 
-    pub fn deptrize(a: @This(), program: *Program) @This() {
-        const r: TypeInfo = switch (a) {
+    pub fn deptrize(self: @This(), program: *Program) @This() {
+        const a: TypeInfo = switch (self) {
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = p.typ, .ind = p.ind - 1 } },
             .Ptr16 => |p| .{ .Ptr16 = .{ .typ = p.typ, .ind = p.ind - 1 } },
             else => unreachable,
         };
-        // FIXME: ptr8
-        return if (r.Ptr16.ind == 0) switch (r) {
+        const b = if (switch (a) {
+            .Ptr16, .Ptr8 => |p| p.ind,
+            else => unreachable,
+        } == 0) switch (a) {
             .Ptr8, .Ptr16 => |p| program.ztype(p.typ),
             else => unreachable,
-        } else r;
+        } else a;
+        return if (b == .Array) program.ztype(b.Array.typ) else b;
     }
 
     pub fn ptr16(program: *Program, to: TypeInfo, indirection: usize) TypeInfo {

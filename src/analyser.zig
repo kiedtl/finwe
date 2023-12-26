@@ -506,8 +506,24 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (var_ind) |ind|
                             c.node = cdecl.variations.items[ind];
 
-                        // if (mem.eql(u8, parent.name, "main"))
-                        //     std.log.info("{s} returned {?}", .{ cdecl.name, ungenericified.stack.last() });
+                        // if (mem.eql(u8, parent.name, "Vector/append") and
+                        //     mem.eql(u8, cdecl.name, "->"))
+                        // {
+                        //     const rt = ungenericified.stack.last().?;
+                        //     if (var_ind == null)
+                        //         std.log.info("{} variant (rt {}) created for {s}", .{
+                        //             c.variant,
+                        //             TypeFmt.from(rt, program),
+                        //             AnalysisFmt.from(a, program),
+                        //         })
+                        //     else
+                        //         std.log.info("{} variant (rt {}) used for {s}", .{
+                        //             c.variant,
+                        //             TypeFmt.from(rt, program),
+                        //             AnalysisFmt.from(a, program),
+                        //         });
+                        // }
+
                         try ungenericified.mergeInto(a, program, node.srcloc);
 
                         if (var_ind == null) {

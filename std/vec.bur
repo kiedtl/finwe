@@ -87,13 +87,6 @@
 	  1002s @lst append
 	 0x184s @lst append
 
-	//@lst :len -> (should eq 5s)
-	//8s @lst :items -> + -> (should eq 0x0184s)
-	//6s @lst :items -> + -> (should eq   1002s)
-	//4s @lst :items -> + -> (should eq    0x7s)
-	//2s @lst :items -> + -> (should eq    314s)
-	//0s @lst :items -> + -> (should eq    0x8s)
-
 	@lst :items -> :4 -> (should eq 0x0184s)
 	@lst :items -> :3 -> (should eq   1002s)
 	@lst :items -> :2 -> (should eq    0x7s)
