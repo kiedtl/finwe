@@ -33,7 +33,11 @@
 ])
 
 (word last ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
-	
+	dup :items -> swap :len -> 1- : ->
+])
+
+(word pop ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
+	dup last 1s rot shrink-by
 ])
 
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
@@ -111,4 +115,39 @@
 	@lst :capacity -> (should eq 4s)
 	0s @lst :items -> + -> (should eq 1s)
 	2s @lst :items -> + -> (should eq 2s)
+])
+
+(test Vector/last [
+	alloc/init
+	(var lst (Of Vector U16))
+	@lst init
+
+	0x0008s @lst append
+	@lst last (should eq 0x8s)
+	0x0314s @lst append
+	@lst last (should eq 0x314s)
+	0x0007s @lst append
+	@lst last (should eq 0x7s)
+	0x1002s @lst append
+	@lst last (should eq 0x1002s)
+	0x0184s @lst append
+	@lst last (should eq 0x184s)
+])
+
+(test Vector/pop [
+	alloc/init
+	(var lst (Of Vector U16))
+	@lst init
+
+	0x0008s @lst append
+	0x0314s @lst append
+	0x0007s @lst append
+	0x1002s @lst append
+	0x0184s @lst append
+
+	@lst pop (should eq 0x0184s)
+	@lst pop (should eq 0x1002s)
+	@lst pop (should eq 0x0007s)
+	@lst pop (should eq 0x0314s)
+	@lst pop (should eq 0x0008s)
 ])
