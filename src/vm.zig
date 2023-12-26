@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const emitter = @import("emitter.zig");
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
+const Srcloc = @import("common.zig").Srcloc;
 const Ins = @import("common.zig").Ins;
 const Program = @import("common.zig").Program;
 const StackBuffer = @import("buffer.zig").StackBuffer;
@@ -145,10 +146,17 @@ pub const VM = struct {
         _ = emu_end(&self.uxn);
     }
 
-    fn _failTest(stderr: anytype, comptime format: []const u8, args: anytype) !void {
+    fn _failTest(stderr: anytype, comptime format: []const u8, args: anytype, romloc: usize, srcloc: Srcloc) !void {
         const failstr = "\x1b[2D\x1b[31m!!\x1b[m\n";
         stderr.print("{s}", .{failstr}) catch unreachable;
-        stderr.print("\x1b[32m> \x1b[m" ++ format ++ "\n\n", args) catch unreachable;
+        stderr.print("\x1b[32m> \x1b[m" ++ format ++ "\n", args) catch unreachable;
+        stderr.print("  \x1b[36mat \x1b[m{s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m", .{
+            srcloc.file, srcloc.line, srcloc.column,
+        }) catch unreachable;
+        stderr.print(" (\x1b[36mpc \x1b[m{x:0>4})\n", .{
+            romloc + 0x100,
+        }) catch unreachable;
+        stderr.print("\n", .{}) catch unreachable;
         return error.Fail;
     }
 
@@ -166,14 +174,14 @@ pub const VM = struct {
                     if (v.toU16(program) != toss) {
                         try _failTest(stderr, "Expected 0x{x:0>4}, got 0x{x:0>4}", .{
                             v.toU16(program), toss,
-                        });
+                        }, breakpoint.romloc, breakpoint.srcloc);
                     }
                     self.uxn.wst.ptr -= 2;
                 } else if (v.typ.bits(program).? == 8) {
                     if (v.toU8(program) != tosb) {
                         try _failTest(stderr, "Expected 0x{x:0>2}, got 0x{x:0>2}", .{
                             v.toU8(program), tosb,
-                        });
+                        }, breakpoint.romloc, breakpoint.srcloc);
                     }
                     self.uxn.wst.ptr -= 1;
                 } else unreachable;

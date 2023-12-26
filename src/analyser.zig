@@ -24,6 +24,10 @@ pub const Error = error{
     CannotGetFieldMultiPtr,
     CannotGetField,
     CannotGetChild,
+    CannotGetIndex,
+    InvalidIndexType,
+    IndexTooLarge,
+    IndexWouldOverflow,
     StructNotForStack,
 };
 
@@ -636,6 +640,64 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 a.stack.append(t) catch unreachable;
             },
             .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
+            // TODO: ptr8 (will require special handling in codegen -- can't
+            // multiply u8 (ptr) w/ u16 (index) right?)
+            //
+            .GetIndex => |*gind| {
+                const indtype: ?TypeInfo = if (gind.ind != .known) a.stack.pop() catch @panic("nuh uh x2") else null;
+                const target = a.stack.pop() catch @panic("nuh uh");
+                var known_target_len: ?u16 = null;
+
+                const childtype = switch (target) {
+                    .Array => @panic("How on earth"), // Array on the stack??
+                    .Ptr16 => |ptr| switch (program.ztype(ptr.typ)) {
+                        .Array => |arr| b: {
+                            known_target_len = arr.count;
+                            break :b program.ztype(arr.typ);
+                        },
+                        .Ptr16 => program.ztype(ptr.typ).deptrize(program),
+                        .Ptr8 => @panic("TODO"),
+                        else => |t| t,
+                    },
+                    .Ptr8 => @panic("TODO"),
+                    else => return program.aerr(error.CannotGetIndex, node.srcloc),
+                };
+                if (childtype.size(program)) |sz| {
+                    if (sz == 0xFFFF) @panic("seriously");
+                    gind.multiplier = sz;
+                }
+
+                if (gind.ind != .known) {
+                    gind.ind = switch (indtype.?) {
+                        .U16 => .stk_s,
+                        .U8 => .stk_b,
+                        else => if (indtype.?.isGeneric(program)) .stk_unresolved else {
+                            std.log.info("{}: invalid index type, u8/u16 required", .{
+                                TypeFmt.from(indtype.?, program),
+                            });
+                            return program.aerr(error.InvalidIndexType, node.srcloc);
+                        },
+                    };
+                }
+
+                if (gind.ind == .known and gind.multiplier != 0xFFFF) {
+                    // Detect multiplication overflow
+                    // https://stackoverflow.com/a/6472982
+                    const x = (gind.ind.known >> 8) * (gind.multiplier & 0xFF);
+                    const y = (gind.ind.known & 0xFF) * (gind.multiplier >> 8);
+                    const bit = ((gind.ind.known >> 8) * (gind.multiplier >> 8)) +
+                        (x >> 8) + (y >> 8);
+                    if (bit != 0)
+                        return program.aerr(error.IndexWouldOverflow, node.srcloc);
+                }
+
+                if (gind.ind == .known and known_target_len != null) {
+                    if (gind.ind.known >= known_target_len.?)
+                        return program.aerr(error.IndexTooLarge, node.srcloc);
+                }
+
+                a.stack.append(target) catch unreachable;
+            },
             .GetChild => |*gch| {
                 // error message: (replacing nuh uh)
                 // Error: Need to know type at this point

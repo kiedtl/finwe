@@ -261,6 +261,14 @@ pub const Parser = struct {
                 .node = .{ .GetChild = .{ .name = s } },
                 .srcloc = node.location,
             },
+            .ChildNum => |n| ASTNode{
+                .node = .{ .GetIndex = .{ .ind = .{ .known = n } } },
+                .srcloc = node.location,
+            },
+            .ChildAmbig => ASTNode{
+                .node = .{ .GetIndex = .{ .ind = .stk_unresolved } },
+                .srcloc = node.location,
+            },
             .At => |atsub| switch (atsub.node) {
                 .Keyword => |s| ASTNode{
                     .node = .{ .VRef = .{ .name = s } },

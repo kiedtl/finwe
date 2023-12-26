@@ -32,6 +32,10 @@
 	swap :items -> + <-
 ])
 
+(word last ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
+	
+])
+
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
 	tuck
 	:len -> swap - // TODO: check for overflow
@@ -83,12 +87,18 @@
 	  1002s @lst append
 	 0x184s @lst append
 
-	@lst :len -> (should eq 5s)
-	8s @lst :items -> + -> (should eq 0x0184s)
-	6s @lst :items -> + -> (should eq   1002s)
-	4s @lst :items -> + -> (should eq    0x7s)
-	2s @lst :items -> + -> (should eq    314s)
-	0s @lst :items -> + -> (should eq    0x8s)
+	//@lst :len -> (should eq 5s)
+	//8s @lst :items -> + -> (should eq 0x0184s)
+	//6s @lst :items -> + -> (should eq   1002s)
+	//4s @lst :items -> + -> (should eq    0x7s)
+	//2s @lst :items -> + -> (should eq    314s)
+	//0s @lst :items -> + -> (should eq    0x8s)
+
+	@lst :items -> :4 -> (should eq 0x0184s)
+	@lst :items -> :3 -> (should eq   1002s)
+	@lst :items -> :2 -> (should eq    0x7s)
+	@lst :items -> :1 -> (should eq    314s)
+	@lst :items -> :0 -> (should eq    0x8s)
 ])
 
 // It should shrink the len while retaining capacity.

@@ -129,6 +129,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emit(buf, node, WK_STACK, false, false, .Odeo);
             program.breakpoints.append(brk) catch unreachable;
             program.breakpoints.items[program.breakpoints.items.len - 1].romloc = buf.items.len;
+            program.breakpoints.items[program.breakpoints.items.len - 1].srcloc = node.srcloc;
         },
         .Cast => |c| {
             //std.log.info("codegen: {},{}: casting {} -> {}", .{ node.srcloc.line, node.srcloc.column, c.of, c.to });
@@ -163,6 +164,22 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 }
                 try emit(buf, null, 0, false, gchmem.is_short, .Oadd);
             },
+        },
+        .GetIndex => |gind| {
+            assert(gind.multiplier != 0xFFFF);
+            if (gind.ind == .known) {
+                const v = gind.ind.known * gind.multiplier;
+                try emitIMM16(buf, node, WK_STACK, false, .Olit, v);
+            }
+            if (gind.ind == .stk_b) {
+                try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                try emit(buf, node, WK_STACK, false, false, .Oswp);
+            }
+            if (gind.ind != .known) {
+                try emitIMM16(buf, node, WK_STACK, false, .Olit, gind.multiplier);
+                try emit(buf, null, 0, false, true, .Omul);
+            }
+            try emit(buf, null, 0, false, true, .Oadd);
         },
         .VDecl => {},
         .VRef => |v| try emitUA(buf, ual, v.name, node),

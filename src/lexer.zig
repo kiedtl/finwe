@@ -3,13 +3,14 @@ const mem = std.mem;
 const activeTag = std.meta.activeTag;
 const assert = std.debug.assert;
 
-const common = @import("common.zig");
-const String = common.String;
+const gpa = &@import("common.zig").gpa;
+const String = @import("common.zig").String;
+const Srcloc = @import("common.zig").Srcloc;
 pub const NodeList = std.ArrayList(Node);
 
 pub const Node = struct {
     node: NodeType,
-    location: common.Srcloc,
+    location: Srcloc,
 
     pub const NodeType = union(enum) {
         Char8: u8,
@@ -23,7 +24,8 @@ pub const Node = struct {
         Var: []const u8,
         VarNum: u8,
         Child: []const u8,
-        ChildNum: u8,
+        ChildNum: u16,
+        ChildAmbig,
         List: List,
         Quote: NodeList,
         At: *Node,
@@ -106,6 +108,7 @@ pub const Lexer = struct {
         InvalidCharLiteral,
         InvalidUtf8,
         BadString,
+        InvalidToken,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
     pub fn init(input: []const u8, filename: []const u8, alloc: mem.Allocator) Self {
@@ -130,7 +133,14 @@ pub const Lexer = struct {
                         '$' => Node.NodeType{ .VarNum = node.U8 },
                         'k' => node,
                         '.' => error.InvalidEnumLiteral, // Cannot be numeric
-                        ':' => Node.NodeType{ .ChildNum = node.U8 },
+                        ':' => Node.NodeType{
+                            .ChildNum = switch (node) {
+                                .U8 => |u| u,
+                                .U16 => |u| u,
+                                // .I16, .I8 => return error.InvalidIndexType,
+                                else => unreachable,
+                            },
+                        },
                         else => unreachable,
                     };
                 } else |_| {
@@ -225,7 +235,7 @@ pub const Lexer = struct {
             return error.BadString; // ERROR: Invalid string
         }
 
-        var buf = String.init(common.gpa.allocator());
+        var buf = String.init(gpa.allocator());
         self.moar(); // skip beginning quote
 
         while (self.index < self.input.len) : (self.moar()) {
@@ -278,7 +288,10 @@ pub const Lexer = struct {
         } else self.input.len;
 
         const word = self.input[oldi..word_end];
-        assert(word.len > 0);
+        if (word.len == 0) switch (vtype) {
+            ':' => return .ChildAmbig,
+            else => return error.InvalidToken,
+        };
 
         for (oldi..word_end - 1) |_|
             self.moar();
@@ -437,7 +450,7 @@ test "basic lexing" {
         }
 
         try testing.expectEqual(activeTag(list[2].node), .ChildNum);
-        try testing.expectEqual(@as(u8, 0), list[2].node.ChildNum);
+        try testing.expectEqual(@as(u16, 0), list[2].node.ChildNum);
     }
 
     try testing.expectEqual(activeTag(result.items[6].node), .MethodCall);
@@ -526,3 +539,13 @@ test "sigils lexing" {
         }
     }
 }
+
+// test "tmp" {
+//     const input = ":";
+//     var lexer = Lexer.init(input, "<test>", std.testing.allocator);
+//     const result = try lexer.lexList(.Root);
+//     defer lexer.deinit();
+//     defer Node.deinitMain(result, std.testing.allocator);
+
+//     std.log.err("{}", .{result.items[0].node});
+// }

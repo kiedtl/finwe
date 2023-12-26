@@ -1,4 +1,4 @@
-// Originally ripped out of:
+// Originally ripped out of:{{{
 // https://github.com/fengb/zigbot9001, main.zig
 
 const std = @import("std");
@@ -121,6 +121,10 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
         pub inline fn last(self: *const Self) ?T {
             return if (self.len > 0) self.data[self.len - 1] else null;
         }
+
+        pub inline fn secondLast(self: *const Self) ?T {
+            return if (self.len > 1) self.data[self.len - 2] else null;
+        }
     };
 }
 
@@ -148,4 +152,4 @@ test "insertSlice" {
         try b.insertSlice(3, "ABCD");
         try testing.expectEqualSlices(u8, "fefABCDifofum", b.constSlice());
     }
-}
+} // }}}

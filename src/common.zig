@@ -513,6 +513,7 @@ pub const TypeInfo = union(enum) {
             .Ptr16 => |p| .{ .Ptr16 = .{ .typ = p.typ, .ind = p.ind - 1 } },
             else => unreachable,
         };
+        // FIXME: ptr8
         return if (r.Ptr16.ind == 0) switch (r) {
             .Ptr8, .Ptr16 => |p| program.ztype(p.typ),
             else => unreachable,
@@ -702,6 +703,7 @@ pub const ASTNode = struct {
         VRef: VRef,
         VDeref: VDeref,
         GetChild: GetChild,
+        GetIndex: GetIndex,
         TypeDef: TypeDef,
         Here,
         Builtin: Builtin,
@@ -808,6 +810,16 @@ pub const ASTNode = struct {
                 is_short: bool,
             },
         } = .unresolved,
+    };
+
+    pub const GetIndex = struct {
+        ind: union(enum) {
+            known: u16,
+            stk_s,
+            stk_b,
+            stk_unresolved,
+        },
+        multiplier: u16 = 0xFFFF,
     };
 
     pub const VDecl = struct {
@@ -969,7 +981,7 @@ pub const ASTNode = struct {
             .Import => @panic("excuse me what"),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
+            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
         }
 
         return .{
@@ -983,6 +995,7 @@ pub const ASTNode = struct {
 pub const Breakpoint = struct {
     type: Type,
     romloc: usize = 0xFFFF,
+    srcloc: Srcloc = undefined,
 
     pub const Type = union(enum) {
         TosShouldEq: Value,
@@ -1141,7 +1154,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Import => |b| try walkNodes(self, node, b.body, ctx, func),
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),

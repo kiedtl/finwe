@@ -81,15 +81,6 @@
 	//0xaceds print
 	//0xcafes print nl
 	
-	//word foobar (Any -- $0) [
-	//	(var baz $0 1)
-	//	1+ @baz sta
-	//	$baz
-	//
-	
-	//0 foobar foobar foobar print nl
-	//0s foobar foobar foobar foobar print nl
-	
 	//word variable (Any -- (Ptr16 $0)) [
 	//	(var _S $0 1)
 	//	drop
@@ -99,21 +90,6 @@
 	//0s variable dbg drop
 	//0  variable dbg drop
 	//nl
-	
-	//struct Foo
-	//	[bar U16]
-	//	[baz U8]
-	//
-	
-	//var foo Foo 0)
-	
-	//foo :bar
-	//foo :baz
-	//dbg
-	
-	//0xffffs @foo :bar sta
-	//     9  @foo :baz sta
-	//        @foo :bar lda print nl
 	
 	0xAA
 		0xffffs here (as U16) -
@@ -142,22 +118,4 @@
 	alloc/print-chunks
 	14s 4s @ptrs + (as @@U8) -> (of alloc/re U16)
 	alloc/print-chunks
-	
-	//struct Box (Any) [value $0])
-	
-	//word box (Any -- @(Of Box $0)) [
-	//	(var retval (Of Box $0) 1)
-	//	@retval :value sta
-	//	@retval
-	//
-	
-	//word unbox (@(AnyOf Box) -- (FieldType (Child $0) value)) [
-	//	:value lda
-	//
-	
-	//0xffffs box
-	//0x02    box
-	
-	//unbox print nl
-	//unbox print nl
 ])
