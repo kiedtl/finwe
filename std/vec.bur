@@ -24,22 +24,26 @@
 	swap :items <-
 ])
 
+#(method Vector)
 (word append ( (Child (FieldType (Child $0) items)) @(AnyOf Vector) -- ) [
 	dup :len -> 1+ over :len <-
-	dup :len -> over ensure-capacity
+	dup :len -> over ;ensure-capacity
 	dup :len -> 1-
 		(sizeof (Child (FieldType (Child $0) items))) (as U16) *
 	swap :items -> + <-
 ])
 
+#(method Vector)
 (word last ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
 	dup :items -> swap :len -> 1- : ->
 ])
 
+#(method Vector)
 (word pop ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
-	dup last 1s rot shrink-by
+	dup ;last 1s rot ;shrink-by
 ])
 
+#(method Vector)
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
 	tuck
 	:len -> swap - // TODO: check for overflow
@@ -47,6 +51,7 @@
 	swap :len <-
 ])
 
+#(method Vector)
 (word ensure-capacity ( U16 @(AnyOf Vector) -- ) [
 	2dup :capacity -> over < (when [
 		swap
@@ -61,6 +66,7 @@
 	] [ 2drop drop ])
 ])
 
+#(method Vector)
 (word deinit ( @(AnyOf Vector) -- ) [
 	:items -> alloc/de
 ])
@@ -72,12 +78,12 @@
 	20s @v1 init-sized
 	@v1 :len -> (should eq 0s)
 	@v1 :capacity -> (should eq 20s)
-	@v1 deinit
+	@v1 ;deinit
 
 	(var v2 (Of Vector U16))
 	10s @v2 init-sized
 	@v2 :capacity -> (should eq 10s)
-	@v2 deinit
+	@v2 ;deinit
 ])
 
 (test Vector/append [
@@ -85,11 +91,11 @@
 	(var lst (Of Vector U16))
 	@lst init
 
-	   0x8s @lst append
-	   314s @lst append
-	   0x7s @lst append
-	  1002s @lst append
-	 0x184s @lst append
+	   0x8s @lst ;append
+	   314s @lst ;append
+	   0x7s @lst ;append
+	  1002s @lst ;append
+	 0x184s @lst ;append
 
 	@lst :items -> :4 -> (should eq 0x0184s)
 	@lst :items -> :3 -> (should eq   1002s)
@@ -104,12 +110,12 @@
 	(var lst (Of Vector U16))
 	@lst init
 
-	1s @lst append
-	2s @lst append
-	3s @lst append
-	4s @lst append
+	1s @lst ;append
+	2s @lst ;append
+	3s @lst ;append
+	4s @lst ;append
 
-	2s @lst shrink-by
+	2s @lst ;shrink-by
 
 	@lst :len -> (should eq 2s)
 	@lst :capacity -> (should eq 4s)
@@ -122,16 +128,16 @@
 	(var lst (Of Vector U16))
 	@lst init
 
-	0x0008s @lst append
-	@lst last (should eq 0x8s)
-	0x0314s @lst append
-	@lst last (should eq 0x314s)
-	0x0007s @lst append
-	@lst last (should eq 0x7s)
-	0x1002s @lst append
-	@lst last (should eq 0x1002s)
-	0x0184s @lst append
-	@lst last (should eq 0x184s)
+	0x0008s @lst ;append
+	@lst ;last (should eq 0x8s)
+	0x0314s @lst ;append
+	@lst ;last (should eq 0x314s)
+	0x0007s @lst ;append
+	@lst ;last (should eq 0x7s)
+	0x1002s @lst ;append
+	@lst ;last (should eq 0x1002s)
+	0x0184s @lst ;append
+	@lst ;last (should eq 0x184s)
 ])
 
 (test Vector/pop [
@@ -139,15 +145,15 @@
 	(var lst (Of Vector U16))
 	@lst init
 
-	0x0008s @lst append
-	0x0314s @lst append
-	0x0007s @lst append
-	0x1002s @lst append
-	0x0184s @lst append
+	0x0008s @lst ;append
+	0x0314s @lst ;append
+	0x0007s @lst ;append
+	0x1002s @lst ;append
+	0x0184s @lst ;append
 
-	@lst pop (should eq 0x0184s)
-	@lst pop (should eq 0x1002s)
-	@lst pop (should eq 0x0007s)
-	@lst pop (should eq 0x0314s)
-	@lst pop (should eq 0x0008s)
+	@lst ;pop (should eq 0x0184s)
+	@lst ;pop (should eq 0x1002s)
+	@lst ;pop (should eq 0x0007s)
+	@lst ;pop (should eq 0x0314s)
+	@lst ;pop (should eq 0x0008s)
 ])

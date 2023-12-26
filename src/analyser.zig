@@ -25,6 +25,7 @@ pub const Error = error{
     CannotGetField,
     CannotGetChild,
     CannotGetIndex,
+    CannotCallMethod,
     InvalidIndexType,
     IndexTooLarge,
     IndexWouldOverflow,
@@ -459,7 +460,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 if (c.is_method) {
                     const scope = switch (a.stack.last().?) {
                         .Struct => |n| program.types.items[n].scope,
-                        else => @panic("Can't call method on whatever this is"),
+                        .Ptr16, .Ptr8 => |p| switch (program.ztype(p.typ)) {
+                            .Struct => |n| program.types.items[n].scope,
+                            else => return program.aerr(error.CannotCallMethod, node.srcloc),
+                        },
+                        else => return program.aerr(error.CannotCallMethod, node.srcloc),
                     };
 
                     try c.resolve(scope, program, node.srcloc);
