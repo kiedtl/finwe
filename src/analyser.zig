@@ -948,7 +948,7 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
             _ = try analyseBlock(program, utest, utest.body, &utest.analysis);
         };
     } else {
-        const entrypoint = &program.global_scope.findDecl("main").?.node.Decl;
+        const entrypoint = &program.global_scope.findDecl("main", true).?.node.Decl;
         entrypoint.calls += 1;
 
         assert(!entrypoint.is_analysed);

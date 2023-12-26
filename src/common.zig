@@ -472,7 +472,7 @@ pub const TypeInfo = union(enum) {
             .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
             .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(scope, arity, program)) },
             .Expr => |e| try e.resolveTypeRef(scope, arity, program),
-            .Unresolved => |k| if (scope.findType(k.ident, program)) |n| b: {
+            .Unresolved => |k| if (scope.findType(k.ident, program, true)) |n| b: {
                 const def = program.types.items[n];
                 break :b switch (def.def) {
                     .Enum => .{ .EnumLit = n },
@@ -781,6 +781,7 @@ pub const ASTNode = struct {
             Struct: StructDef,
             Alias: AliasDef,
         },
+        is_private: bool = false,
 
         pub const AliasDef = struct {
             val: TypeInfo,
@@ -868,19 +869,16 @@ pub const ASTNode = struct {
 
         // Note: doesn't care about is_method at all
         pub fn resolve(self: *@This(), scope: *Scope, program: *Program, srcloc: Srcloc) Error.Set!void {
-            if (scope.findAny(self.name)) |found| {
-                switch (found.node) {
-                    .Decl => {
-                        self.variant = 0;
-                        self.node = found;
-                    },
-                    else => {
-                        std.log.info("Expected word, got {s}", .{
-                            @tagName(found.node),
-                        });
-                        return program.perr(error.InvalidCall, srcloc);
-                    },
-                }
+            if (scope.findDecl(self.name, true)) |found| {
+                assert(found.node == .Decl);
+                // else => {
+                //     std.log.info("Expected word, got {s}", .{
+                //         @tagName(found.node),
+                //     });
+                //     return program.perr(error.InvalidCall, srcloc);
+                // },
+                self.variant = 0;
+                self.node = found;
             } else {
                 std.log.info("Unknown ident {s}", .{self.name});
                 return program.perr(error.UnknownIdent, srcloc);
@@ -931,6 +929,7 @@ pub const ASTNode = struct {
         calls: usize = 0,
         locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
         scope: *Scope,
+        is_private: bool = false,
         is_method: ?TypeInfo = null,
         is_analysed: bool = false,
         is_test: bool = false,
@@ -1061,7 +1060,7 @@ pub const Scope = struct {
         return p;
     }
 
-    pub fn findDecl(self: *Scope, name: []const u8) ?*ASTNode {
+    pub fn findDecl(self: *Scope, name: []const u8, allow_private: bool) ?*ASTNode {
         for (self.imports.items) |import| {
             if (import.node.Import.is_defiling) {
                 // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
@@ -1070,11 +1069,11 @@ pub const Scope = struct {
                 //     @intFromPtr(import.node.Import.scope),
                 //     name,
                 // });
-                if (import.node.Import.scope.findDecl(name)) |n|
+                if (import.node.Import.scope.findDecl(name, false)) |n|
                     return n;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
                 if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    if (import.node.Import.scope.findDecl(name[n + 1 ..])) |d|
+                    if (import.node.Import.scope.findDecl(name[n + 1 ..], false)) |d|
                         return d;
             }
         }
@@ -1082,38 +1081,40 @@ pub const Scope = struct {
         return for (self.defs.items) |def| {
             const decl = def.node.Decl;
             // std.log.info("    - ... {s}", .{decl.name});
-            if (!decl.is_test and mem.eql(u8, decl.name, name))
+            if (!decl.is_test and (allow_private or !decl.is_private) and
+                mem.eql(u8, decl.name, name))
+            {
                 break def;
+            }
         } else if (self.parent) |parent| b: {
             // std.log.info("[{x}] search parent {x} for {s}", .{
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
-            break :b parent.findDecl(name);
+            break :b parent.findDecl(name, allow_private);
         } else null;
     }
 
-    pub fn findType(self: *Scope, name: []const u8, p: *Program) ?usize {
+    pub fn findType(self: *Scope, name: []const u8, p: *Program, allow_private: bool) ?usize {
         for (self.imports.items) |import| {
             if (import.node.Import.is_defiling) {
-                if (import.node.Import.scope.findType(name, p)) |n|
+                if (import.node.Import.scope.findType(name, p, false)) |n|
                     return n;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
                 if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    if (import.node.Import.scope.findType(name[n + 1 ..], p)) |d|
+                    if (import.node.Import.scope.findType(name[n + 1 ..], p, false)) |d|
                         return d;
             }
         }
         return for (self.types.items) |type_ind| {
             const typedef = p.types.items[type_ind];
-            if (mem.eql(u8, typedef.name, name))
+            if ((allow_private or !typedef.is_private) and
+                mem.eql(u8, typedef.name, name))
+            {
                 break type_ind;
+            }
         } else if (self.parent) |parent| b: {
-            break :b parent.findType(name, p);
+            break :b parent.findType(name, p, allow_private);
         } else null;
-    }
-
-    pub fn findAny(self: *Scope, name: []const u8) ?*ASTNode {
-        return self.findDecl(name);
     }
 };
 
@@ -1243,6 +1244,7 @@ pub const UserType = struct {
     name: []const u8,
     def: Def,
     scope: *Scope, // for methods etc
+    is_private: bool = false,
 
     pub const AList = std.ArrayList(UserType);
 

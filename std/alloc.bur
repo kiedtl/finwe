@@ -7,6 +7,7 @@
 // Sadly that blows up the size to 9 bytes, so we have to settle with
 // just lukewarm 0xc0fe
 //
+#private
 (struct Header
 	[guard1 U8]
 	[prev @Header]

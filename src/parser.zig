@@ -325,9 +325,11 @@ pub const Parser = struct {
         };
     }
 
-    fn parseTypeDecl(self: *Parser, ast: []const lexer.Node) ParserError!ASTNode {
+    fn parseTypeDecl(self: *Parser, ast: []const lexer.Node, metadata: []const lexer.Node) ParserError!ASTNode {
         assert(ast[0].node == .Keyword);
         const k = ast[0].node.Keyword;
+
+        var parsed: ASTNode = undefined;
 
         if (mem.eql(u8, k, "device")) {
             const name = try self.expectNode(.Keyword, &ast[1]);
@@ -346,7 +348,7 @@ pub const Parser = struct {
                     .srcloc = node.location,
                 }) catch unreachable;
             }
-            return ASTNode{
+            parsed = ASTNode{
                 .node = .{ .TypeDef = .{
                     .name = name,
                     .def = .{ .Device = .{ .start = addr, .fields = fields } },
@@ -354,11 +356,11 @@ pub const Parser = struct {
                 .srcloc = ast[0].location,
             };
         } else if (mem.eql(u8, k, "struct")) {
-            return self.parseStructDecl(ast);
+            parsed = try self.parseStructDecl(ast);
         } else if (mem.eql(u8, k, "typealias")) {
             const name = try self.expectNode(.Keyword, &ast[1]);
             const val = try self.parseType(&ast[2]);
-            return ASTNode{
+            parsed = ASTNode{
                 .node = .{ .TypeDef = .{
                     .name = name,
                     .def = .{ .Alias = .{ .val = val } },
@@ -366,6 +368,21 @@ pub const Parser = struct {
                 .srcloc = ast[0].location,
             };
         } else unreachable;
+
+        for (metadata) |item| switch (item.node.Metadata.node) {
+            .Keyword => |kwd| {
+                if (mem.eql(u8, kwd, "private")) {
+                    parsed.node.TypeDef.is_private = true;
+                } else {
+                    return self.program.perr(error.InvalidMetadata, item.location);
+                }
+            },
+            else => {
+                return self.program.perr(error.InvalidMetadata, item.location);
+            },
+        };
+
+        return parsed;
     }
 
     fn parseList(self: *Parser, ast: []const lexer.Node, metadata: []const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
@@ -378,6 +395,7 @@ pub const Parser = struct {
                     const name = try self.expectNode(.Keyword, &ast[1]);
 
                     var is_method: ?TypeInfo = null;
+                    var is_private: bool = false;
 
                     for (metadata) |item| switch (item.node.Metadata.node) {
                         .List => |lst| {
@@ -390,6 +408,13 @@ pub const Parser = struct {
                                 } };
                             } else {
                                 return self.program.perr(error.InvalidMetadata, lst.body.items[0].location);
+                            }
+                        },
+                        .Keyword => |kwd| {
+                            if (mem.eql(u8, kwd, "private")) {
+                                is_private = true;
+                            } else {
+                                return self.program.perr(error.InvalidMetadata, item.location);
                             }
                         },
                         else => {
@@ -413,6 +438,7 @@ pub const Parser = struct {
                         .body = body,
                         .scope = scope,
                         .is_method = is_method,
+                        .is_private = is_private,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -642,7 +668,7 @@ pub const Parser = struct {
                     mem.eql(u8, k, "typealias") or
                     mem.eql(u8, k, "struct"))
                 {
-                    break :b try self.parseTypeDecl(ast);
+                    break :b try self.parseTypeDecl(ast, metadata);
                 } else {
                     std.log.info("Unknown keyword: {s}", .{k});
                     break :b error.UnknownKeyword;
@@ -676,7 +702,7 @@ pub const Parser = struct {
                         } else self.global_scope;
 
                         const method_scope = if (d.is_method) |method_type|
-                            if (scope.findType(method_type.Unresolved.ident, self)) |t|
+                            if (scope.findType(method_type.Unresolved.ident, self, true)) |t|
                                 self.types.items[t].scope
                             else
                                 return self.aerr(
@@ -762,6 +788,7 @@ pub const Parser = struct {
                             .node = node,
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
+                            .is_private = node.node.TypeDef.is_private,
                             .def = .{ .Alias = .{
                                 .val = try aliasdef.val.resolveTypeRef(scope, null, self),
                             } },
@@ -773,6 +800,7 @@ pub const Parser = struct {
                             .node = node,
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
+                            .is_private = node.node.TypeDef.is_private,
                             .def = .{ .Struct = .{
                                 .args = strdef.args,
                                 .fields = UserType.StructField.AList.init(parser.alloc),
@@ -816,6 +844,7 @@ pub const Parser = struct {
                             .node = node,
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
+                            .is_private = node.node.TypeDef.is_private,
                             .def = .{ .Device = .{ .start = devdef.start, .fields = fields } },
                         }) catch unreachable;
                         scope.types.append(self.types.items.len - 1) catch unreachable;
@@ -961,7 +990,7 @@ pub const Parser = struct {
 
         if (self.is_testing) return;
 
-        const main_func = self.program.global_scope.findDecl("main") orelse
+        const main_func = self.program.global_scope.findDecl("main", true) orelse
             return error.NoMainFunction;
 
         try main_func.node.Decl.body.append(ASTNode{ .node = .{
