@@ -120,7 +120,7 @@
 	100s swap reget
 	;unwrap
 
-	(as @Char8) -> (should eq 'F)
+	"Foo" std/strequ (should eq t)
 ])
 
 (word de (AnyPtr16 -- ) [
