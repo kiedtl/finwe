@@ -537,12 +537,24 @@ pub const Parser = struct {
                     } } } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "should")) {
                     const t = try self.expectNode(.Keyword, &ast[1]);
-                    const v = try self.parseValue(&ast[2]);
-
                     var b: common.Breakpoint.Type = undefined;
+
                     if (mem.eql(u8, t, "eq")) {
-                        b = .{ .TosShouldEq = v };
+                        if (ast.len > 2) {
+                            const v = try self.parseValue(&ast[2]);
+                            b = .{ .TosShouldEq = v };
+                        } else {
+                            b = .{ .TosShouldEqSos = .Any };
+                        }
+                    } else if (mem.eql(u8, t, "neq")) {
+                        if (ast.len > 2) {
+                            const v = try self.parseValue(&ast[2]);
+                            b = .{ .TosShouldNeq = v };
+                        } else {
+                            b = .{ .TosShouldNeqSos = .Any };
+                        }
                     } else if (mem.eql(u8, t, "stdout-eq")) {
+                        const v = try self.parseValue(&ast[2]);
                         const str = self.program.statics.items[v.typ.StaticPtr];
                         b = .{ .StdoutShouldEq = str.default.String };
                     } else {

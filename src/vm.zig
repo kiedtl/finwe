@@ -9,6 +9,7 @@ const linux = std.os.linux;
 const emitter = @import("emitter.zig");
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
+const Value = @import("common.zig").Value;
 const Srcloc = @import("common.zig").Srcloc;
 const Ins = @import("common.zig").Ins;
 const Program = @import("common.zig").Program;
@@ -174,13 +175,28 @@ pub const VM = struct {
     fn _handleBreak(self: *VM, pc: c_ushort, stderr: anytype, program: *Program) !void {
         // TODO: underflow checks
         const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
+
         const tosb = wst.*;
-        const toss = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
+        const toss = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | tosb;
+        const sosb = (wst - @as(u8, 2)).*;
+        const soss = @as(u16, @intCast((wst - @as(u8, 3)).*)) << 8 | sosb;
+
         const breakpoint = for (program.breakpoints.items) |brk| {
             if (brk.romloc + 0x100 == pc) break brk;
         } else return; // TODO: warn about unknown breakpoints
-        switch (breakpoint.type) {
-            .TosShouldEq => |v| {
+        const btyp = breakpoint.type;
+
+        switch (btyp) {
+            .TosShouldEq, .TosShouldEqSos => {
+                const v: Value = switch (btyp) {
+                    .TosShouldEqSos => |t| if (t.bits(program) == 16)
+                        .{ .typ = .U16, .val = .{ .u16 = soss } }
+                    else
+                        .{ .typ = .U8, .val = .{ .u8 = sosb } },
+                    .TosShouldEq => |v| v,
+                    else => unreachable,
+                };
+
                 if (v.typ.bits(program).? == 16) {
                     if (v.toU16(program) != toss) {
                         try _failTest(stderr, "Expected 0x{x:0>4}, got 0x{x:0>4}", .{
@@ -192,6 +208,32 @@ pub const VM = struct {
                     if (v.toU8(program) != tosb) {
                         try _failTest(stderr, "Expected 0x{x:0>2}, got 0x{x:0>2}", .{
                             v.toU8(program), tosb,
+                        }, breakpoint.romloc, breakpoint.srcloc);
+                    }
+                    self.uxn.wst.ptr -= 1;
+                } else unreachable;
+            },
+            .TosShouldNeq, .TosShouldNeqSos => {
+                const v: Value = switch (btyp) {
+                    .TosShouldNeqSos => |t| if (t.bits(program) == 16)
+                        .{ .typ = .U16, .val = .{ .u16 = soss } }
+                    else
+                        .{ .typ = .U8, .val = .{ .u8 = sosb } },
+                    .TosShouldNeq => |v| v,
+                    else => unreachable,
+                };
+
+                if (v.typ.bits(program).? == 16) {
+                    if (v.toU16(program) == toss) {
+                        try _failTest(stderr, "Unexpected 0x{x:0>4} == 0x{x:0>4}", .{
+                            toss, soss,
+                        }, breakpoint.romloc, breakpoint.srcloc);
+                    }
+                    self.uxn.wst.ptr -= 2;
+                } else if (v.typ.bits(program).? == 8) {
+                    if (v.toU8(program) == tosb) {
+                        try _failTest(stderr, "Unexpected 0x{x:0>2} == 0x{x:0>2}", .{
+                            tosb, sosb,
                         }, breakpoint.romloc, breakpoint.srcloc);
                     }
                     self.uxn.wst.ptr -= 1;

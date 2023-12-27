@@ -199,7 +199,6 @@ pub const BlockAnalysis = struct {
             i -= 1;
             try _resolveFullyRecurse(&r, &caller, scope, call_node, p, i);
         }
-
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef or stack.* == .Expr) {
                 stack.* = try stack.resolveTypeRef(scope, r, p);
@@ -501,7 +500,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         var type_args = @TypeOf(c.args).init(null);
                         for (c.args.constSlice()) |arg|
                             type_args.append(try arg.resolveTypeRef(cdecl.scope.parent, parent.arity, program)) catch unreachable;
-                        const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
+                        var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
                         const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                             if (ungenericified.eqExact(an.node.Decl.arity.?))
                                 break i;
@@ -529,8 +528,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         //         });
                         // }
 
-                        try ungenericified.mergeInto(a, program, node.srcloc);
-
                         if (var_ind == null) {
                             const newdef_ = d.deepclone(null, program);
                             const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
@@ -550,6 +547,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
                             newdef.node.Decl.is_analysed = true;
                         }
+
+                        // Need to remove special arg types from arity before merging
+                        for (c.args.constSlice()) |_| {
+                            _ = ungenericified.args.pop() catch unreachable;
+
+                            // Would need to resolve to assert this, can't be bothered
+                            //assert(type_arg.eq(caller_type_arg));
+                        }
+                        try ungenericified.mergeInto(a, program, node.srcloc);
                     } else unreachable;
                 } else {
                     if (!cdecl.is_analysed) {
@@ -784,15 +790,36 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     a.stack.append(tstruct.fields.items[i].type.ptrize16(program)) catch unreachable;
                 }
             },
-            .Breakpoint => |brk| {
+            .Breakpoint => |*brk| {
                 switch (brk.type) {
                     .StdoutShouldEq => {},
-                    .TosShouldEq => |v| {
+                    .TosShouldNeqSos, .TosShouldEqSos => {
                         const tos = a.stack.pop() catch {
                             @panic("Must have known stack contents before breakpoint");
                         };
-                        if (!tos.doesInclude(v.typ, program) and
-                            tos.bits(program) == v.typ.bits(program))
+                        const sos = a.stack.pop() catch {
+                            @panic("Must have known stack contents before breakpoint");
+                        };
+                        if (!tos.doesInclude(sos, program) or
+                            tos.bits(program) != sos.bits(program))
+                        {
+                            std.log.err("Type error: {} (tos) != {} (sos)", .{
+                                tos, sos,
+                            });
+                            return program.aerr(error.TypeNotMatching, node.srcloc);
+                        }
+                        switch (brk.type) {
+                            .TosShouldEqSos => |*v| v.* = tos,
+                            .TosShouldNeqSos => |*v| v.* = tos,
+                            else => unreachable,
+                        }
+                    },
+                    .TosShouldNeq, .TosShouldEq => |v| {
+                        const tos = a.stack.pop() catch {
+                            @panic("Must have known stack contents before breakpoint");
+                        };
+                        if (!tos.doesInclude(v.typ, program) or
+                            tos.bits(program) != v.typ.bits(program))
                         {
                             std.log.err("Type error: {} (breakpoint) != {} (stack)", .{
                                 v.typ, tos,

@@ -60,34 +60,27 @@
 	1 2 (make C) 3 4 (make C) swap :foo (should eq 2)
 ])
 
-// ( val len ptr -- )
-(word memset8 (Any8 U16 AnyPtr16 -- ) [
-	(as @U8)
-	dup rot + (as @U8)
-
-	(while [ drop 2dup <> ] [
-		// ( val ptr end )
-		rot-bss>                  // ( end val  ptr  )
-		stak                      // ( end val  ptr  )
-		1+ rot-sbs                // ( val ptr+ end  )
+(test lang_monomorphic_var_static_alloc [
+	(word variable (Type -- @$0) [
+		(var _S $0)
+		@_S
 	])
+	
+	(of variable U8)  (as @U16)
+	(of variable U16) (should neq)
+
+	(of variable @U8) (as @U16)
+	(of variable U16) (should neq)
+
+	8 (of variable U8) <-
+	(of variable U8) -> (should eq 8)
+
 ])
 
 (word main [
-	
-	//word variable (Any -- (Ptr16 $0)) [
-	//	(var _S $0 1)
-	//	drop
-	//	@_S
-	//
-	//
-	//0s variable dbg drop
-	//0  variable dbg drop
-	//nl
-
 	0xAA
 		0xffffs here (as U16) -
-	here memset8
+	here std/memset8
 	
 	alloc/init
 	

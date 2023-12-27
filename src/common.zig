@@ -1005,8 +1005,10 @@ pub const Breakpoint = struct {
 
     pub const Type = union(enum) {
         TosShouldEq: Value,
+        TosShouldEqSos: TypeInfo, // tos_type
+        TosShouldNeq: Value,
+        TosShouldNeqSos: TypeInfo, // tos_type
         StdoutShouldEq: String,
-        // TosShouldNeq: Value,
     };
 
     pub const AList = std.ArrayList(@This());

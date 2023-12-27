@@ -71,6 +71,19 @@
 	"Hello, world!"       strlen (should eq 13s)
 ])
 
+// ( val len ptr -- )
+(word memset8 (Any8 U16 AnyPtr16 -- ) [
+	(as @U8)
+	dup rot + (as @U8)
+
+	(while [ drop 2dup <> ] [
+		// ( val ptr end )
+		rot-bss>                  // ( end val  ptr  )
+		stak                      // ( end val  ptr  )
+		1+ rot-sbs                // ( val ptr+ end  )
+	])
+])
+
 // TODO: cleanup once always-inline directive and (r) are added
 // ( len src* dst* -- dst* )
 (word memcpy ( U16 $0 AnyPtr -- $0 ) [
