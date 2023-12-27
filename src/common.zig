@@ -79,6 +79,8 @@ pub const TypeInfo = union(enum) {
     Bool,
     U8,
     U16,
+    I8,
+    I16,
     Char8,
     Char16,
     EnumLit: usize,
@@ -154,6 +156,7 @@ pub const TypeInfo = union(enum) {
     pub const Expr = union(enum) {
         AnySz: usize,
         USz: usize,
+        ISz: usize,
         AnyOf: usize,
         Child: usize,
         Of: Of,
@@ -200,6 +203,7 @@ pub const TypeInfo = union(enum) {
                 .Array => |ar| ar.eq(b.Array),
                 .AnySz => |ar| ar == b.AnySz,
                 .USz => |ar| ar == b.USz,
+                .ISz => |ar| ar == b.ISz,
                 .AnyOf => |ar| ar == b.AnyOf,
                 .Child => |ar| ar == b.Child,
                 .Omit => |omit| omit.of == b.Omit.of and
@@ -230,6 +234,7 @@ pub const TypeInfo = union(enum) {
                 } },
                 .AnySz => |ar| .{ .AnySz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .USz => |ar| .{ .USz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .ISz => |ar| .{ .ISz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Omit => |omit| .{ .Omit = .{
@@ -251,6 +256,7 @@ pub const TypeInfo = union(enum) {
                 .Array => |ar| program.ztype(ar.typ).getTypeRefs(buf, program),
                 .AnySz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .USz => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .ISz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .AnyOf => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .Child => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .Omit => |ar| program.ztype(ar.of).getTypeRefs(buf, program),
@@ -272,6 +278,7 @@ pub const TypeInfo = union(enum) {
                 .Array => |ar| program.ztype(ar.typ).isGeneric(program),
                 .AnySz => |ar| program.ztype(ar).isGeneric(program),
                 .USz => |ar| program.ztype(ar).isGeneric(program),
+                .ISz => |ar| program.ztype(ar).isGeneric(program),
                 .AnyOf => true,
                 .Child => |ar| program.ztype(ar).isGeneric(program),
                 .Omit => |ar| program.ztype(ar.of).isGeneric(program),
@@ -338,7 +345,16 @@ pub const TypeInfo = union(enum) {
                     } else if (arg_t.bits(program)) |b| {
                         break :b if (b == 16) .U16 else .U8;
                     } else {
-                        //break :b .{ .Expr = .{ .AnySz = program.btype(arg_t) } };
+                        break :b .Any;
+                    }
+                },
+                .ISz => |s| b: {
+                    const arg_t = try program.builtin_types.items[s].resolveTypeRef(scope, arity, program);
+                    if (arg_t == .Dev8 or arg_t == .Dev16) {
+                        break :b if (arg_t == .Dev8) .I8 else .I16;
+                    } else if (arg_t.bits(program)) |b| {
+                        break :b if (b == 16) .I16 else .I8;
+                    } else {
                         break :b .Any;
                     }
                 },
@@ -620,8 +636,8 @@ pub const TypeInfo = union(enum) {
     pub fn bits(self: @This(), program: *const Program) ?u5 {
         return switch (self) {
             .Type, .Opaque => null,
-            .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
-            .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
+            .I8, .AnyDev, .Dev8, .Dev16, .U8, .Char8, .Ptr8, .Bool, .Any8 => 8,
+            .I16, .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
             .AnyOf => null,
@@ -652,7 +668,7 @@ pub const Value = struct {
 
     pub fn toU16(self: Value, program: *Program) u16 {
         return switch (self.typ) {
-            .U16, .Char16, .Ptr16 => self.val.u16,
+            .I16, .U16, .Char16, .Ptr16 => self.val.u16,
             .EnumLit => |e| b: {
                 const v = program.types.items[e].def.Enum.fields.items[self.val.EnumLit];
                 break :b v.value_b.? << 4 | v.value_a;
@@ -673,7 +689,7 @@ pub const Value = struct {
                     v += t.fields.items[i].type.bits(program).? / 8;
                 break :b v;
             },
-            .Bool, .U8, .Char8, .Ptr8 => self.val.u8,
+            .Bool, .I8, .U8, .Char8, .Ptr8 => self.val.u8,
             .EnumLit => |e| program.types.items[e].def.Enum.fields.items[self.val.EnumLit].value_a, // TODO: value_b
             .AmbigEnumLit => unreachable,
             .Any, .Any8, .Any16, .AnyPtr => unreachable,

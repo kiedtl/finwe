@@ -17,6 +17,8 @@ pub const Node = struct {
         Char16: u16,
         U8: u8,
         U16: u16,
+        I8: i8,
+        I16: i16,
         String: String,
         EnumLit: EnumLit,
         Keyword: []const u8,
@@ -109,6 +111,7 @@ pub const Lexer = struct {
         InvalidUtf8,
         BadString,
         InvalidToken,
+        InvalidIndexType,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
     pub fn init(input: []const u8, filename: []const u8, alloc: mem.Allocator) Self {
@@ -137,7 +140,7 @@ pub const Lexer = struct {
                             .ChildNum = switch (node) {
                                 .U8 => |u| u,
                                 .U16 => |u| u,
-                                // .I16, .I8 => return error.InvalidIndexType,
+                                .I16, .I8 => return error.InvalidIndexType,
                                 else => unreachable,
                             },
                         },
@@ -193,7 +196,13 @@ pub const Lexer = struct {
                     offset = 2;
                 }
 
-                if (mem.endsWith(u8, word, "s")) {
+                if (mem.endsWith(u8, word, "is")) {
+                    const num = try std.fmt.parseInt(i16, word[offset .. word.len - 2], base);
+                    break :blk Node.NodeType{ .I16 = num };
+                } else if (mem.endsWith(u8, word, "i")) {
+                    const num = try std.fmt.parseInt(i8, word[offset .. word.len - 1], base);
+                    break :blk Node.NodeType{ .I8 = num };
+                } else if (mem.endsWith(u8, word, "s")) {
                     const num = try std.fmt.parseInt(u16, word[offset .. word.len - 1], base);
                     break :blk Node.NodeType{ .U16 = num };
                 } else {

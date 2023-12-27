@@ -94,6 +94,8 @@ pub const Parser = struct {
             .Nil => .{ .typ = .Bool, .val = .{ .u8 = 0 } },
             .U8 => |n| .{ .typ = .U8, .val = .{ .u8 = n } },
             .U16 => |n| .{ .typ = .U16, .val = .{ .u16 = n } },
+            .I8 => |n| .{ .typ = .I8, .val = .{ .u8 = @bitCast(n) } },
+            .I16 => |n| .{ .typ = .I16, .val = .{ .u16 = @bitCast(n) } },
             .Char8 => |c| .{ .typ = .Char8, .val = .{ .u8 = c } },
             .Char16 => |c| .{ .typ = .Char16, .val = .{ .u16 = c } },
             .String => |s| b: {
