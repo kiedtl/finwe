@@ -92,9 +92,11 @@ pub fn main() anyerror!void {
             try emitter.spitout(stdout, assembled.items);
         } else if (args.args.@"test" != 0) {
             var vm = vmm.VM.init(&program, assembled.items);
+            defer vm.deinit();
             vm.executeTests();
         } else {
             var vm = vmm.VM.init(&program, assembled.items);
+            defer vm.deinit();
             vm.execute();
         }
     }

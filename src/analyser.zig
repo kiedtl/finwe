@@ -786,6 +786,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Breakpoint => |brk| {
                 switch (brk.type) {
+                    .StdoutShouldEq => {},
                     .TosShouldEq => |v| {
                         const tos = a.stack.pop() catch {
                             @panic("Must have known stack contents before breakpoint");

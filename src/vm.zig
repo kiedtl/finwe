@@ -4,6 +4,7 @@ const math = std.math;
 const fmt = std.fmt;
 const meta = std.meta;
 const assert = std.debug.assert;
+const linux = std.os.linux;
 
 const emitter = @import("emitter.zig");
 const ASTNode = @import("common.zig").ASTNode;
@@ -45,6 +46,8 @@ pub const VM = struct {
     here: usize = 0,
     assembled: []const Ins,
     program: *Program,
+    captured_stdout: std.ArrayList(u8),
+    captured_stderr: std.ArrayList(u8),
 
     is_testing: bool = false,
     is_breakpoint: bool = false,
@@ -59,6 +62,8 @@ pub const VM = struct {
             .here = assembled.len,
             .program = program,
             .assembled = assembled,
+            .captured_stdout = std.ArrayList(u8).init(gpa.allocator()),
+            .captured_stderr = std.ArrayList(u8).init(gpa.allocator()),
         };
         self.load();
         self.uxn.ram = ram.ptr;
@@ -81,6 +86,12 @@ pub const VM = struct {
             @panic("Emulator failed to init.");
 
         return self;
+    }
+
+    pub fn deinit(self: *VM) void {
+        gpa.allocator().free(self.ram);
+        self.captured_stdout.deinit();
+        self.captured_stderr.deinit();
     }
 
     pub fn load(self: *VM) void {
@@ -162,7 +173,7 @@ pub const VM = struct {
 
     fn _handleBreak(self: *VM, pc: c_ushort, stderr: anytype, program: *Program) !void {
         // TODO: underflow checks
-        const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr - 1]);
+        const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
         const tosb = wst.*;
         const toss = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
         const breakpoint = for (program.breakpoints.items) |brk| {
@@ -185,6 +196,15 @@ pub const VM = struct {
                     }
                     self.uxn.wst.ptr -= 1;
                 } else unreachable;
+            },
+            .StdoutShouldEq => |v| {
+                defer self.captured_stdout.shrinkRetainingCapacity(0);
+                if (self.captured_stdout.items.len != v.items.len)
+                    try _failTest(stderr, "Unexpected stdout output (len: {} vs {})", .{
+                        v.items.len, self.captured_stdout.items.len,
+                    }, breakpoint.romloc, breakpoint.srcloc);
+                if (!mem.eql(u8, self.captured_stdout.items, v.items))
+                    try _failTest(stderr, "Unexpected stdout output", .{}, breakpoint.romloc, breakpoint.srcloc);
             },
         }
     }
@@ -224,6 +244,24 @@ pub const VM = struct {
             }
 
             stderr.print("\x1b[2D\x1b[36mOK\x1b[m\n", .{}) catch unreachable;
+
+            if (self.captured_stdout.items.len > 0) {
+                stderr.print("\x1b[32m= \x1b[mTest stdout =\n", .{}) catch unreachable;
+                stderr.print("{s}", .{self.captured_stdout.items}) catch unreachable;
+                _printHappyPercent(stderr);
+                stderr.print("\x1b[32m= \x1b[mEnd stdout =\n", .{}) catch unreachable;
+                stderr.print("\n", .{}) catch unreachable;
+                self.captured_stdout.shrinkRetainingCapacity(0);
+            }
+
+            if (self.captured_stderr.items.len > 0) {
+                stderr.print("\x1b[32m= \x1b[mTest stderr =\n", .{}) catch unreachable;
+                stderr.print("{s}", .{self.captured_stderr.items}) catch unreachable;
+                _printHappyPercent(stderr);
+                stderr.print("\x1b[32m= \x1b[mEnd stderr =\n", .{}) catch unreachable;
+                stderr.print("\n", .{}) catch unreachable;
+                self.captured_stderr.shrinkRetainingCapacity(0);
+            }
         }
 
         _ = emu_end(&self.uxn);
@@ -232,9 +270,28 @@ pub const VM = struct {
 
 pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     const self = @fieldParentPtr(VM, "uxn", u);
-    if (self.is_testing and addr == 0x0e) {
-        self.is_breakpoint = true;
+    if (self.is_testing) {
+        switch (addr) {
+            0x0e => self.is_breakpoint = true,
+            0x18 => self.captured_stdout.append(u.*.dev[0x18]) catch unreachable,
+            0x19 => self.captured_stderr.append(u.*.dev[0x19]) catch unreachable,
+            else => base_emu_deo(u, addr),
+        }
     } else {
         base_emu_deo(u, addr);
     }
+}
+
+fn _printHappyPercent(stderr: anytype) void {
+    var wsz: std.os.linux.winsize = undefined;
+    const fd = @as(usize, @bitCast(@as(isize, 1)));
+    const rc = linux.syscall3(.ioctl, fd, linux.T.IOCGWINSZ, @intFromPtr(&wsz));
+    const columns = switch (linux.getErrno(rc)) {
+        .SUCCESS => @as(usize, @intCast(wsz.ws_col)),
+        .INTR => return, // F you linux
+        else => return, // Not a tty, stick head in sand immediately
+    };
+    stderr.print("\x1b[7m%\x1b[m", .{}) catch unreachable;
+    stderr.writeByteNTimes(' ', columns - 2) catch unreachable;
+    stderr.print("\r", .{}) catch unreachable;
 }

@@ -241,7 +241,7 @@ pub const Lexer = struct {
         while (self.index < self.input.len) : (self.moar()) {
             switch (self.input[self.index]) {
                 '"' => {
-                    self.moar();
+                    //self.moar();
                     return Node.NodeType{ .String = buf };
                 },
                 '\\' => {

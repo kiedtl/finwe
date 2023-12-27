@@ -21,8 +21,8 @@
 	[dead U8]          // ? (not documented)
 	[exit U8]          // ? (not documented)
 	[type U8] //type ConsoleType] // enum
-	[write U8]         // ? (not documented)
-	[error U8]         // ? (not documented)
+	[write U8]         // stdout
+	[error U8]         // stderr
 )
 
 (word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
@@ -86,6 +86,7 @@
 			swap
 		])
 
+		drop // drop null byte
 		(until [ 0x99 (as $1) = ] [ (as U8) emit ])
 	])
 
@@ -94,3 +95,27 @@
 
 (word print (Any --) [ 16 print-base ])
 (word print-dec (Any --) [ 10 print-base ])
+
+(test print_8 [
+	10   print-dec nl (should stdout-eq "10\n")
+	20   print-dec nl (should stdout-eq "20\n")
+	35   print-dec nl (should stdout-eq "35\n")
+	99   print-dec nl (should stdout-eq "99\n")
+	999s print-dec nl (should stdout-eq "999\n")
+	0    print-dec nl (should stdout-eq "0\n")
+])
+
+(test print_16 [
+	0xbeefs print nl (should stdout-eq "beef\n")
+	0x3b    print nl (should stdout-eq "3b\n")
+	0x0d    print
+	0xef    print
+	0xaceds print
+	0xcafes print nl (should stdout-eq "defacedcafe\n")
+	0x0     print nl (should stdout-eq "0\n")
+])
+
+(test print-string [
+	"\n\n\0" print-string (should stdout-eq "\n\n")
+	"All hail the Emperor" print-string (should stdout-eq "All hail the Emperor")
+])

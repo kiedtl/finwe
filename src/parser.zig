@@ -542,6 +542,9 @@ pub const Parser = struct {
                     var b: common.Breakpoint.Type = undefined;
                     if (mem.eql(u8, t, "eq")) {
                         b = .{ .TosShouldEq = v };
+                    } else if (mem.eql(u8, t, "stdout-eq")) {
+                        const str = self.program.statics.items[v.typ.StaticPtr];
+                        b = .{ .StdoutShouldEq = str.default.String };
                     } else {
                         @panic("Invalid breakpoint type");
                     }

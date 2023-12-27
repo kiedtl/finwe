@@ -1005,6 +1005,7 @@ pub const Breakpoint = struct {
 
     pub const Type = union(enum) {
         TosShouldEq: Value,
+        StdoutShouldEq: String,
         // TosShouldNeq: Value,
     };
 

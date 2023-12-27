@@ -74,12 +74,6 @@
 ])
 
 (word main [
-	//0xbeefs print nl
-	//0x3b    print nl
-	//0x0d    print
-	//0xef    print
-	//0xaceds print
-	//0xcafes print nl
 	
 	//word variable (Any -- (Ptr16 $0)) [
 	//	(var _S $0 1)
@@ -90,7 +84,7 @@
 	//0s variable dbg drop
 	//0  variable dbg drop
 	//nl
-	
+
 	0xAA
 		0xffffs here (as U16) -
 	here memset8
