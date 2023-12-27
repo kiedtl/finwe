@@ -110,7 +110,7 @@
 	(as @U8) std/memcpy (make (Of std/Maybe0 @Opaque))
 	(asm "rs" .Op/Osth) (as @U8) de
 ])
-(test reget_copies_correctly [
+(test alloc/reget_copies_correctly [
 	init
 
 	"Foo"
@@ -191,4 +191,46 @@
 	])
 
 	nl
+])
+
+(test alloc/defrag [
+	init
+	
+	(var ptrs [@Opaque 4])
+
+	107s get ;unwrap drop
+	107s get ;unwrap @ptrs :0 (as @@Opaque) <-
+	10s  get ;unwrap @ptrs :1 (as @@Opaque) <-
+	26s  get ;unwrap @ptrs :2 (as @@Opaque) <-
+	2s   get ;unwrap drop
+	30s  get ;unwrap drop
+	30s  get ;unwrap @ptrs :3 (as @@Opaque) <-
+	
+	@ptrs :0 -> (as @Opaque) de
+	@ptrs :1 -> (as @Opaque) de
+	@ptrs :2 -> (as @Opaque) de
+	@ptrs :3 -> (as @Opaque) de
+
+	// XXX: will need to update if (sizeof Header) changes
+
+	first
+	dup :free -> (should eq nil) dup chunk-size (should eq 107s) :next ->
+	dup :free -> (should eq t)   dup chunk-size (should eq 107s) :next ->
+	dup :free -> (should eq t)   dup chunk-size (should eq  10s) :next ->
+	dup :free -> (should eq t)   dup chunk-size (should eq  26s) :next ->
+	dup :free -> (should eq nil) dup chunk-size (should eq   2s) :next ->
+	dup :free -> (should eq nil) dup chunk-size (should eq  30s) :next ->
+	dup :free -> (should eq t)   dup chunk-size (should eq  30s) :next ->
+	dup :free -> (should eq t)
+	:next -> (as U16) (should eq 0xFFFFs)
+
+	defrag
+
+	first
+	dup :free -> (should eq nil) dup chunk-size (should eq 107s) :next ->
+	dup :free -> (should eq t)   dup chunk-size (should eq 157s) :next ->
+	dup :free -> (should eq nil) dup chunk-size (should eq   2s) :next ->
+	dup :free -> (should eq nil) dup chunk-size (should eq  30s) :next ->
+	dup :free -> (should eq t)
+	:next -> (as U16) (should eq 0xFFFFs)
 ])

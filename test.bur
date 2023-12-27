@@ -3,6 +3,7 @@
 
 (use std)
 (use alloc)
+(use vec)
 
 (test lang_Omit [
 	(struct Fo [foo U8] [bar U16] [baz [U8]])
@@ -78,31 +79,4 @@
 ])
 
 (word main [
-	0xAA
-		0xffffs here (as U16) -
-	here std/memset8
-	
-	alloc/init
-	
-	(var ptrs [@Opaque 4])
-	107s alloc/get ;unwrap drop
-	107s alloc/get ;unwrap 0s @ptrs + (as @@Opaque) <-
-	10s  alloc/get ;unwrap 2s @ptrs + (as @@Opaque) <-
-	26s  alloc/get ;unwrap 4s @ptrs + (as @@Opaque) <-
-	2s   alloc/get ;unwrap drop
-	30s  alloc/get ;unwrap drop
-	30s  alloc/get ;unwrap 6s @ptrs + (as @@Opaque) <-
-	
-	0s @ptrs + (as @@Opaque) -> alloc/de
-	2s @ptrs + (as @@Opaque) -> alloc/de
-	//4s @ptrs + (as @@Opaque) -> alloc/de
-	6s @ptrs + (as @@Opaque) -> alloc/de
-	
-	nl
-	
-	alloc/print-chunks
-	alloc/defrag
-	alloc/print-chunks
-	14s 4s @ptrs + (as @@U8) -> (of alloc/re U16)
-	alloc/print-chunks
 ])
