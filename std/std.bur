@@ -60,6 +60,29 @@
 ])
 //}}}
 
+// FIXME: hundred ways to optimize this, see ;scmp from left project
+// Probably have to wait for (r)/move/copy and friends though.
+//
+(word strequ ( @[Char8] @[Char8] -- Bool ) [
+	2dup -> swap-sb ->
+	2dup 0= swap 0= and (when [ t return ])   // precheck for empty strs
+	(until [ drop 2dup 0= swap 0= and ] [
+		<> (when [ nil return ])
+		1+ dup -> (asm "" .Op/Osth)       // ( a* b*+ | b-> )
+		swap 1+ dup -> (asm "r" .Op/Osth) // ( b*+ a*+ a-> b-> )
+	])
+	2drop 2drop
+	t
+])
+(test strequ [
+	"windows11" "good" strequ          (should eq nil)
+	"" "" strequ                       (should eq t)
+	"foo" "foo" strequ                 (should eq t)
+	"Hail Zig" "Hail Zig\0zags" strequ (should eq t)
+	"Hail Zig2" "Hail Zig"      strequ (should eq nil)
+	"foo" "" strequ                    (should eq nil)
+])
+
 (word strlen ( @[Char8] -- U16 ) [ // TODO: move to str module
 	0s swap
 	(while [ -> 0<> ] [ swap 1+ swap 1+ ])
