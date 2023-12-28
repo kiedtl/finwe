@@ -884,10 +884,6 @@ pub const Parser = struct {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
-                    .Call => |*c| if (c.node == null and !c.is_method) {
-                        const scope = if (parent) |p| p.node.Decl.scope else self.global_scope;
-                        try c.resolve(scope, self, node.srcloc);
-                    },
                     .VDecl => |*vd| {
                         parent.?.node.Decl.locals.append(.{
                             .name = vd.name,
@@ -1007,7 +1003,7 @@ pub const Parser = struct {
 
         if (self.is_testing) return;
 
-        const main_func = self.program.global_scope.findDecl("main", true) orelse
+        const main_func = self.program.global_scope.findDeclAny("main") orelse
             return error.NoMainFunction;
 
         try main_func.node.Decl.body.append(ASTNode{ .node = .{

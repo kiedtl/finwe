@@ -882,24 +882,6 @@ pub const ASTNode = struct {
         node: ?*ASTNode = null,
         goto: bool = false,
         is_method: bool = false,
-
-        // Note: doesn't care about is_method at all
-        pub fn resolve(self: *@This(), scope: *Scope, program: *Program, srcloc: Srcloc) Error.Set!void {
-            if (scope.findDecl(self.name, true)) |found| {
-                assert(found.node == .Decl);
-                // else => {
-                //     std.log.info("Expected word, got {s}", .{
-                //         @tagName(found.node),
-                //     });
-                //     return program.perr(error.InvalidCall, srcloc);
-                // },
-                self.variant = 0;
-                self.node = found;
-            } else {
-                std.log.info("Unknown ident {s}", .{self.name});
-                return program.perr(error.UnknownIdent, srcloc);
-            }
-        }
     };
 
     pub const When = struct {
@@ -1079,7 +1061,41 @@ pub const Scope = struct {
         return p;
     }
 
-    pub fn findDecl(self: *Scope, name: []const u8, allow_private: bool) ?*ASTNode {
+    pub fn findDeclForCaller(
+        self: *Scope,
+        program: *Program,
+        name: []const u8,
+        caller_node: *ASTNode,
+        caller_parent_arity: ?analyser.BlockAnalysis,
+        caller_scope: *Scope,
+        caller_args: *const analyser.BlockAnalysis,
+    ) !?*ASTNode {
+        var buf = ASTNodePtrList.init(gpa.allocator());
+        defer buf.deinit();
+
+        self._findDecl(name, &buf, true);
+
+        var type_args = @TypeOf(caller_args.args).init(null);
+        for (caller_node.node.Call.args.constSlice()) |arg|
+            type_args.append(try arg.resolveTypeRef(caller_scope, caller_parent_arity, program)) catch unreachable;
+
+        for (buf.items) |potential| {
+            if (potential.node.Decl.arity) |potential_arity|
+                _ = potential_arity.conformGenericTo(type_args.constSlice(), potential.node.Decl.scope.parent, caller_args, caller_node, program, true) catch continue;
+            return potential;
+        }
+
+        return buf.getLastOrNull();
+    }
+
+    pub fn findDeclAny(self: *Scope, name: []const u8) ?*ASTNode {
+        var buf = ASTNodePtrList.init(gpa.allocator());
+        defer buf.deinit();
+        self._findDecl(name, &buf, true);
+        return if (buf.items.len == 0) null else buf.items[0];
+    }
+
+    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, allow_private: bool) void {
         for (self.imports.items) |import| {
             if (import.node.Import.is_defiling) {
                 // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
@@ -1088,29 +1104,28 @@ pub const Scope = struct {
                 //     @intFromPtr(import.node.Import.scope),
                 //     name,
                 // });
-                if (import.node.Import.scope.findDecl(name, false)) |n|
-                    return n;
+                import.node.Import.scope._findDecl(name, buf, false);
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
                 if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    if (import.node.Import.scope.findDecl(name[n + 1 ..], false)) |d|
-                        return d;
+                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, false);
             }
         }
         // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
-        return for (self.defs.items) |def| {
+        for (self.defs.items) |def| {
             const decl = def.node.Decl;
             // std.log.info("    - ... {s}", .{decl.name});
             if (!decl.is_test and (allow_private or !decl.is_private) and
                 mem.eql(u8, decl.name, name))
             {
-                break def;
+                buf.append(def) catch unreachable;
             }
-        } else if (self.parent) |parent| b: {
+        }
+        if (self.parent) |parent| {
             // std.log.info("[{x}] search parent {x} for {s}", .{
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
-            break :b parent.findDecl(name, allow_private);
-        } else null;
+            parent._findDecl(name, buf, allow_private);
+        }
     }
 
     pub fn findType(self: *Scope, name: []const u8, p: *Program, allow_private: bool) ?usize {

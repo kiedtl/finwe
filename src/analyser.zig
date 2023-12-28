@@ -138,7 +138,7 @@ pub const BlockAnalysis = struct {
         };
     }
 
-    pub fn _resolveFullyRecurse(r: *@This(), caller: *const @This(), scope: ?*Scope, call_node: *ASTNode, p: *Program, i: usize) Error!void {
+    pub fn _resolveFullyRecurse(r: *@This(), caller: *const @This(), scope: ?*Scope, call_node: *ASTNode, p: *Program, i: usize, dry_run: bool) Error!void {
         // std.log.info("\n", .{});
         // std.log.info("- beginning  {}", .{i});
 
@@ -150,17 +150,21 @@ pub const BlockAnalysis = struct {
         }
 
         for (refs.constSlice()) |ref| if (ref < i)
-            try _resolveFullyRecurse(r, caller, scope, call_node, p, ref);
+            try _resolveFullyRecurse(r, caller, scope, call_node, p, ref, dry_run);
 
         const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
         const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p);
 
         if (!resolved.doesInclude(calleritem, p)) {
-            std.log.err("Type {} does not encompass {}", .{
-                TypeFmt.from(resolved, p),
-                TypeFmt.from(calleritem, p),
-            });
-            return p.aerr(error.TypeNotMatching, call_node.srcloc);
+            if (dry_run) {
+                return error.TypeNotMatching;
+            } else {
+                std.log.err("Type {} does not encompass {}", .{
+                    TypeFmt.from(resolved, p),
+                    TypeFmt.from(calleritem, p),
+                });
+                return p.aerr(error.TypeNotMatching, call_node.srcloc);
+            }
         }
 
         r.args.slice()[i] = resolved;
@@ -173,6 +177,7 @@ pub const BlockAnalysis = struct {
         p_caller: *const @This(),
         call_node: *ASTNode,
         p: *Program,
+        dry_run: bool,
     ) Error!@This() {
         // TODO: do rstack
         if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
@@ -197,7 +202,7 @@ pub const BlockAnalysis = struct {
         var i = r.args.len;
         while (i > 0) {
             i -= 1;
-            try _resolveFullyRecurse(&r, &caller, scope, call_node, p, i);
+            try _resolveFullyRecurse(&r, &caller, scope, call_node, p, i, dry_run);
         }
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef or stack.* == .Expr) {
@@ -456,8 +461,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     .mergeInto(a, program, node.srcloc);
             },
             .Call => |*c| {
-                if (c.is_method) {
-                    const scope = switch (a.stack.last().?) {
+                if (c.node == null) {
+                    const scope = if (!c.is_method) parent.scope else switch (a.stack.last().?) {
                         .Struct => |n| program.types.items[n].scope,
                         .Ptr16, .Ptr8 => |p| switch (program.ztype(p.typ)) {
                             .Struct => |n| program.types.items[n].scope,
@@ -466,7 +471,19 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         else => return program.aerr(error.CannotCallMethod, node.srcloc),
                     };
 
-                    try c.resolve(scope, program, node.srcloc);
+                    if (try scope.findDeclForCaller(program, c.name, node, parent.arity, parent.scope, a)) |found| {
+                        assert(found.node == .Decl);
+                        c.variant = 0;
+                        c.node = found;
+                        std.log.info("call to {s} resolved to {s} {s}", .{
+                            c.name,
+                            c.node.?.node.Decl.name,
+                            AnalysisFmt.from(&c.node.?.node.Decl.arity.?, program),
+                        });
+                    } else {
+                        std.log.info("Unknown ident {s}", .{c.name});
+                        return program.perr(error.UnknownIdent, node.srcloc);
+                    }
                 }
 
                 const d = c.node.?;
@@ -481,8 +498,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!cdecl.is_analysed) {
                             var type_args = @TypeOf(c.args).init(null);
                             for (c.args.constSlice()) |arg|
-                                type_args.append(try arg.resolveTypeRef(cdecl.scope.parent, parent.arity, program)) catch unreachable;
-                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
+                                type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
+                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
                             const end = ungenericified.args.len - c.args.len;
                             for (ungenericified.args.constSlice()[0..end]) |arg| {
                                 assert(a.isGeneric(program) or !arg.isGeneric(program));
@@ -499,8 +516,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     } else if (d_arity.isGeneric(program)) {
                         var type_args = @TypeOf(c.args).init(null);
                         for (c.args.constSlice()) |arg|
-                            type_args.append(try arg.resolveTypeRef(cdecl.scope.parent, parent.arity, program)) catch unreachable;
-                        var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program);
+                            type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
+                        var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
                         const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                             if (ungenericified.eqExact(an.node.Decl.arity.?))
                                 break i;
@@ -976,7 +993,7 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
             _ = try analyseBlock(program, utest, utest.body, &utest.analysis);
         };
     } else {
-        const entrypoint = &program.global_scope.findDecl("main", true).?.node.Decl;
+        const entrypoint = &program.global_scope.findDeclAny("main").?.node.Decl;
         entrypoint.calls += 1;
 
         assert(!entrypoint.is_analysed);
