@@ -112,6 +112,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Debug => {},
         .Here => try emitUA(buf, ual, "", node),
         .Builtin => |builtin| switch (builtin.type) {
+            .SplitCast => {},
             .Make => {},
             .SizeOf => |sizeof| {
                 //std.log.info("sizeof: {}", .{sizeof.resolved});
@@ -133,15 +134,21 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         },
         .Cast => |c| {
             //std.log.info("codegen: {},{}: casting {} -> {}", .{ node.srcloc.line, node.srcloc.column, c.of, c.to });
-            const from = c.of.bits(program).?;
-            const to = c.resolved.bits(program).?;
-            if (from == 16 and to == 8) {
-                try emit(buf, node, WK_STACK, false, false, .Onip);
-            } else if (from == 8 and to == 16) {
-                try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
-                try emit(buf, node, WK_STACK, false, false, .Oswp);
-            } else {
-                // nothing
+            for (c.resolved.constSlice(), 0..) |to, i| {
+                const from = c.from.constSlice()[i];
+                const from_bits = from.bits(program).?;
+                const to_bits = to.bits(program).?;
+
+                if (from_bits == 16 and to_bits == 8) {
+                    assert(i == 0);
+                    try emit(buf, node, WK_STACK, false, false, .Onip);
+                } else if (from_bits == 8 and to_bits == 16) {
+                    assert(i == 0);
+                    try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
+                    try emit(buf, node, WK_STACK, false, false, .Oswp);
+                } else {
+                    // nothing
+                }
             }
         },
         .None => {},

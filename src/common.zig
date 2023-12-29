@@ -58,6 +58,12 @@ pub const TypeFmt = struct {
             .TypeRef => |n| try writer.print("{s}<{}>", .{ s, n }),
             .Struct, .EnumLit => |n| try writer.print("{s}<{}>", .{ self.prog.types.items[n].name, n }),
             .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
+            .AnySet => |n| {
+                try writer.print("{s}<", .{s});
+                for (n.set.constSlice()) |item|
+                    try writer.print("{} ", .{TypeFmt.from(item, self.prog)});
+                try writer.print(">", .{});
+            },
             .Ptr8 => |n| try writer.print("{s}<{} @{}>", .{ s, TypeFmt.from(self.prog.ztype(n.typ), self.prog), n.ind }),
             .Ptr16 => |n| {
                 for (0..n.ind) |_| try writer.print("@", .{});
@@ -97,8 +103,8 @@ pub const TypeInfo = union(enum) {
     Dev8,
     Dev16,
 
-    // A bit unique, it's like an Expr but it's a generic
     AnyOf: usize,
+    AnySet: AnySet,
 
     StaticPtr: usize,
     Quote,
@@ -130,6 +136,14 @@ pub const TypeInfo = union(enum) {
         try writer.print("", .{});
     }
 
+    pub const AnySet = struct {
+        set: *StackBuffer(TypeInfo, 8),
+
+        pub fn eq(a: AnySet, b: AnySet) bool {
+            return a.set.eq(b.set.constSlice(), TypeInfo.eq);
+        }
+    };
+
     pub const Unresolved = struct {
         ident: []const u8,
         srcloc: Srcloc,
@@ -158,6 +172,7 @@ pub const TypeInfo = union(enum) {
         USz: usize,
         ISz: usize,
         AnyOf: usize,
+        AnySet: AnySet,
         Child: usize,
         Of: Of,
         // Ptr8: usize,
@@ -205,6 +220,7 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| ar == b.USz,
                 .ISz => |ar| ar == b.ISz,
                 .AnyOf => |ar| ar == b.AnyOf,
+                .AnySet => |ar| ar.set.eq(b.AnySet.set.constSlice(), TypeInfo.eq),
                 .Child => |ar| ar == b.Child,
                 .Omit => |omit| omit.of == b.Omit.of and
                     mem.eql(u8, omit.field, b.Omit.field),
@@ -236,6 +252,15 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| .{ .USz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .ISz => |ar| .{ .ISz = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .AnyOf => |ar| .{ .AnyOf = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
+                .AnySet => |ar| b: {
+                    // FIXME: this is just wrong
+                    // Resolving multiple to single value? Nonsense
+                    var new = ar;
+                    for (new.set.slice()) |*item| {
+                        item.* = item.*.resolveGeneric(with, program);
+                    }
+                    break :b .{ .AnySet = new };
+                },
                 .Child => |ar| .{ .Child = program.btype(program.builtin_types.items[ar].resolveGeneric(with, program)) },
                 .Omit => |omit| .{ .Omit = .{
                     .of = program.btype(program.ztype(omit.of).resolveGeneric(with, program)),
@@ -258,6 +283,10 @@ pub const TypeInfo = union(enum) {
                 .USz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .ISz => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .AnyOf => |ar| program.ztype(ar).getTypeRefs(buf, program),
+                .AnySet => |ar| {
+                    for (ar.set.slice()) |item|
+                        item.getTypeRefs(buf, program);
+                },
                 .Child => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .Omit => |ar| program.ztype(ar.of).getTypeRefs(buf, program),
             }
@@ -279,7 +308,7 @@ pub const TypeInfo = union(enum) {
                 .AnySz => |ar| program.ztype(ar).isGeneric(program),
                 .USz => |ar| program.ztype(ar).isGeneric(program),
                 .ISz => |ar| program.ztype(ar).isGeneric(program),
-                .AnyOf => true,
+                .AnySet, .AnyOf => true,
                 .Child => |ar| program.ztype(ar).isGeneric(program),
                 .Omit => |ar| program.ztype(ar.of).isGeneric(program),
             };
@@ -338,6 +367,7 @@ pub const TypeInfo = union(enum) {
 
                     break :b .{ .AnyOf = program.btype(arg_t) };
                 },
+                .AnySet => |anyset| .{ .AnySet = anyset },
                 .USz => |s| b: {
                     const arg_t = try program.builtin_types.items[s].resolveTypeRef(scope, arity, program);
                     if (arg_t == .Dev8 or arg_t == .Dev16) {
@@ -468,6 +498,9 @@ pub const TypeInfo = union(enum) {
     pub fn isResolvable(self: @This(), p: *Program) bool {
         return switch (self) {
             .AnyOf => |anyof| p.ztype(anyof).isResolvable(p),
+            .AnySet => |anyset| for (anyset.set.constSlice()) |i| {
+                if (i.isResolvable(p)) break true;
+            } else false,
             .TypeRef, .Expr, .Unresolved => true,
             else => false,
         };
@@ -477,6 +510,8 @@ pub const TypeInfo = union(enum) {
         switch (a) {
             .TypeRef => |r| buf.append(r) catch unreachable,
             .AnyOf => |anyof| program.ztype(anyof).getTypeRefs(buf, program),
+            .AnySet => |anyset| for (anyset.set.constSlice()) |i|
+                i.getTypeRefs(buf, program),
             .Expr => |e| e.getTypeRefs(buf, program),
             else => {},
         }
@@ -487,6 +522,13 @@ pub const TypeInfo = union(enum) {
         const r: TypeInfo = switch (a) {
             .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
             .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(scope, arity, program)) },
+            // XXX: we don't clone here, hope it won't cause issues :P
+            .AnySet => |*anyset| b: {
+                for (anyset.set.slice()) |*item| {
+                    item.* = try item.*.resolveTypeRef(scope, arity, program);
+                }
+                break :b a;
+            },
             .Expr => |e| try e.resolveTypeRef(scope, arity, program),
             .Unresolved => |k| if (scope.findType(k.ident, program, true)) |n| b: {
                 const def = program.types.items[n];
@@ -561,7 +603,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn resolveGeneric(self: @This(), with: @This(), program: *Program) @This() {
         return switch (self) {
-            .Type, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
+            .Type, .AnySet, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr => with,
             .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
             .Ptr16 => |p| program.ztype(p.typ).resolveGeneric(program.ztype(with.Ptr16.typ), program).ptrize16(program),
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
@@ -571,7 +613,7 @@ pub const TypeInfo = union(enum) {
 
     pub fn isGeneric(self: @This(), program: *Program) bool {
         return switch (self) {
-            .Type, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
+            .Type, .AnySet, .AnyOf, .AnyDev, .AnyPtr16, .Any, .Any8, .Any16, .AnyPtr, .TypeRef => true,
             .Expr => |e| e.isGeneric(program),
             .Ptr8, .Ptr16 => |ptr| program.ztype(ptr.typ).isGeneric(program),
             .Struct => |s| program.types.items[s].def.Struct.args != null,
@@ -591,11 +633,14 @@ pub const TypeInfo = union(enum) {
 
     pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
         switch (self) {
-            .EnumLit, .AnyOf => {},
+            .EnumLit, .AnySet, .AnyOf => {},
             else => if (@as(Tag, self) == @as(Tag, other)) return true,
         }
         return switch (self) {
             .Type => true,
+            .AnySet => |anyset| for (anyset.set.constSlice()) |i| {
+                if (i.eq(other)) break true;
+            } else false,
             .AnyOf => |anyof| mem.eql(
                 u8,
                 program.types.items[
@@ -640,7 +685,7 @@ pub const TypeInfo = union(enum) {
             .I16, .AnyPtr16, .StaticPtr, .U16, .Char16, .Ptr16, .Any16 => 16,
             .AnyPtr, .Any => null,
             .EnumLit => |e| if (program.types.items[e].def.Enum.is_short) 16 else 8,
-            .AnyOf => null,
+            .AnySet, .AnyOf => null,
             .Array => null,
             .Struct => b: {
                 const sz = self.size(program) orelse return null;
@@ -777,7 +822,16 @@ pub const ASTNode = struct {
         type: union(enum) {
             SizeOf: SizeOf,
             Make: Make,
+            SplitCast: SplitCast,
         },
+
+        pub const SplitCast = struct {
+            of: TypeInfo = .Any,
+            resolved1: TypeInfo = .Any,
+            original1: TypeInfo,
+            resolved2: TypeInfo = .Any,
+            original2: TypeInfo,
+        };
 
         pub const Make = struct {
             original: TypeInfo,
@@ -870,9 +924,9 @@ pub const ASTNode = struct {
     };
 
     pub const Cast = struct {
-        of: TypeInfo = .Any,
-        resolved: TypeInfo = .Any,
-        original: TypeInfo,
+        from: *StackBuffer(TypeInfo, 3),
+        resolved: *StackBuffer(TypeInfo, 3),
+        original: *StackBuffer(TypeInfo, 3),
     };
 
     pub const Call = struct {
@@ -985,7 +1039,12 @@ pub const ASTNode = struct {
             .Import => @panic("excuse me what"),
             .VDecl => {},
             .VDeref, .VRef => {},
-            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Cast, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
+            .Cast => {
+                new.Cast.from = new.Cast.from.clone();
+                new.Cast.original = new.Cast.original.clone();
+                new.Cast.resolved = new.Cast.resolved.clone();
+            },
+            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
         }
 
         return .{

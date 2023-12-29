@@ -6,6 +6,8 @@ const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
 
+const gpa = &@import("common.zig").gpa;
+
 pub const StackBufferError = error{
     IndexOutOfRange,
     NoSpaceLeft,
@@ -22,7 +24,7 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
         pub fn init(data: ?[]const T) Self {
             if (data) |d| {
                 var b: Self = .{ .len = d.len };
-                @memcpy(&b.data, d);
+                @memcpy(b.data[0..d.len], d);
                 return b;
             } else {
                 return .{};
@@ -34,12 +36,31 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             self.* = Self.init(data);
         }
 
+        pub fn new() *Self {
+            const buf = gpa.allocator().create(Self) catch unreachable;
+            buf.reinit(null);
+            return buf;
+        }
+
+        pub fn clone(self: *Self) *Self {
+            const buf = gpa.allocator().create(Self) catch unreachable;
+            buf.reinit(self.constSlice());
+            return buf;
+        }
+
         pub fn slice(self: *Self) []T {
             return self.data[0..self.len];
         }
 
         pub fn constSlice(self: *const Self) []const T {
             return self.data[0..self.len];
+        }
+
+        pub fn eq(self: *const Self, other: []const T, eqfn: *const fn (T, T) bool) bool {
+            if (self.len != other.len) return false;
+            return for (self.constSlice(), 0..) |item, i| {
+                if (!eqfn(item, other[i])) break false;
+            } else true;
         }
 
         pub fn orderedRemove(self: *Self, index: usize) StackBufferError!T {

@@ -30,6 +30,8 @@ pub const Error = error{
     IndexTooLarge,
     IndexWouldOverflow,
     StructNotForStack,
+    CannotSplitIntoShort,
+    CannotSplitByte,
 };
 
 pub const AnalysisFmt = struct {
@@ -98,17 +100,21 @@ pub const BlockAnalysis = struct {
         return r;
     }
 
-    fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, scope: ?*Scope, arity: BlockAnalysis, caller: *ASTNode, p: *Program) Error!TypeInfo {
+    fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, scope: ?*Scope, arity: BlockAnalysis, caller: *ASTNode, p: *Program, dry_run: bool) Error!TypeInfo {
         var r = paramspec;
         while (!r.eq(argtyp) and (r.isResolvable(p) or r.isGeneric(p))) {
             if (r.isGeneric(p)) {
                 if (!r.doesInclude(argtyp, p)) {
                     if (!r.isResolvable(p)) {
-                        std.log.err("Generic {} does not encompass {}", .{
-                            TypeFmt.from(r, p),
-                            TypeFmt.from(argtyp, p),
-                        });
-                        return p.aerr(error.GenericNotMatching, caller.srcloc);
+                        if (dry_run) {
+                            return error.GenericNotMatching;
+                        } else {
+                            std.log.err("Generic {} does not encompass {}", .{
+                                TypeFmt.from(r, p),
+                                TypeFmt.from(argtyp, p),
+                            });
+                            return p.aerr(error.GenericNotMatching, caller.srcloc);
+                        }
                     }
                 } else {
                     r = r.resolveGeneric(argtyp, p);
@@ -153,7 +159,7 @@ pub const BlockAnalysis = struct {
             try _resolveFullyRecurse(r, caller, scope, call_node, p, ref, dry_run);
 
         const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
-        const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p);
+        const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p, dry_run);
 
         if (!resolved.doesInclude(calleritem, p)) {
             if (dry_run) {
@@ -312,6 +318,7 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
             .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Oinc, .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
+            .Osft => a2b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
         };
     }
@@ -475,11 +482,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         assert(found.node == .Decl);
                         c.variant = 0;
                         c.node = found;
-                        std.log.info("call to {s} resolved to {s} {s}", .{
-                            c.name,
-                            c.node.?.node.Decl.name,
-                            AnalysisFmt.from(&c.node.?.node.Decl.arity.?, program),
-                        });
                     } else {
                         std.log.info("Unknown ident {s}", .{c.name});
                         return program.perr(error.UnknownIdent, node.srcloc);
@@ -492,88 +494,66 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 c.node = d;
 
                 if (cdecl.arity) |d_arity| {
-                    if (a.isGeneric(program)) {
-                        unreachable;
-                    } else if (!d_arity.isGeneric(program)) {
-                        if (!cdecl.is_analysed) {
-                            var type_args = @TypeOf(c.args).init(null);
-                            for (c.args.constSlice()) |arg|
-                                type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
-                            const ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
-                            const end = ungenericified.args.len - c.args.len;
-                            for (ungenericified.args.constSlice()[0..end]) |arg| {
-                                assert(a.isGeneric(program) or !arg.isGeneric(program));
-                                cdecl.analysis.stack.append(arg) catch unreachable;
-                            }
-                            _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
-                            cdecl.is_analysed = true;
-                        }
+                    assert(!a.isGeneric(program));
+                    var type_args = @TypeOf(c.args).init(null);
+                    for (c.args.constSlice()) |arg|
+                        type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
+                    var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
+                    const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
+                        if (ungenericified.eqExact(an.node.Decl.arity.?))
+                            break i;
+                    } else null;
 
-                        try (try d_arity.resolveTypeRefs(cdecl.scope.parent, d_arity, program))
-                            .mergeInto(a, program, node.srcloc);
-                        if (!d_arity.isGeneric(program))
-                            cdecl.calls += 1;
-                    } else if (d_arity.isGeneric(program)) {
-                        var type_args = @TypeOf(c.args).init(null);
-                        for (c.args.constSlice()) |arg|
-                            type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
-                        var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
-                        const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
-                            if (ungenericified.eqExact(an.node.Decl.arity.?))
-                                break i;
-                        } else null;
+                    c.variant = (var_ind orelse cdecl.variations.items.len) + 1;
+                    if (var_ind) |ind|
+                        c.node = cdecl.variations.items[ind];
 
-                        c.variant = (var_ind orelse cdecl.variations.items.len) + 1;
-                        if (var_ind) |ind|
-                            c.node = cdecl.variations.items[ind];
+                    // if (mem.eql(u8, parent.name, "Vector/append") and
+                    //     mem.eql(u8, cdecl.name, "->"))
+                    // {
+                    //     const rt = ungenericified.stack.last().?;
+                    //     if (var_ind == null)
+                    //         std.log.info("{} variant (rt {}) created for {s}", .{
+                    //             c.variant,
+                    //             TypeFmt.from(rt, program),
+                    //             AnalysisFmt.from(a, program),
+                    //         })
+                    //     else
+                    //         std.log.info("{} variant (rt {}) used for {s}", .{
+                    //             c.variant,
+                    //             TypeFmt.from(rt, program),
+                    //             AnalysisFmt.from(a, program),
+                    //         });
+                    // }
 
-                        // if (mem.eql(u8, parent.name, "Vector/append") and
-                        //     mem.eql(u8, cdecl.name, "->"))
-                        // {
-                        //     const rt = ungenericified.stack.last().?;
-                        //     if (var_ind == null)
-                        //         std.log.info("{} variant (rt {}) created for {s}", .{
-                        //             c.variant,
-                        //             TypeFmt.from(rt, program),
-                        //             AnalysisFmt.from(a, program),
-                        //         })
-                        //     else
-                        //         std.log.info("{} variant (rt {}) used for {s}", .{
-                        //             c.variant,
-                        //             TypeFmt.from(rt, program),
-                        //             AnalysisFmt.from(a, program),
-                        //         });
-                        // }
+                    if (var_ind == null) {
+                        const newdef_ = d.deepclone(null, program);
+                        const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                        c.node = newdef;
+                        program.defs.append(newdef) catch unreachable;
 
-                        if (var_ind == null) {
-                            const newdef_ = d.deepclone(null, program);
-                            const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
-                            c.node = newdef;
-                            program.defs.append(newdef) catch unreachable;
+                        cdecl.variations.append(newdef) catch unreachable;
+                        newdef.node.Decl.variant = cdecl.variations.items.len;
+                        newdef.node.Decl.arity = ungenericified;
 
-                            cdecl.variations.append(newdef) catch unreachable;
-                            newdef.node.Decl.variant = cdecl.variations.items.len;
-                            newdef.node.Decl.arity = ungenericified;
+                        var ab = BlockAnalysis{};
+                        const end = ungenericified.args.len - c.args.len;
+                        for (ungenericified.args.constSlice()[0..end]) |arg|
+                            ab.stack.append(arg) catch unreachable;
+                        newdef.node.Decl.arity = ungenericified;
+                        newdef.node.Decl.calls += 1;
+                        _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                        newdef.node.Decl.is_analysed = true;
+                    }
 
-                            var ab = BlockAnalysis{};
-                            const end = ungenericified.args.len - c.args.len;
-                            for (ungenericified.args.constSlice()[0..end]) |arg|
-                                ab.stack.append(arg) catch unreachable;
-                            newdef.node.Decl.arity = ungenericified;
-                            newdef.node.Decl.calls += 1;
-                            _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
-                            newdef.node.Decl.is_analysed = true;
-                        }
+                    // Need to remove special arg types from arity before merging
+                    for (c.args.constSlice()) |_| {
+                        _ = ungenericified.args.pop() catch unreachable;
 
-                        // Need to remove special arg types from arity before merging
-                        for (c.args.constSlice()) |_| {
-                            _ = ungenericified.args.pop() catch unreachable;
-
-                            // Would need to resolve to assert this, can't be bothered
-                            //assert(type_arg.eq(caller_type_arg));
-                        }
-                        try ungenericified.mergeInto(a, program, node.srcloc);
-                    } else unreachable;
+                        // Would need to resolve to assert this, can't be bothered
+                        //assert(type_arg.eq(caller_type_arg));
+                    }
+                    try ungenericified.mergeInto(a, program, node.srcloc);
                 } else {
                     if (!cdecl.is_analysed) {
                         _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
@@ -847,6 +827,29 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Builtin => |*builtin| switch (builtin.type) {
+                .SplitCast => |*c| {
+                    c.resolved1 = try c.original1.resolveTypeRef(parent.scope, parent.arity, program);
+                    c.resolved2 = try c.original2.resolveTypeRef(parent.scope, parent.arity, program);
+
+                    if (c.resolved1.bits(program)) |b| if (b != 8)
+                        return program.aerr(error.CannotSplitIntoShort, node.srcloc);
+
+                    if (c.resolved1.bits(program)) |b| if (b != 8)
+                        return program.aerr(error.CannotSplitIntoShort, node.srcloc);
+
+                    const into = a.stack.last() orelse @panic("nah");
+
+                    if (into.bits(program)) |b| if (b != 16)
+                        return program.aerr(error.CannotSplitByte, node.srcloc);
+
+                    var casta = BlockAnalysis{};
+                    casta.args.append(into) catch unreachable;
+                    casta.stack.append(c.resolved1) catch unreachable;
+                    casta.stack.append(c.resolved2) catch unreachable;
+                    try casta.mergeInto(a, program, node.srcloc);
+
+                    if (!into.isGeneric(program)) c.of = into;
+                },
                 .Make => |*make| {
                     make.resolved = try make.original.resolveTypeRef(parent.scope, parent.arity, program);
                     var b = BlockAnalysis{};
@@ -875,16 +878,21 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 },
             },
             .Cast => |*c| {
-                c.resolved = try c.original.resolveTypeRef(parent.scope, parent.arity, program);
-
-                const into = a.stack.last() orelse .Any;
+                for (c.resolved.slice(), 0..) |*resolved, i|
+                    resolved.* = try c.original.constSlice()[i]
+                        .resolveTypeRef(parent.scope, parent.arity, program);
 
                 var casta = BlockAnalysis{};
-                casta.args.append(into) catch unreachable;
-                casta.stack.append(c.resolved) catch unreachable;
-                try casta.mergeInto(a, program, node.srcloc);
 
-                if (!into.isGeneric(program)) c.of = into;
+                for (c.resolved.constSlice(), 0..) |resolved, i| {
+                    const from = a.stack.last() orelse .Any;
+                    casta.args.append(from) catch unreachable;
+                    casta.stack.append(resolved) catch unreachable;
+                    if (!from.isGeneric(program))
+                        c.from.slice()[i] = from;
+                }
+
+                try casta.mergeInto(a, program, node.srcloc);
 
                 // std.log.info("{s}_{}: casting {} -> {} (ref: {?}) {s}", .{
                 //     parent.name,

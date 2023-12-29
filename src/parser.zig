@@ -110,7 +110,7 @@ pub const Parser = struct {
                 };
             },
             .EnumLit => |e| .{ .typ = .AmbigEnumLit, .val = .{ .AmbigEnumLit = e } },
-            else => error.ExpectedValue,
+            else => self.program.perr(error.ExpectedValue, node.location),
         };
     }
 
@@ -189,6 +189,15 @@ pub const Parser = struct {
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
                                 .of = of,
                                 .args = buf,
+                            }) };
+                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .AnySet) {
+                            const buf = common.gpa.allocator()
+                                .create(StackBuffer(TypeInfo, 8)) catch unreachable;
+                            buf.reinit(null);
+                            for (lst.items[1..]) |item|
+                                buf.append(try self.parseType(&item)) catch unreachable;
+                            r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
+                                .set = buf,
                             }) };
                         } else if (@field(TypeInfo.Expr.Tag, field.name) == .FieldType or
                             @field(TypeInfo.Expr.Tag, field.name) == .Omit)
@@ -484,10 +493,28 @@ pub const Parser = struct {
                         .node = .{ .Wild = .{ .arity = arity, .body = block } },
                         .srcloc = ast[0].location,
                     };
+                } else if (mem.eql(u8, k, "split")) {
+                    break :b ASTNode{
+                        .node = .{ .Builtin = .{ .type = .{ .SplitCast = .{
+                            .original1 = try self.parseType(&ast[1]),
+                            .original2 = try self.parseType(&ast[2]),
+                        } } } },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "as")) {
+                    const from = StackBuffer(TypeInfo, 3).new();
+                    const orig = StackBuffer(TypeInfo, 3).new();
+                    const resv = StackBuffer(TypeInfo, 3).new();
+                    for (ast[1..]) |node| {
+                        orig.append(try self.parseType(&node)) catch unreachable;
+                        resv.append(.Any) catch unreachable;
+                        from.append(.Any) catch unreachable;
+                    }
                     break :b ASTNode{
                         .node = .{ .Cast = .{
-                            .original = try self.parseType(&ast[1]),
+                            .from = from,
+                            .original = orig,
+                            .resolved = resv,
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -765,7 +792,7 @@ pub const Parser = struct {
                             } };
                         }
                     }
-                    return error.InvalidEnumField;
+                    return self.program.perr(error.InvalidEnumField, srcloc);
                 },
                 .Device => |ddef| {
                     for (ddef.fields.items, 0..) |field, field_i| {
@@ -778,7 +805,7 @@ pub const Parser = struct {
                             } } } };
                         }
                     }
-                    return error.InvalidEnumField;
+                    return self.program.perr(error.InvalidEnumField, srcloc);
                 },
                 else => return error.NotAnEnumOrDevice,
             };
