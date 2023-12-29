@@ -10,17 +10,25 @@ x Variables
 x If statement
 x Structs
 x HERE
-- Malloc
+x Malloc
   x Basic + free + realloc
   x Defrag
-  - Opaque ("void") pointers
+  x Opaque ("void") pointers
   x Maybe0
-  - Unit tests, stress tests
+  x Unit tests
 x Remove macros
 x Test suite
 x Imports
-- Vec
-  - Unbounded
+x Arrays (sized, unknown-size)
+x Vec
+x Metadata
+- (r) keyword (use rt-stack)
+- Signed numbers
+  x Comparison
+  x Printing
+  x Lexer/Parser
+  x Abs/Neg?
+  - Division
 - Enums
 - Shadowcaster
 - Refactoring
