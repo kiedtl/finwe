@@ -1,0 +1,165 @@
+(typealias AnySigned (AnySet I8 I16))
+
+(word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)       ])
+(word ldak (       AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)      ])
+(word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
+(word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)      ])
+(word <-   ((Child $0) AnyPtr16 --          ) [ sta                      ])
+(word ->   (AnyPtr16        -- (Child $0)   ) [ lda                      ])
+
+(word nip   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Onip)       ])
+(word dup   (           Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
+(word swap  ((AnySz $0) Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
+(word drop  (           Any --              ) [ (asm "g" .Op/Odrop)      ])
+(word 2drop ((AnySz $0) Any --              ) [ drop drop                ])
+(word over  ((AnySz $0) Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
+(word 2dup  ((AnySz $0) Any -- $1 $0 $1 $0  ) [ over over                ])
+
+(word rot   ((AnySz $0) (AnySz $0) Any -- $1 $0 $2) [ (asm "g" .Op/Orot) ])
+(word rot>  ((AnySz $0) (AnySz $0) Any -- $0 $0 $0) [ rot rot            ])
+(word tuck  ((AnySz $0) Any -- $0 $1 $0     ) [ swap over                ])
+(word tuck> ((AnySz $0) Any -- $1 $1 $0     ) [ over swap                ])
+
+(word < ( $0 AnySigned -- Bool ) [
+	2dup (as (USz $0) (USz $0)) < (asm "" .Op/Osth)
+	sign swap sign <>
+	(asm "r" .Op/Osth) swap
+	(when [ not ])
+])
+
+(word > ( $0 AnySigned -- Bool ) [
+	2dup (as (USz $0) (USz $0)) > (asm "" .Op/Osth)
+	sign swap sign <>
+	(asm "r" .Op/Osth) swap
+	(when [ not ])
+])
+
+(word band  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oand)       ])
+(word bor   ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oora)       ])
+(word beor  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeor)       ])
+// TODO: warn if bshr/bshl arg is higher than 7
+// #(warn arg-gt $0 7)
+(word bshr  (       Any  U8 -- $1           ) [ (asm "g" .Op/Osft)       ])
+(word bnot  (           Any -- Bool         ) [ 0xFFFFs (as $0) beor     ])
+(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeq)        ])
+(word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)       ])
+(word nil?  (          Bool -- Bool         ) [ nil =                    ])
+(word T?    (          Bool -- Bool         ) [ T =                      ])
+(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)        ])
+(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)        ])
+(word <=    ((AnySz $0) Any -- Bool         ) [ > not                    ])
+(word >=    ((AnySz $0) Any -- Bool         ) [ < not                    ])
+(word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)       ])
+(word 1+    (           Any -- $0           ) [ (asm "g" .Op/Oinc)       ])
+(word 1-    (           Any -- $0           ) [ 1 (as $0) -              ])
+(word -     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Osub)       ])
+(word /     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Odiv)       ])
+(word mod   ((AnySz $0) Any -- $0           ) [ 2dup / * -               ])
+(word /mod  ((AnySz $0) Any -- $0 $0        ) [ 2dup / rot> mod          ])
+(word *     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Omul)       ])
+(word 0=    (           Any -- Bool         ) [ 0 (as $0) =              ])
+(word 0<>   (           Any -- Bool         ) [ 0 (as $0) <>             ])
+(word 0<    (           Any -- Bool         ) [ 0 (as $0) <              ])
+(word 0>    (           Any -- Bool         ) [ 0 (as $0) >              ])
+(word sign  (            I8 -- U8           ) [ (as U8) 0xf0 band 7 bshr ])
+(word sign  (           I16 -- U8           ) [ (split I8 U8) drop sign  ])
+
+(test <_signed [
+	  -1i    1i < (should eq t)
+	   1i   -1i < (should eq nil)
+	   1i    1i < (should eq nil)
+	-121i  121i < (should eq t)
+	 121i -121i < (should eq nil)
+])
+
+(word abs ( AnySigned -- (USz $0) ) [
+	dup sign 0= (when [return])
+	(as (USz $0)) bnot 1+
+])
+
+(test abs [
+	    -1i  abs (should eq 1)
+	     1i  abs (should eq 1)
+	   -10i  abs (should eq 10)
+	   -20i  abs (should eq 20)
+	  -125i  abs (should eq 125)
+	   125i  abs (should eq 125)
+	-22891is abs (should eq 22891s)
+	    -1is abs (should eq 1s)
+	 22891is abs (should eq 22891s)
+])
+
+// TODO: this is stupid... needs to be optimized
+// (Probably bake or/and into language to ensure short-circuiting)
+(word not   (          Bool -- Bool         ) [ (when [ nil ] [ t ])    ])
+(word or    (     Bool Bool -- Bool         ) [ (when [ drop t ]) ])
+(word and   (     Bool Bool -- Bool) [ (when [ (when [t] [ nil ]) ] [ drop nil ]) ])
+
+(test or_basic [
+	t   nil or (should eq T)
+	nil t   or (should eq T)
+	t   t   or (should eq T)
+	nil nil or (should eq nil)
+])
+
+(test and_basic [
+	t   nil and (should eq nil)
+	nil t   and (should eq nil)
+	t   t   and (should eq T)
+	nil nil and (should eq nil)
+])
+
+(word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
+	// sa0 sa1 bt sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  // sa0 sa1 bt | sb0 sb1
+		(asm "" .Op/Orot)   // sa1 bt sa0 | sb0 sb1
+		(asm "" .Op/Orot)   // bt sa0 sa1 | sb0 sb1
+		(asm "rs" .Op/Osth) // bt sb0 sb1 sa0 sa1 
+		(asm "s" .Op/Oswp)  // bt sa0 sa1 sb0 sb1 
+	])
+])
+
+(word rot-bss (Any8 Any16 Any16 -- $1 $0 $2) [
+	// bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $1 $0 $2) [
+		(asm "s" .Op/Osth)  // bt sa0 sa1 | sb0 sb1
+		(asm "" .Op/Orot)   // sa0 sa1 bt | sb0 sb1
+		(asm "rs" .Op/Osth) // sa0 sa1 bt sb0 sb1
+		(asm "" .Op/Orot)   // sa0 sa1 sb0 sb1 bt
+	])
+])
+
+(word rot-bss> (Any8 Any16 Any16 -- $0 $2 $1) [
+	// bt sa0 sa1 sb0 sb1
+	(wild ($2 $1 $0 -- $0 $2 $1) [
+		(asm "s" .Op/Oswp)  // bt sb0 sb1 sa0 sa1
+		(asm "s" .Op/Osth)  // bt sb0 sb1 | sa0 sa1
+		(asm "" .Op/Orot)   // sb0 sb1 bt | sa0 sa1
+		(asm "rs" .Op/Osth) // sb0 sb1 bt sa0 sa1
+	])
+])
+
+(test rot-sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
+(test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
+(test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
+
+(word over-sb (Any16 Any8 -- $1 $0 $1) [
+	(wild ($1 $0 -- $1 $0 $1) [
+		0
+		(asm "s" .Op/Oovr)
+		(asm "" .Op/Orot)
+		(asm "" .Op/Odrop)
+	])
+])
+
+(test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
+
+(word swap-sb (Any16 Any8 -- $0 $1) [
+	(wild ($1 $0 -- $0 $1) [
+		(asm "" .Op/Orot)
+		(asm "" .Op/Orot)
+	])
+])
+
+(test swap-sb  [ 0xffabs 0xba swap-sb (should eq 0xffabs) (should eq 0xba)      ])
