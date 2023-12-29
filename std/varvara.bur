@@ -34,38 +34,18 @@
 (word print-string (@U8 -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
 (word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
 
-(word print8 (U8 --) [
-	dup 0= (when [ drop '0 emit return ])
+(word print (Any --) [ 16 print-base ])
+(word print-dec (Any --) [ 10 print-base ])
 
-	0x99 swap // stop indicator
-	
-	(until [ 0= ] [
-		16 /mod
-		dup 9 > (when [ 10 - 'a + ] [ '0 + ])
-		swap
+(word print-base (AnySigned U8 --) [
+	(asm "" .Op/Osth)
+	dup sign 0<> (when [
+		"-" print-string
+		abs
 	])
-// TODO: drop null byte?
-	(until [ 0x99 = ] [ emit ])
-
-	drop // drop stop indicator
-])
-
-(word print16 (U16 --) [
-	dup 0= (when [ drop '0 emit return ])
-
-	0x99s swap // stop indicator
-	
-	(wild (U16 U16 -- U16) [
-		(until [ 0= ] [
-			16s /mod
-			dup 9s > (when [ 10s - 'as + ] [ '0s + ])
-			swap
-		])
-
-		(until [ 0x99s = ] [ (as U8) emit ])
-	])
-
-	drop // drop stop indicator
+	(as (USz $1))
+	(asm "r" .Op/Osth)
+	print-base
 ])
 
 (word print-base (Any U8 --) [
@@ -93,10 +73,7 @@
 	drop // drop stop indicator
 ])
 
-(word print (Any --) [ 16 print-base ])
-(word print-dec (Any --) [ 10 print-base ])
-
-(test print_8 [
+(test print-dec [
 	10   print-dec nl (should stdout-eq "10\n")
 	20   print-dec nl (should stdout-eq "20\n")
 	35   print-dec nl (should stdout-eq "35\n")
@@ -105,7 +82,7 @@
 	0    print-dec nl (should stdout-eq "0\n")
 ])
 
-(test print_16 [
+(test print [
 	0xbeefs print nl (should stdout-eq "beef\n")
 	0x3b    print nl (should stdout-eq "3b\n")
 	0x0d    print
@@ -113,6 +90,17 @@
 	0xaceds print
 	0xcafes print nl (should stdout-eq "defacedcafe\n")
 	0x0     print nl (should stdout-eq "0\n")
+])
+
+(test print_signed [
+	   -1i  print-dec (should stdout-eq "-1")
+	    0i  print-dec (should stdout-eq "0")
+	    1i  print-dec (should stdout-eq "1")
+	 -199is print-dec (should stdout-eq "-199")
+	   -1is print-dec (should stdout-eq "-1")
+	    0is print-dec (should stdout-eq "0")
+	 2819is print-dec (should stdout-eq "2819")
+	-2819is print-dec (should stdout-eq "-2819")
 ])
 
 (test print-string [
