@@ -29,12 +29,13 @@ x Metadata
   x Lexer/Parser
   x Abs/Neg?
   - Division
-- Enums
+- Fixed-point
 - Shadowcaster
-- Refactoring
-  - Scopes
-  - Explicit main function
-  - Decls within decls
+- Enums
+x Refactoring
+  x Scopes
+  x Explicit main function
+  x Decls within decls
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
