@@ -27,9 +27,9 @@ x Metadata
   x Comparison
   x Printing
   x Lexer/Parser
-  x Abs/Neg?
-  - Division
+  - Abs/Neg?/Division
 - Fixed-point
+  - Printing
 - Shadowcaster
 - Enums
 x Refactoring
