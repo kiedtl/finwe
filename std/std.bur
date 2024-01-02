@@ -68,8 +68,8 @@
 	2dup 0= swap 0= and (when [ t return ])   // precheck for empty strs
 	(until [ drop 2dup 0= swap 0= and ] [
 		<> (when [ nil return ])
-		1+ dup -> (asm "" .Op/Osth)       // ( a* b*+ | b-> )
-		swap 1+ dup -> (asm "r" .Op/Osth) // ( b*+ a*+ a-> b-> )
+		1+ dup -> move           // ( a* b*+ | b-> )
+		swap 1+ dup -> (r move)  // ( b*+ a*+ a-> b-> )
 	])
 	2drop 2drop
 	t
@@ -107,28 +107,23 @@
 	])
 ])
 
-// TODO: cleanup once always-inline directive and (r) are added
 // ( len src* dst* -- dst* )
 (word memcpy ( U16 $0 AnyPtr -- $0 ) [
-	//move
-	(as @U8) swap (as @U8) swap
-	(asm "s" .Op/Osth)
-	(asm "sr" .Op/Odup)
+	(as @U8 @U8) move (r dup)
 
 	dup rot                        // ( src src len      | dst* dst* )
 	(sizeof (Child $0)) (as U16) * // ( src src len*sz   | dst* dst* )
 	swap + swap                    // ( src*+len*sz src* | dst* dst* )
 
 	(while [ drop 2dup <> ] [
-		dup -> (asm "srk" .Op/Osth) <- //dup -> (r copy) <-
-		1+
-		(asm "sr" .Op/Oinc) // (r 1+)
+		dup -> (r copy) <-
+		1+ (r 1+)
 	])
-	
-	(asm "sr" .Op/Odrop)
+
+	(r drop)
 	drop drop
 
-	(asm "sr" .Op/Osth)
+	(r move)
 ])
 (test memcpy [
 	(var foo [Char8 11])

@@ -105,10 +105,10 @@
 	// ( old old-sz new-sz )
 	get :value dup 0= (when [ nip nip (make (Of std/Maybe0 @Opaque)) return ])
 	// ( old old-chunk-sz new-unwrapped )
-	rot (asm "sk" .Op/Osth) swap
+	rot copy swap
 	// ( old-chunk-sz old new | new old )
 	(as @U8) std/memcpy (make (Of std/Maybe0 @Opaque))
-	(asm "rs" .Op/Osth) (as @U8) de
+	(r move) de
 ])
 (test alloc/reget_copies_correctly [
 	init

@@ -73,7 +73,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
     });
     switch (node.node) {
         .Call => |c| try emit(buf, null, 0, false, true, if (c.goto) .Ojmp else .Ojsr),
-        .Value => |v| switch (v.typ) {
+        .Value => |v| switch (v.val.typ) {
             .StaticPtr => {},
             else => unreachable,
         },
@@ -199,17 +199,19 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emit(buf, null, 0, false, is_short, .Olda);
         },
         .Value => |v| {
-            if (v.typ == .StaticPtr) {
+            const stk: usize = if (v.ret) RT_STACK else WK_STACK;
+            if (v.val.typ == .StaticPtr) {
                 try emitUA(buf, ual, "", node);
-            } else if (v.typ.bits(program).? == 16) {
-                try emitIMM16(buf, node, WK_STACK, false, .Olit, v.toU16(program));
+            } else if (v.val.typ.bits(program).? == 16) {
+                try emitIMM16(buf, node, stk, false, .Olit, v.val.toU16(program));
             } else {
-                try emitIMM(buf, node, WK_STACK, false, .Olit, v.toU8(program));
+                try emitIMM(buf, node, stk, false, .Olit, v.val.toU8(program));
             }
         },
         .Decl => {},
         .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
+        .RBlock => |r| try genNodeList(program, buf, r.body, ual),
         .Quote => {
             @panic("unimplemented");
             // (TODO: shouldn't be gen'ing quotes, they need to be made decls
@@ -260,7 +262,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             }
         },
         .Asm => |a| try emit(buf, node, a.stack, a.keep, a.short, a.op),
-        .Call => |f| try emitUA(buf, ual, f.name, node),
+        .Call => |f| if (f.is_inline) {
+            try genNodeList(program, buf, f.node.?.node.Decl.body, ual);
+        } else {
+            try emitUA(buf, ual, f.name, node);
+        },
         .When => |when| {
             // Structure
             // - When else branch
@@ -413,8 +419,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             reemitAddr16(&buf, ua.loc, loc);
         },
         .Value => |v| {
-            assert(v.typ == .StaticPtr);
-            const static = program.statics.items[v.typ.StaticPtr];
+            assert(v.val.typ == .StaticPtr);
+            const static = program.statics.items[v.val.typ.StaticPtr];
             reemitAddr16(&buf, ua.loc, static.romloc);
         },
         .Call => |c| {

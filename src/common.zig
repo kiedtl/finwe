@@ -55,7 +55,7 @@ pub const TypeFmt = struct {
         const s = @tagName(self.typ);
 
         switch (self.typ) {
-            .TypeRef => |n| try writer.print("{s}<{}>", .{ s, n }),
+            .TypeRef => |n| try writer.print("${}{s}", .{ n.n, if (n.r) "r" else "" }),
             .Struct, .EnumLit => |n| try writer.print("{s}<{}>", .{ self.prog.types.items[n].name, n }),
             .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
             .AnySet => |n| {
@@ -112,7 +112,7 @@ pub const TypeInfo = union(enum) {
     Expr: Expr,
 
     AmbigEnumLit,
-    TypeRef: usize,
+    TypeRef: TypeRef,
     Unresolved: Unresolved,
 
     pub const Tag = meta.Tag(@This());
@@ -124,7 +124,8 @@ pub const TypeInfo = union(enum) {
         }
 
         switch (self) {
-            .Struct, .EnumLit, .TypeRef => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
+            .TypeRef => |n| try writer.print("${}{s}", .{ n.n, if (n.r) "r" else "" }),
+            .Struct, .EnumLit => |n| try writer.print("{s}<{}>", .{ @tagName(self), n }),
             .Ptr8, .Ptr16 => |n| try writer.print("{s}<{} @{}>", .{ @tagName(self), n.typ, n.ind }),
             .Array => |a| if (a.count) |c| {
                 try writer.print("[{}]{s}<{}>", .{ c, @tagName(self), a.typ });
@@ -135,6 +136,15 @@ pub const TypeInfo = union(enum) {
         }
         try writer.print("", .{});
     }
+
+    pub const TypeRef = struct {
+        n: usize,
+        r: bool = false,
+
+        pub fn eq(a: TypeRef, b: TypeRef) bool {
+            return a.n == b.n and a.r == b.r;
+        }
+    };
 
     pub const AnySet = struct {
         set: *StackBuffer(TypeInfo, 8),
@@ -520,7 +530,10 @@ pub const TypeInfo = union(enum) {
     pub fn resolveTypeRef(a: @This(), p_scope: ?*Scope, arity: ?analyser.BlockAnalysis, program: *Program) analyser.Error!TypeInfo {
         const scope = p_scope orelse program.global_scope;
         const r: TypeInfo = switch (a) {
-            .TypeRef => |r| arity.?.args.constSlice()[arity.?.args.len - r - 1],
+            .TypeRef => |r| b: {
+                const args = if (r.r) &arity.?.rargs else &arity.?.args;
+                break :b args.constSlice()[args.len - r.n - 1];
+            },
             .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(scope, arity, program)) },
             // XXX: we don't clone here, hope it won't cause issues :P
             .AnySet => |*anyset| b: {
@@ -760,11 +773,12 @@ pub const ASTNode = struct {
         Decl: Decl, // word declaration
         Call: Call,
         Wild: Wild,
+        RBlock: RBlock,
         Loop: Loop,
         When: When,
         Cond: Cond,
         Asm: Ins,
-        Value: Value,
+        Value: LitValue,
         Quote: Quote,
         Cast: Cast,
         VDecl: VDecl,
@@ -802,6 +816,11 @@ pub const ASTNode = struct {
         if (comptime !mem.eql(u8, f, "")) @compileError("Unknown format string: '" ++ f ++ "'");
         try writer.print("{}", .{self.node});
     }
+
+    pub const LitValue = struct {
+        val: Value,
+        ret: bool = false,
+    };
 
     pub const Import = struct {
         name: []const u8,
@@ -936,6 +955,7 @@ pub const ASTNode = struct {
         node: ?*ASTNode = null,
         goto: bool = false,
         is_method: bool = false,
+        is_inline: bool = false,
     };
 
     pub const When = struct {
@@ -953,6 +973,10 @@ pub const ASTNode = struct {
 
             pub const List = std.ArrayList(Branch);
         };
+    };
+
+    pub const RBlock = struct {
+        body: ASTNodeList,
     };
 
     pub const Loop = struct {
@@ -985,6 +1009,9 @@ pub const ASTNode = struct {
         is_method: ?TypeInfo = null,
         is_analysed: bool = false,
         is_test: bool = false,
+        is_inline: Inline = .Auto,
+
+        pub const Inline = enum { Auto, Always, Never };
 
         pub const Local = struct {
             name: []const u8,
@@ -1036,6 +1063,7 @@ pub const ASTNode = struct {
             },
             .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
+            .RBlock => new.RBlock.body = _deepcloneASTList(new.RBlock.body, parent, program),
             .Import => @panic("excuse me what"),
             .VDecl => {},
             .VDeref, .VRef => {},
@@ -1128,6 +1156,7 @@ pub const Scope = struct {
         caller_parent_arity: ?analyser.BlockAnalysis,
         caller_scope: *Scope,
         caller_args: *const analyser.BlockAnalysis,
+        r_stk: bool,
     ) !?*ASTNode {
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
@@ -1139,8 +1168,11 @@ pub const Scope = struct {
             type_args.append(try arg.resolveTypeRef(caller_scope, caller_parent_arity, program)) catch unreachable;
 
         for (buf.items) |potential| {
-            if (potential.node.Decl.arity) |potential_arity|
-                _ = potential_arity.conformGenericTo(type_args.constSlice(), potential.node.Decl.scope.parent, caller_args, caller_node, program, true) catch continue;
+            if (potential.node.Decl.arity) |m_potential_arity| {
+                var potential_arity = m_potential_arity;
+                if (r_stk) potential_arity.reverse();
+                _ = potential_arity.conformGenericTo(type_args.constSlice(), potential.node.Decl.scope.parent, caller_args, caller_node, program, true, false) catch continue;
+            }
             return potential;
         }
 
@@ -1259,6 +1291,7 @@ pub const Program = struct {
             .Import => |b| try walkNodes(self, node, b.body, ctx, func),
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
+            .RBlock => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Quote => |b| try walkNodes(self, parent, b.body, ctx, func),
             .Loop => |d| {
                 switch (d.loop) {

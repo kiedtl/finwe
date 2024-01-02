@@ -71,6 +71,16 @@ pub const AnalysisFmt = struct {
             try writer.print("--", .{});
             for (self.an.stack.constSlice()) |i|
                 try writer.print(" {}", .{TypeFmt.from(i, self.prog)});
+
+            if (self.an.rargs.len > 0 or self.an.rstack.len > 0) {
+                try writer.print(" | ", .{});
+                for (self.an.rargs.constSlice()) |i|
+                    try writer.print("{} ", .{TypeFmt.from(i, self.prog)});
+                try writer.print("--", .{});
+                for (self.an.rstack.constSlice()) |i|
+                    try writer.print(" {}", .{TypeFmt.from(i, self.prog)});
+            }
+
             try writer.print(")", .{});
         }
     }
@@ -81,6 +91,29 @@ pub const BlockAnalysis = struct {
     stack: VTList16 = VTList16.init(null),
     rargs: VTList16 = VTList16.init(null),
     rstack: VTList16 = VTList16.init(null),
+
+    pub fn reverse(self: *@This()) void {
+        const tmp = self.args;
+        self.args = self.rargs;
+        self.rargs = tmp;
+
+        const stmp = self.stack;
+        self.stack = self.rstack;
+        self.rstack = stmp;
+
+        const S = struct {
+            pub fn revTypeRefs(lst: *VTList16) void {
+                for (lst.slice()) |*v| if (v.* == .TypeRef) {
+                    v.*.TypeRef.r = !v.*.TypeRef.r;
+                };
+            }
+        };
+
+        S.revTypeRefs(&self.args);
+        S.revTypeRefs(&self.rargs);
+        S.revTypeRefs(&self.stack);
+        S.revTypeRefs(&self.rstack);
+    }
 
     pub fn resolveTypeRefs(self: @This(), scope: ?*Scope, arity: ?@This(), program: *Program) !@This() {
         // std.log.info("resolving {}\n with {}", .{ self, arity });
@@ -148,15 +181,16 @@ pub const BlockAnalysis = struct {
         // std.log.info("\n", .{});
         // std.log.info("- beginning  {}", .{i});
 
-        var refs = StackBuffer(usize, 12).init(null);
+        var refs = StackBuffer(TypeInfo.TypeRef, 12).init(null);
         r.args.slice()[i].getTypeRefs(&refs, p);
         for (refs.slice()) |*ref| {
-            ref.* = r.args.len - ref.* - 1;
+            ref.*.n = r.args.len - ref.*.n - 1;
             // std.log.info("- refs {}", .{ref.*});
         }
 
-        for (refs.constSlice()) |ref| if (ref < i)
-            try _resolveFullyRecurse(r, caller, scope, call_node, p, ref, dry_run);
+        // ignore return-stack refs for now, conform() will do another run for that
+        for (refs.constSlice()) |ref| if (ref.n < i and !ref.r)
+            try _resolveFullyRecurse(r, caller, scope, call_node, p, ref.n, dry_run);
 
         const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
         const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p, dry_run);
@@ -184,12 +218,11 @@ pub const BlockAnalysis = struct {
         call_node: *ASTNode,
         p: *Program,
         dry_run: bool,
+        reversed: bool,
     ) Error!@This() {
-        // TODO: do rstack
-        if (generic.rstack.len > 0 or generic.rargs.len > 0) @panic("TODO");
-
-        // std.log.info("CONFORM {s}", .{AnalysisFmt.from(&generic, p)});
-        // std.log.info("TO ARGS {s}", .{AnalysisFmt.from(p_caller, p)});
+        // const s: []const u8 = if (reversed) " - " else "";
+        // std.log.info("{s}CONFORM {s}", .{ s, AnalysisFmt.from(&generic, p) });
+        // std.log.info("{s}TO ARGS {s}", .{ s, AnalysisFmt.from(p_caller, p) });
 
         //std.log.info("\n", .{});
         var caller = p_caller.*;
@@ -210,12 +243,28 @@ pub const BlockAnalysis = struct {
             i -= 1;
             try _resolveFullyRecurse(&r, &caller, scope, call_node, p, i, dry_run);
         }
+
+        if (!reversed and (r.rstack.len > 0 or r.rargs.len > 0)) {
+            var tmpcaller = p_caller.*;
+            tmpcaller.reverse();
+            var tmp = r;
+            tmp.reverse();
+            //std.log.info("R PAR {s}", .{AnalysisFmt.from(&tmp, p)});
+            tmp = try conformGenericTo(tmp, extra_type_args, scope, &tmpcaller, call_node, p, dry_run, true);
+            //std.log.info("R ARG {s}", .{AnalysisFmt.from(&tmpcaller, p)});
+            //std.log.info("R RES {s}", .{AnalysisFmt.from(&tmp, p)});
+            tmp.reverse();
+            r.rstack = tmp.rstack;
+            r.rargs = tmp.rargs;
+        }
+
         for (r.stack.slice()) |*stack|
             if (stack.* == .TypeRef or stack.* == .Expr) {
                 stack.* = try stack.resolveTypeRef(scope, r, p);
             };
 
-        // std.log.info("RESULTS {s}\n\n", .{AnalysisFmt.from(&r, p)});
+        // std.log.info("{s}RESULTS {s}", .{ s, AnalysisFmt.from(&r, p) });
+        // if (!reversed) std.log.info("\n", .{});
 
         return r;
     }
@@ -287,15 +336,19 @@ pub const BlockAnalysis = struct {
     }
 };
 
-fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) BlockAnalysis {
+fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, ctx: Ctx, prog: *Program) BlockAnalysis {
     var a = BlockAnalysis{};
 
     const args_needed: usize = switch (i.op) {
         .Ohalt => 0,
-        .Oinc, .Olda, .Odeo, .Odup, .Odrop => 1,
+        .Osth, .Oinc, .Olda, .Odeo, .Odup, .Odrop => 1,
         .Orot => 3,
         else => 2,
     };
+
+    if (ctx.r_blk) {
+        i.stack = common.RT_STACK;
+    }
 
     const stk = if (i.stack == common.WK_STACK) &caller_an.stack else &caller_an.rstack;
     const a1 = if (stk.len >= 1) stk.constSlice()[stk.len - 1] else null;
@@ -305,8 +358,11 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     const a2b: ?u5 = if (stk.len >= 2) a2.?.bits(prog) else null;
     const a3b: ?u5 = if (stk.len >= 3) a3.?.bits(prog) else null;
 
-    // std.log.info("ASM: {}, stk.len: {}, args_needed: {}, a1b: {?}, a2b: {?}", .{ i, stk.len, args_needed, a1b, a2b });
-    // std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
+    // if (i.op == .Osth and i.generic) {
+    //     std.log.info("ASM: {}, stk.len: {}, args_needed: {}, a1b: {?}, a2b: {?}", .{ i, stk.len, args_needed, a1b, a2b });
+    //     std.log.info("ARG: {s}", .{AnalysisFmt.from(caller_an, prog)});
+    //     std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
+    // }
 
     if (i.generic and stk.len >= args_needed and
         ((args_needed == 2 and a1b != null and a2b != null) or
@@ -316,14 +372,15 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
         i.short = switch (i.op) {
             .Osta => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
-            .Oinc, .Odup, .Odrop, .Odeo => a1b.? == 16,
+            .Osth, .Oinc, .Odup, .Odrop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             .Osft => a2b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
         };
     }
 
-    //std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
+    // if (i.op == .Osth and i.generic)
+    // std.log.info("FLG: s={}, g={}", .{ i.short, i.generic });
 
     const any: TypeInfo = if (i.generic) .Any else if (i.short) .Any16 else .Any8;
     const any_or_unsigned: TypeInfo = if (i.generic) .Any else if (i.short) .U16 else .U8;
@@ -417,28 +474,32 @@ fn analyseAsm(i: *common.Ins, caller_an: *const BlockAnalysis, prog: *Program) B
     if (i.keep) a.rargs.clear();
 
     if (i.stack == common.RT_STACK) {
-        const tmp = a.args;
-        a.args = a.rargs;
-        a.rargs = tmp;
-
-        const stmp = a.stack;
-        a.stack = a.rstack;
-        a.rstack = stmp;
+        a.reverse();
     }
 
     return a;
 }
 
-pub const AnalyserInfo = struct {
+const AnalyserInfo = struct {
     early_return: bool = false,
 };
 
-fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis) ErrorSet!AnalyserInfo {
+const Ctx = struct {
+    r_blk: bool = false,
+    // wild_blk: bool = false,
+};
+
+fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis, ctx: Ctx) ErrorSet!AnalyserInfo {
     //std.log.info("analysing {s}", .{parent.name});
 
     var info = AnalyserInfo{};
     var iter = block.iterator();
     while (iter.next()) |node| {
+        // std.log.debug("{s},{},{}: Current: {s}", .{
+        //     node.srcloc.file,             node.srcloc.line, node.srcloc.column,
+        //     AnalysisFmt.from(a, program),
+        // });
+        assert(!a.isGeneric(program));
         // if (mem.eql(u8, parent.name, "main")) {
         //     std.log.info("{s}_{}: node: {}", .{ parent.name, parent.variant, node.node });
         //     std.log.info("analysis: {}\n", .{a});
@@ -452,18 +513,24 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
         //         } else std.log.info("*** TOS: {}\n", .{tos});
         //     } else std.log.info("*** TOS:\n", .{});
         // }
+
         switch (node.node) {
             .None => {},
             .Import => {},
             .TypeDef => {},
-            .Debug => std.log.debug("[debug] Current analysis: {}", .{
+            .Debug => std.log.debug("[debug] Current analysis: {s}", .{
                 AnalysisFmt.from(a, program),
             }),
             .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
             .Decl => {}, // Only analyse if/when called
+            .RBlock => |r| {
+                var nctx = ctx;
+                nctx.r_blk = !nctx.r_blk;
+                _ = try analyseBlock(program, parent, r.body, a, nctx);
+            },
             .Wild => |w| {
                 var wa = a.*;
-                _ = try analyseBlock(program, parent, w.body, &wa);
+                _ = try analyseBlock(program, parent, w.body, &wa, ctx);
                 try (try w.arity.resolveTypeRefs(parent.scope, parent.arity, program))
                     .mergeInto(a, program, node.srcloc);
             },
@@ -478,7 +545,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         else => return program.aerr(error.CannotCallMethod, node.srcloc),
                     };
 
-                    if (try scope.findDeclForCaller(program, c.name, node, parent.arity, parent.scope, a)) |found| {
+                    if (try scope.findDeclForCaller(program, c.name, node, parent.arity, parent.scope, a, ctx.r_blk)) |found| {
                         assert(found.node == .Decl);
                         c.variant = 0;
                         c.node = found;
@@ -492,13 +559,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 const cdecl = &d.node.Decl;
 
                 c.node = d;
+                c.is_inline = cdecl.is_inline == .Always or ctx.r_blk;
 
                 if (cdecl.arity) |d_arity| {
-                    assert(!a.isGeneric(program));
                     var type_args = @TypeOf(c.args).init(null);
                     for (c.args.constSlice()) |arg|
                         type_args.append(try arg.resolveTypeRef(parent.scope, parent.arity, program)) catch unreachable;
-                    var ungenericified = try d_arity.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false);
+                    var ungenericified = d_arity;
+                    if (ctx.r_blk) ungenericified.reverse();
+                    ungenericified = try ungenericified.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false, false);
                     const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
                         if (ungenericified.eqExact(an.node.Decl.arity.?))
                             break i;
@@ -508,23 +577,25 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (var_ind) |ind|
                         c.node = cdecl.variations.items[ind];
 
-                    // if (mem.eql(u8, parent.name, "Vector/append") and
-                    //     mem.eql(u8, cdecl.name, "->"))
-                    // {
-                    //     const rt = ungenericified.stack.last().?;
-                    //     if (var_ind == null)
-                    //         std.log.info("{} variant (rt {}) created for {s}", .{
-                    //             c.variant,
-                    //             TypeFmt.from(rt, program),
-                    //             AnalysisFmt.from(a, program),
-                    //         })
-                    //     else
-                    //         std.log.info("{} variant (rt {}) used for {s}", .{
-                    //             c.variant,
-                    //             TypeFmt.from(rt, program),
-                    //             AnalysisFmt.from(a, program),
-                    //         });
-                    // }
+                    //if (mem.eql(u8, cdecl.name, "swap")) // and
+                    ////mem.eql(u8, cdecl.name, "->"))
+                    //{
+                    //    //const rt = ungenericified.stack.last().?;
+                    //    if (var_ind == null)
+                    //        std.log.info("var\t ({s}) ->> {s}", .{
+                    //            //c.variant,
+                    //            //TypeFmt.from(rt, program),
+                    //            AnalysisFmt.from(&ungenericified, program),
+                    //            AnalysisFmt.from(a, program),
+                    //        })
+                    //    else
+                    //        std.log.info("var\t ({s}) ->  {s}", .{
+                    //            //c.variant,
+                    //            //TypeFmt.from(rt, program),
+                    //            AnalysisFmt.from(&ungenericified, program),
+                    //            AnalysisFmt.from(a, program),
+                    //        });
+                    //}
 
                     if (var_ind == null) {
                         const newdef_ = d.deepclone(null, program);
@@ -537,12 +608,18 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         newdef.node.Decl.arity = ungenericified;
 
                         var ab = BlockAnalysis{};
-                        const end = ungenericified.args.len - c.args.len;
-                        for (ungenericified.args.constSlice()[0..end]) |arg|
-                            ab.stack.append(arg) catch unreachable;
+                        if (ctx.r_blk) {
+                            const end = ungenericified.rargs.len - c.args.len;
+                            for (ungenericified.rargs.constSlice()[0..end]) |arg|
+                                ab.rstack.append(arg) catch unreachable;
+                        } else {
+                            const end = ungenericified.args.len - c.args.len;
+                            for (ungenericified.args.constSlice()[0..end]) |arg|
+                                ab.stack.append(arg) catch unreachable;
+                        }
                         newdef.node.Decl.arity = ungenericified;
                         newdef.node.Decl.calls += 1;
-                        _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab);
+                        _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
                         newdef.node.Decl.is_analysed = true;
                     }
 
@@ -556,7 +633,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     try ungenericified.mergeInto(a, program, node.srcloc);
                 } else {
                     if (!cdecl.is_analysed) {
-                        _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis);
+                        _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis, .{ .r_blk = ctx.r_blk });
                         cdecl.is_analysed = true;
                     }
                     if (cdecl.analysis.isGeneric(program)) {
@@ -571,11 +648,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 switch (l.loop) {
                     .Until => |*u| {
                         // std.log.info("{s}_{}: until: a: {}", .{ parent.name, parent.variant, a });
-                        _ = try analyseBlock(program, parent, l.body, a);
+                        _ = try analyseBlock(program, parent, l.body, a, ctx);
                         // std.log.info("{s}_{}: until: b: {}", .{ parent.name, parent.variant, a });
                         const t = a.stack.last().?;
                         a.stack.append(t) catch unreachable;
-                        _ = try analyseBlock(program, parent, u.cond, a);
+                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
                         assert(a.stack.last().? == .Bool);
                         _ = a.stack.pop() catch unreachable;
                         if (t.bits(program)) |b| {
@@ -586,7 +663,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         const oldlen = a.stack.len;
                         const t = a.stack.last().?;
                         a.stack.append(t) catch unreachable;
-                        _ = try analyseBlock(program, parent, u.cond, a);
+                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
                         assert(a.stack.last().? == .Bool);
                         assert(a.stack.len == oldlen + 1);
                         _ = a.stack.pop() catch unreachable;
@@ -594,7 +671,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             u.cond_prep = if (b == 16) .DupShort else .Dup;
                         }
 
-                        _ = try analyseBlock(program, parent, l.body, a);
+                        _ = try analyseBlock(program, parent, l.body, a, ctx);
                     },
                 }
             },
@@ -604,12 +681,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 try whena.mergeInto(a, program, node.srcloc);
 
                 var ya = a.*;
-                const ya_r = (try analyseBlock(program, parent, w.yup, &ya)).early_return;
+                const ya_r = (try analyseBlock(program, parent, w.yup, &ya, ctx)).early_return;
 
                 var na_r = false;
                 var na = a.*;
                 if (w.nah) |n|
-                    if ((try analyseBlock(program, parent, n, &na)).early_return) {
+                    if ((try analyseBlock(program, parent, n, &na, ctx)).early_return) {
                         na_r = true;
                     };
 
@@ -638,17 +715,21 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Asm => |*i| {
                 // std.log.info("merging asm into main", .{});
-                try analyseAsm(i, a, program).mergeInto(a, program, node.srcloc);
+                try analyseAsm(i, a, ctx, program).mergeInto(a, program, node.srcloc);
             },
-            .Value => |v| switch (v.typ) {
-                // .StaticPtr => |ind| a.stack.append(
-                //     program.statics.items[ind].type.ptrize16(program),
-                // ) catch unreachable,
-                .StaticPtr => |ind| a.stack.append((TypeInfo{ .Array = .{
-                    .typ = program.btype(program.statics.items[ind].type),
-                    .count = @intCast(program.statics.items[ind].count),
-                } }).ptrize16(program)) catch unreachable,
-                else => a.stack.append(v.typ) catch unreachable,
+            .Value => |*v| {
+                const stk = if (ctx.r_blk) &a.rstack else &a.stack;
+                v.ret = ctx.r_blk;
+                switch (v.val.typ) {
+                    // .StaticPtr => |ind| a.stack.append(
+                    //     program.statics.items[ind].type.ptrize16(program),
+                    // ) catch unreachable,
+                    .StaticPtr => |ind| stk.append((TypeInfo{ .Array = .{
+                        .typ = program.btype(program.statics.items[ind].type),
+                        .count = @intCast(program.statics.items[ind].count),
+                    } }).ptrize16(program)) catch unreachable,
+                    else => stk.append(v.val.typ) catch unreachable,
+                }
             },
             .VDecl => |*vd| {
                 parent.locals.slice()[vd.lind].rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program);
@@ -998,7 +1079,7 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
 
             assert(!utest.is_analysed);
             utest.is_analysed = true;
-            _ = try analyseBlock(program, utest, utest.body, &utest.analysis);
+            _ = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
         };
     } else {
         const entrypoint = &program.global_scope.findDeclAny("main").?.node.Decl;
@@ -1006,7 +1087,7 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
 
         assert(!entrypoint.is_analysed);
         entrypoint.is_analysed = true;
-        _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis);
+        _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis, .{});
     }
 
     try postProcess(program);

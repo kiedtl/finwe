@@ -240,7 +240,7 @@ pub const VM = struct {
                 } else unreachable;
             },
             .StdoutShouldEq => |v| {
-                defer self.captured_stdout.shrinkRetainingCapacity(0);
+                defer self.captured_stdout.shrinkAndFree(0);
                 if (self.captured_stdout.items.len != v.items.len)
                     try _failTest(stderr, "Unexpected stdout output (len: {} vs {})", .{
                         v.items.len, self.captured_stdout.items.len,
@@ -293,7 +293,7 @@ pub const VM = struct {
                 _printHappyPercent(stderr);
                 stderr.print("\x1b[32m= \x1b[mEnd stdout =\n", .{}) catch unreachable;
                 stderr.print("\n", .{}) catch unreachable;
-                self.captured_stdout.shrinkRetainingCapacity(0);
+                self.captured_stdout.shrinkAndFree(0);
             }
 
             if (self.captured_stderr.items.len > 0) {
@@ -302,7 +302,7 @@ pub const VM = struct {
                 _printHappyPercent(stderr);
                 stderr.print("\x1b[32m= \x1b[mEnd stderr =\n", .{}) catch unreachable;
                 stderr.print("\n", .{}) catch unreachable;
-                self.captured_stderr.shrinkRetainingCapacity(0);
+                self.captured_stderr.shrinkAndFree(0);
             }
         }
 
