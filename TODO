@@ -31,11 +31,11 @@ x Metadata
 - Fixed-point
   - Printing
 - Shadowcaster
-- Enums
 x Refactoring
   x Scopes
   x Explicit main function
   x Decls within decls
+- Enums
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
