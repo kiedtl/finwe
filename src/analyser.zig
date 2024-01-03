@@ -486,7 +486,11 @@ const AnalyserInfo = struct {
 
 const Ctx = struct {
     r_blk: bool = false,
+
     // wild_blk: bool = false,
+
+    conditional: bool = false,
+    loop: bool = false,
 };
 
 fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis, ctx: Ctx) ErrorSet!AnalyserInfo {
@@ -646,14 +650,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Loop => |*l| {
+                var nctx = ctx;
+                nctx.loop = true;
+
                 switch (l.loop) {
                     .Until => |*u| {
-                        // std.log.info("{s}_{}: until: a: {}", .{ parent.name, parent.variant, a });
-                        _ = try analyseBlock(program, parent, l.body, a, ctx);
-                        // std.log.info("{s}_{}: until: b: {}", .{ parent.name, parent.variant, a });
+                        _ = try analyseBlock(program, parent, l.body, a, nctx);
                         const t = a.stack.last().?;
                         a.stack.append(t) catch unreachable;
-                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
+                        _ = try analyseBlock(program, parent, u.cond, a, nctx);
                         assert(a.stack.last().? == .Bool);
                         _ = a.stack.pop() catch unreachable;
                         if (t.bits(program)) |b| {
@@ -664,7 +669,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         const oldlen = a.stack.len;
                         const t = a.stack.last().?;
                         a.stack.append(t) catch unreachable;
-                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
+                        _ = try analyseBlock(program, parent, u.cond, a, nctx);
                         assert(a.stack.last().? == .Bool);
                         assert(a.stack.len == oldlen + 1);
                         _ = a.stack.pop() catch unreachable;
@@ -672,22 +677,25 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             u.cond_prep = if (b == 16) .DupShort else .Dup;
                         }
 
-                        _ = try analyseBlock(program, parent, l.body, a, ctx);
+                        _ = try analyseBlock(program, parent, l.body, a, nctx);
                     },
                 }
             },
             .When => |w| {
+                var nctx = ctx;
+                nctx.conditional = true;
+
                 var whena = BlockAnalysis{};
                 whena.args.append(.Bool) catch unreachable;
                 try whena.mergeInto(a, program, node.srcloc);
 
                 var ya = a.*;
-                const ya_r = (try analyseBlock(program, parent, w.yup, &ya, ctx)).early_return;
+                const ya_r = (try analyseBlock(program, parent, w.yup, &ya, nctx)).early_return;
 
                 var na_r = false;
                 var na = a.*;
                 if (w.nah) |n|
-                    if ((try analyseBlock(program, parent, n, &na, ctx)).early_return) {
+                    if ((try analyseBlock(program, parent, n, &na, nctx)).early_return) {
                         na_r = true;
                     };
 
@@ -870,7 +878,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Breakpoint => |*brk| {
+                brk.must_execute = !ctx.loop and !ctx.conditional;
+                brk.parent_test = parent;
+
                 switch (brk.type) {
+                    .RCheckpoint => unreachable, // added by analyser only
                     .StdoutShouldEq => {},
                     .TosShouldNeqSos, .TosShouldEqSos => {
                         const tos = a.stack.pop() catch {
@@ -1062,6 +1074,17 @@ pub fn postProcess(self: *Program) Error!void {
     for (self.defs.items) |def|
         if (def.node.Decl.calls > 0)
             try _S.walkNodes(self, def, def.node.Decl.body);
+
+    for (self.defs.items) |def|
+        if (def.node.Decl.is_test)
+            def.node.Decl.body.append(.{
+                .node = .{ .Breakpoint = .{
+                    .type = .RCheckpoint,
+                    .parent_test = &def.node.Decl,
+                    .must_execute = true,
+                } },
+                .srcloc = def.srcloc,
+            }) catch unreachable;
 }
 
 pub fn analyse(program: *Program, tests: bool) ErrorSet!void {

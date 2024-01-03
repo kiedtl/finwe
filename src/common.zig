@@ -1085,8 +1085,14 @@ pub const ASTNode = struct {
 
 pub const Breakpoint = struct {
     type: Type,
+    must_execute: bool = false,
+    parent_test: ?*ASTNode.Decl = null,
     romloc: usize = 0xFFFF,
     srcloc: Srcloc = undefined,
+
+    // context for test runner
+    // FIXME: don't modify the breakpoint data directly
+    is_executed: bool = false,
 
     pub const Type = union(enum) {
         TosShouldEq: Value,
@@ -1094,6 +1100,7 @@ pub const Breakpoint = struct {
         TosShouldNeq: Value,
         TosShouldNeqSos: TypeInfo, // tos_type
         StdoutShouldEq: String,
+        RCheckpoint,
     };
 
     pub const AList = std.ArrayList(@This());

@@ -51,6 +51,7 @@ pub const VM = struct {
     captured_stderr: std.ArrayList(u8),
 
     is_testing: bool = false,
+    is_test_done: bool = false,
     is_breakpoint: bool = false,
 
     pub fn init(program: *Program, assembled: []const Ins) VM {
@@ -181,12 +182,15 @@ pub const VM = struct {
         const sosb = (wst - @as(u8, 2)).*;
         const soss = @as(u16, @intCast((wst - @as(u8, 3)).*)) << 8 | sosb;
 
-        const breakpoint = for (program.breakpoints.items) |brk| {
+        const breakpoint = for (program.breakpoints.items) |*brk| {
             if (brk.romloc + 0x100 == pc) break brk;
         } else return; // TODO: warn about unknown breakpoints
         const btyp = breakpoint.type;
 
+        breakpoint.is_executed = true;
+
         switch (btyp) {
+            .RCheckpoint => self.is_test_done = true,
             .TosShouldEq, .TosShouldEqSos => {
                 const v: Value = switch (btyp) {
                     .TosShouldEqSos => |t| if (t.bits(program) == 16)
@@ -251,6 +255,22 @@ pub const VM = struct {
         }
     }
 
+    fn _finalCheck(self: *VM, cur_test: *const ASTNode, stderr: anytype, program: *Program) !void {
+        if (!self.is_test_done)
+            try _failTest(stderr, "Test never returned!", .{}, cur_test.romloc, cur_test.srcloc);
+
+        for (program.breakpoints.items) |brk| {
+            if (brk.parent_test.? == &cur_test.node.Decl)
+                if (brk.must_execute and !brk.is_executed)
+                    if (brk.type == .RCheckpoint)
+                        try _failTest(stderr, "Test never returned (test harness bug, should've caught earlier)!", .{}, brk.romloc, brk.srcloc)
+                    else
+                        try _failTest(stderr, "Assertion never checked (early return?)", .{}, brk.romloc, brk.srcloc);
+        }
+
+        self.is_test_done = false;
+    }
+
     pub fn executeTests(self: *VM) void {
         const stderr = std.io.getStdErr().writer();
 
@@ -283,7 +303,13 @@ pub const VM = struct {
                     self.is_breakpoint = false;
                     _handleBreak(self, pc, stderr, self.program) catch continue :test_loop;
                 }
+
+                if (self.is_test_done) {
+                    break;
+                }
             }
+
+            _finalCheck(self, decl_node, stderr, self.program) catch continue :test_loop;
 
             stderr.print("\x1b[2D\x1b[36mOK\x1b[m\n", .{}) catch unreachable;
 
