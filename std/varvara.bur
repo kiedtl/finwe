@@ -25,9 +25,9 @@
 	[error U8]         // stderr
 )
 
+(word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
 (word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
 (word deo   ((AnySz $0) AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
-(word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
 (word emit  (             Any8 --              ) [ .Console/write deo       ])
 (word nl    (                  --              ) [ 0x0a emit                ])
 

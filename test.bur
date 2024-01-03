@@ -78,5 +78,24 @@
 
 ])
 
+(test lang_inline [
+	#inline (word a ( -- U8 ) [ 1 ])
+	a (should eq 1)
+
+	//#inline (word b ( U16 -- U16 U16 ) [ 1s swap ])
+	//2s b (should eq 2s) (should eq 1s)
+	//(r [ 2s b ]) (asm "sr" .Op/Osth) (asm "sr" .Op/Osth)
+		//(should eq 2s) (should eq 1s)
+])
+
+(test lang_r_blk [
+	(word a (         -- U8 U8 U8           ) [ 1 2 3             ])
+	(word b (U8 U8 U8 -- U8       |    -- U8) [ move + (r copy) * ])
+	(word c (U8       -- U8       | U8 -- U8) [ (r copy) *        ])
+
+	(r [a b c]) (should eq 3)
+	(r move)    (should eq 27)
+])
+
 (word main [
 ])

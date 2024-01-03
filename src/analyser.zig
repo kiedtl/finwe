@@ -608,15 +608,16 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         newdef.node.Decl.arity = ungenericified;
 
                         var ab = BlockAnalysis{};
-                        if (ctx.r_blk) {
-                            const end = ungenericified.rargs.len - c.args.len;
-                            for (ungenericified.rargs.constSlice()[0..end]) |arg|
-                                ab.rstack.append(arg) catch unreachable;
-                        } else {
-                            const end = ungenericified.args.len - c.args.len;
-                            for (ungenericified.args.constSlice()[0..end]) |arg|
-                                ab.stack.append(arg) catch unreachable;
-                        }
+                        const sr = if (ctx.r_blk) c.args.len else 0;
+                        const sn = if (ctx.r_blk) 0 else c.args.len;
+
+                        const end1 = ungenericified.rargs.len - sr;
+                        for (ungenericified.rargs.constSlice()[0..end1]) |arg|
+                            ab.rstack.append(arg) catch unreachable;
+                        const end2 = ungenericified.args.len - sn;
+                        for (ungenericified.args.constSlice()[0..end2]) |arg|
+                            ab.stack.append(arg) catch unreachable;
+
                         newdef.node.Decl.arity = ungenericified;
                         newdef.node.Decl.calls += 1;
                         _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });

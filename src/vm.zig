@@ -314,7 +314,9 @@ pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     const self = @fieldParentPtr(VM, "uxn", u);
     if (self.is_testing) {
         switch (addr) {
-            0x0e => self.is_breakpoint = true,
+            0x0e => if (u.*.dev[0x0e] == 0x0b) {
+                self.is_breakpoint = true;
+            } else base_emu_deo(u, addr),
             0x18 => self.captured_stdout.append(u.*.dev[0x18]) catch unreachable,
             0x19 => self.captured_stderr.append(u.*.dev[0x19]) catch unreachable,
             else => base_emu_deo(u, addr),

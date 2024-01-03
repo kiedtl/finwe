@@ -125,7 +125,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             },
         },
         .Breakpoint => |brk| {
-            try emitIMM(buf, node, WK_STACK, false, .Olit, 0x00);
+            try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0b);
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0e);
             try emit(buf, node, WK_STACK, false, false, .Odeo);
             program.breakpoints.append(brk) catch unreachable;

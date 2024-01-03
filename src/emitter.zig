@@ -42,11 +42,11 @@ pub fn spitout(writer: anytype, program: []const Ins) !void {
                 @panic("TODO");
             },
         };
-        if (ins.short)
+        if (ins.short and ins.op != .Oraw)
             byte |= 0x20;
-        if (ins.stack == RT_STACK)
+        if (ins.stack == RT_STACK and ins.op != .Oraw)
             byte |= 0x40;
-        if (ins.keep)
+        if (ins.keep and ins.op != .Oraw)
             byte |= 0x80;
         try writer.writeByte(byte);
     }
