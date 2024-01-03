@@ -40,6 +40,19 @@
 	(when [ not ])
 ])
 
+// Ported from XXIIVV
+// https://wiki.xxiivv.com/site/uxntal_signed.html
+(word / ($0 AnySigned -- $0) [
+	(word abssign ( AnySigned -- (USz $0) (USz $0) ) [
+		dup neg? (as (USz $0)) 0xfffes (as (USz $0)) * 1+
+		copy * (r move)
+	])
+
+	abssign move swap
+	abssign move swap
+	/ (r [* move]) * (as $0)
+])
+
 (word band  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oand)       ])
 (word bor   ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oora)       ])
 (word beor  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeor)       ])
@@ -70,6 +83,9 @@
 (word signb (            I8 -- U8           ) [ (as U8) 0xf0 band        ])
 (word sign  (            I8 -- U8           ) [ signb             7 bshr ])
 (word sign  (           I16 -- U8           ) [ (split I8 U8) drop sign  ])
+// TODO: (max <type>) builtin
+(word neg?  (            I8 -- Bool         ) [    0x7f >                ])
+(word neg?  (           I16 -- Bool         ) [ 0x7fffs >                ])
 
 (test <_signed [
 	  -1i    1i < (should eq t)
