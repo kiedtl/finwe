@@ -25,6 +25,19 @@
 	[error U8]         // stderr
 )
 
+(device Screen 0x20
+	[vector   @U16] // @(Fn (--))
+	[width     U16]
+	[height    U16]
+	[auto     Bool]
+	[_unused    U8]
+	[x         U16]
+	[y         U16]
+	[addr      @U8]
+	[pixel      U8]
+	[sprite     U8]
+)
+
 (word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
 (word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
 (word deo   ((AnySz $0) AnyDev --              ) [ (asm "g" .Op/Odeo)       ])

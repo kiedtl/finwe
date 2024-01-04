@@ -211,6 +211,12 @@ pub const Parser = struct {
                             }) };
                         } else if (@field(TypeInfo.Expr.Tag, field.name) == .Array) {
                             @panic("Must use []/@[] syntax for arrays");
+                        } else if (@field(TypeInfo.Expr.Tag, field.name) == .Fn) {
+                            const new = self.alloc.create(BlockAnalysis) catch unreachable;
+                            new.* = try self.parseArity(&lst.items[1]);
+                            r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, .{
+                                .arity = new,
+                            }) };
                         } else {
                             const arg = self.program.btype(try self.parseType(&lst.items[1]));
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
@@ -269,10 +275,10 @@ pub const Parser = struct {
 
                 const name = try std.fmt.allocPrint(
                     common.gpa.allocator(),
-                    "anon_{s}:{}:{}_{}",
+                    "anon_{x:0>6}_{s}:{}:{}",
                     .{
-                        node.location.file,   node.location.line,
-                        node.location.column, self.program.rng.random().int(u8),
+                        self.program.rng.random().int(u16), node.location.file,
+                        node.location.line,                 node.location.column,
                     },
                 );
 

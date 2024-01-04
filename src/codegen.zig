@@ -77,7 +77,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
             .StaticPtr => {},
             else => unreachable,
         },
-        .Here, .VRef, .VDeref => {},
+        .Quote, .Here, .VRef, .VDeref => {},
         else => unreachable,
     }
 }
@@ -212,11 +212,9 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .RBlock => |r| try genNodeList(program, buf, r.body, ual),
-        .Quote => {
-            @panic("unimplemented");
-            // (TODO: shouldn't be gen'ing quotes, they need to be made decls
-            // by parser code)
-            //
+        .Quote => |q| {
+            try emitUA(buf, ual, q.def.node.Decl.name, node);
+
             // const quote_jump_addr = buf.items.len;
             // try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
             // const quote_begin_addr = @intCast(buf.items.len);
@@ -422,6 +420,15 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             assert(v.val.typ == .StaticPtr);
             const static = program.statics.items[v.val.typ.StaticPtr];
             reemitAddr16(&buf, ua.loc, static.romloc);
+        },
+        .Quote => |q| {
+            if (q.def.romloc == 0xFFFF) {
+                std.log.err("[Bug] codegen: lambda {s} was never generated", .{
+                    q.def.node.Decl.name,
+                });
+                unreachable;
+            }
+            reemitAddr16(&buf, ua.loc, q.def.romloc);
         },
         .Call => |c| {
             const node = c.node.?;

@@ -74,6 +74,7 @@ pub const TypeFmt = struct {
             } else {
                 try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
             },
+            .Fn => |n| try writer.print("Fn{s}", .{analyser.AnalysisFmt.from(n.arity, self.prog)}),
             else => try writer.print("{s}", .{s}),
         }
     }
@@ -141,7 +142,7 @@ pub const TypeInfo = union(enum) {
         arity: *analyser.BlockAnalysis,
 
         pub fn eq(a: Fn, b: Fn) bool {
-            return a.eq(b);
+            return a.arity.eqExact(b.arity);
         }
     };
 
@@ -198,8 +199,13 @@ pub const TypeInfo = union(enum) {
         Array: Array,
         FieldType: FieldType,
         Omit: Omit,
+        Fn: Expr.Fn,
 
         pub const Tag = meta.Tag(@This());
+
+        pub const Fn = struct {
+            arity: *analyser.BlockAnalysis,
+        };
 
         pub const Omit = struct {
             of: usize,
@@ -242,6 +248,7 @@ pub const TypeInfo = union(enum) {
                 .Child => |ar| ar == b.Child,
                 .Omit => |omit| omit.of == b.Omit.of and
                     mem.eql(u8, omit.field, b.Omit.field),
+                .Fn => |func| func.arity.eqExact(b.Fn.arity),
             };
         }
 
@@ -284,6 +291,7 @@ pub const TypeInfo = union(enum) {
                     .of = program.btype(program.ztype(omit.of).resolveGeneric(with, program)),
                     .field = omit.field,
                 } },
+                .Fn => .{ .Fn = .{ .arity = with.Fn.arity } },
             };
         }
 
@@ -307,6 +315,7 @@ pub const TypeInfo = union(enum) {
                 },
                 .Child => |ar| program.ztype(ar).getTypeRefs(buf, program),
                 .Omit => |ar| program.ztype(ar.of).getTypeRefs(buf, program),
+                .Fn => |func| func.arity.getTypeRefs(buf, program),
             }
         }
 
@@ -329,6 +338,7 @@ pub const TypeInfo = union(enum) {
                 .AnySet, .AnyOf => true,
                 .Child => |ar| program.ztype(ar).isGeneric(program),
                 .Omit => |ar| program.ztype(ar.of).isGeneric(program),
+                .Fn => |func| func.arity.isGeneric(program),
             };
         }
 
@@ -509,6 +519,16 @@ pub const TypeInfo = union(enum) {
                     program.types.append(new) catch unreachable;
                     break :b .{ .Struct = program.types.items.len - 1 };
                 },
+                .Fn => |func| b: {
+                    for (func.arity.args.constSlice()) |item|
+                        if (item == .Type) @panic("Cannot have type args here");
+                    for (func.arity.rargs.constSlice()) |item|
+                        if (item == .Type) @panic("Cannot have type args here");
+
+                    const new = gpa.allocator().create(analyser.BlockAnalysis) catch unreachable;
+                    new.* = try func.arity.resolveTypeRefs(scope, arity, program);
+                    break :b .{ .Fn = .{ .arity = new } };
+                },
             };
         }
     };
@@ -652,9 +672,9 @@ pub const TypeInfo = union(enum) {
         };
     }
 
-    pub fn doesInclude(self: @This(), other: @This(), program: *const Program) bool {
+    pub fn doesInclude(self: @This(), other: @This(), program: *Program) bool {
         switch (self) {
-            .EnumLit, .AnySet, .AnyOf => {},
+            .Fn, .EnumLit, .AnySet, .AnyOf => {},
             else => if (@as(Tag, self) == @as(Tag, other)) return true,
         }
         return switch (self) {
@@ -678,6 +698,8 @@ pub const TypeInfo = union(enum) {
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
             .Char8 => other == .U8,
             .U8 => other == .Char8,
+            .Fn => |func| other == .Fn and if (func.arity.conformGenericTo(&[_]TypeInfo{}, null, other.Fn.arity, null, program, true, false)) |_| true else |_| false,
+
             else => false, // self == other case already handled earlier
         };
     }

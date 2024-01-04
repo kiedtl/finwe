@@ -1,5 +1,27 @@
 (typealias AnySigned (AnySet I8 I16))
 
+#inline (word do  [ (asm "s" .Op/Ojsr)                                    ])
+#inline (word dip [ swap move do (r move)                                 ])
+#inline (word sip [ swap-bs copy swap-sb do (r move)                      ])
+//#inline (word bi  [ [sip] dip do                                        ])
+//#inline (word bi* [ [dip] dip do                                        ])
+//#inline (word bi& [ dup bi*                                             ])
+
+(test do [
+	[ (-- U8 U8 U8) 1 2 3 ] do
+	(should eq 3) (should eq 2) (should eq 1)
+])
+
+(test sip [
+	12 [ (U8 -- U8) 2 * ] sip
+	(should eq 12) (should eq 24)
+])
+
+//(test bi& [
+//	2 8 [ dup * ] bi&
+//	(should eq 64) (should eq 4)
+//])
+
 #inline (word copy (    Any -- $0 | -- $0   ) [ (asm "kg" .Op/Osth)      ])
 #inline (word move (    Any --    | -- $0   ) [ (asm "g" .Op/Osth)       ])
 
@@ -157,10 +179,6 @@
 	(wild (--) [ (asm "rs" .Op/Osth) ]) // sb0 sb1 bt sa0 sa1
 ])
 
-(test rot-sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
-(test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
-(test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
-
 (word over-sb (Any16 Any8 -- $1 $0 $1) [
 	0
 	(wild (--) [ (asm "s" .Op/Oovr) ])
@@ -168,11 +186,18 @@
 	(wild (--) [ (asm "" .Op/Odrop) ])
 ])
 
-(test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
-
 (word swap-sb (Any16 Any8 -- $0 $1) [
 	(wild (--) [ (asm "" .Op/Orot) ])
 	(wild (--) [ (asm "" .Op/Orot) ])
 ])
 
+(word swap-bs (Any8 Any16 -- $0 $1) [
+	(wild (--) [ (asm "" .Op/Orot) ])
+])
+
+(test rot-sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
+(test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
+(test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
+(test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
 (test swap-sb  [ 0xffabs 0xba swap-sb (should eq 0xffabs) (should eq 0xba)      ])
+(test swap-bs  [ 0xba 0xffabs swap-bs (should eq 0xba) (should eq 0xffabs)      ])
