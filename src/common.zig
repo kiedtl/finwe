@@ -107,7 +107,7 @@ pub const TypeInfo = union(enum) {
     AnySet: AnySet,
 
     StaticPtr: usize,
-    Quote,
+    Fn: Fn,
 
     Expr: Expr,
 
@@ -136,6 +136,14 @@ pub const TypeInfo = union(enum) {
         }
         try writer.print("", .{});
     }
+
+    pub const Fn = struct {
+        arity: *analyser.BlockAnalysis,
+
+        pub fn eq(a: Fn, b: Fn) bool {
+            return a.eq(b);
+        }
+    };
 
     pub const TypeRef = struct {
         n: usize,
@@ -705,7 +713,7 @@ pub const TypeInfo = union(enum) {
                 break :b if (sz <= 2) @as(u5, @intCast(sz)) * 8 else null;
             },
             // .Expr, .Quote, .AmbigEnumLit, .TypeRef => unreachable,
-            .Unresolved, .Expr, .Quote, .TypeRef => null,
+            .Unresolved, .Expr, .Fn, .TypeRef => null,
             .AmbigEnumLit => unreachable,
         };
     }
@@ -1021,7 +1029,7 @@ pub const ASTNode = struct {
     };
 
     pub const Quote = struct {
-        body: ASTNodeList,
+        def: *ASTNode,
     };
 
     fn _deepcloneASTList(lst: ASTNodeList, parent: ?*Decl, program: *Program) ASTNodeList {
@@ -1061,7 +1069,11 @@ pub const ASTNode = struct {
                 new.Decl.variations = ASTNodePtrList.init(gpa.allocator());
                 new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program);
             },
-            .Quote => new.Quote.body = _deepcloneASTList(new.Quote.body, parent, program),
+            .Quote => |q| {
+                const newdef = deepclone(q.def.*, parent, program);
+                new.Quote.def = gpa.allocator().create(ASTNode) catch unreachable;
+                new.Quote.def.* = newdef;
+            },
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .RBlock => new.RBlock.body = _deepcloneASTList(new.RBlock.body, parent, program),
             .Import => @panic("excuse me what"),
@@ -1299,7 +1311,7 @@ pub const Program = struct {
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
             .RBlock => |b| try walkNodes(self, parent, b.body, ctx, func),
-            .Quote => |b| try walkNodes(self, parent, b.body, ctx, func),
+            .Quote => |b| try walkNode(self, parent, b.def, ctx, func),
             .Loop => |d| {
                 switch (d.loop) {
                     .Until => |u| try walkNodes(self, parent, u.cond, ctx, func),

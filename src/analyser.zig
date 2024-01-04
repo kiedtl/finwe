@@ -753,7 +753,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     return program.aerr(error.StructNotForStack, node.srcloc);
                 a.stack.append(t) catch unreachable;
             },
-            .Quote => a.stack.append(TypeInfo.ptr16(program, .Quote, 1)) catch unreachable,
+            .Quote => |q| a.stack.append(TypeInfo.ptr16(program, .{ .Fn = .{
+                .arity = &q.def.node.Decl.arity.?,
+            } }, 1)) catch unreachable,
             // TODO: ptr8 (will require special handling in codegen -- can't
             // multiply u8 (ptr) w/ u16 (index) right?)
             //
@@ -1015,7 +1017,7 @@ pub fn postProcess(self: *Program) Error!void {
             switch (node.node) {
                 .Decl => {},
                 .Wild => |b| try walkNodes(program, parent, b.body),
-                .Quote => |b| try walkNodes(program, parent, b.body),
+                .Quote => |b| try walkNode(program, parent, b.def),
                 .Loop => |d| {
                     switch (d.loop) {
                         .Until => |u| try walkNodes(program, parent, u.cond),

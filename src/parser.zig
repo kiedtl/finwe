@@ -249,10 +249,43 @@ pub const Parser = struct {
             .List => |l| {
                 return self.parseList(l.body.items, l.metadata.items, p_scope);
             },
-            .Quote => |q| blk: {
-                const body = try self.parseStatements(q.items, p_scope);
-                break :blk ASTNode{
-                    .node = .{ .Quote = .{ .body = body } },
+            .Quote => |q| b: {
+                const scope = Scope.create(p_scope);
+
+                var arity: BlockAnalysis = undefined;
+                var body: ASTNodeList = undefined;
+
+                if (q.items.len == 0) {} else if (q.items.len == 1 and q.items[0].node == .List) {
+                    if (self.parseArity(&q.items[0])) |ar| {
+                        arity = ar;
+                        body = try self.parseStatements(q.items[1..], scope);
+                    } else |_| {
+                        @panic("need arity for quotes");
+                    }
+                } else {
+                    arity = try self.parseArity(&q.items[0]);
+                    body = try self.parseStatements(q.items[1..], scope);
+                }
+
+                const name = try std.fmt.allocPrint(
+                    common.gpa.allocator(),
+                    "anon_{s}:{}:{}_{}",
+                    .{
+                        node.location.file,   node.location.line,
+                        node.location.column, self.program.rng.random().int(u8),
+                    },
+                );
+
+                const dnode = common.gpa.allocator().create(ASTNode) catch unreachable;
+                dnode.* = ASTNode{ .node = .{ .Decl = .{
+                    .name = name,
+                    .variations = ASTNodePtrList.init(self.alloc),
+                    .arity = arity,
+                    .body = body,
+                    .scope = scope,
+                } }, .srcloc = node.location };
+                break :b ASTNode{
+                    .node = .{ .Quote = .{ .def = dnode } },
                     .srcloc = node.location,
                 };
             },
@@ -354,8 +387,6 @@ pub const Parser = struct {
                 try self.validateListLength(fielddef.items, 2);
                 const fieldname = try self.expectNode(.Keyword, &fielddef.items[0]);
                 const fieldtype = try self.parseType(&fielddef.items[1]);
-                if (fieldtype.bits(self.program) == null)
-                    return self.program.perr(error.InvalidFieldType, node.location);
                 fields.append(.{
                     .name = fieldname,
                     .type = fieldtype,
@@ -903,7 +934,10 @@ pub const Parser = struct {
                     .Device => |devdef| {
                         var fields = UserType.DeviceField.AList.init(parser.alloc);
                         for (devdef.fields.items) |field| {
-                            fields.append(.{ .name = field.name, .type = field.type }) catch unreachable;
+                            const f = try field.type.resolveTypeRef(scope, null, self);
+                            if (f.bits(self) == null)
+                                return self.perr(error.InvalidFieldType, node.srcloc);
+                            fields.append(.{ .name = field.name, .type = f }) catch unreachable;
                         }
                         self.types.append(UserType{
                             .node = node,
