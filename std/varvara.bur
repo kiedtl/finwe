@@ -14,28 +14,28 @@
 )
 
 (device Console 0x10
-	[vector U16] //vector (Fn u8 --)]
-	[read U8]
-	[exec U8]          // ? (not documented)
-	[mode U8]          // ? (not documented)
-	[dead U8]          // ? (not documented)
-	[exit U8]          // ? (not documented)
-	[type U8] //type ConsoleType] // enum
-	[write U8]         // stdout
-	[error U8]         // stderr
+	[vector @(Fn ( U8 -- ))]
+	[read                U8]
+	[exec                U8]    // ? (not documented)
+	[mode                U8]    // ? (not documented)
+	[dead                U8]    // ? (not documented)
+	[exit                U8]    // ? (not documented)
+	[type                U8]//type ConsoleType] // enum
+	[write               U8]    // stdout
+	[error               U8]    // stderr
 )
 
 (device Screen 0x20
-	[vector   @U16] // @(Fn (--))
-	[width     U16]
-	[height    U16]
-	[auto     Bool]
-	[_unused    U8]
-	[x         U16]
-	[y         U16]
-	[addr      @U8]
-	[pixel      U8]
-	[sprite     U8]
+	[vector  @(Fn (--))]
+	[width          U16]
+	[height         U16]
+	[auto          Bool]
+	[_unused         U8]
+	[x              U16]
+	[y              U16]
+	[addr           @U8]
+	[pixel           U8]
+	[sprite          U8]
 )
 
 (word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
