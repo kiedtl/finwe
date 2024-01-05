@@ -194,7 +194,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emitUA(buf, ual, v.name, node);
             // LDA instruction
             // Could do this in emitUA, but then we'd have to pass program
-            const t = program.statics.items[v.sind.?].type;
+            const t = program.statics.items[v.localptr.?.ind.?].type;
             const is_short = t.bits(program).? == 16;
             try emit(buf, null, 0, false, is_short, .Olda);
         },
@@ -407,12 +407,12 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     for (ual.items) |ua| switch (ua.node.node) {
         .Here => reemitAddr16(&buf, ua.loc, here),
         .VRef => |v| {
-            const loc = program.statics.items[v.sind.?].romloc;
+            const loc = program.statics.items[v.localptr.?.ind.?].romloc;
             // std.log.info("Static @ {s}: {x}", .{ v.name, loc + 0x100 });
             reemitAddr16(&buf, ua.loc, loc);
         },
         .VDeref => |v| {
-            const loc = program.statics.items[v.sind.?].romloc;
+            const loc = program.statics.items[v.localptr.?.ind.?].romloc;
             // std.log.info("Static $ {s}: {x}", .{ v.name, loc + 0x100 });
             reemitAddr16(&buf, ua.loc, loc);
         },

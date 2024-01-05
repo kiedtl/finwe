@@ -951,20 +951,18 @@ pub const ASTNode = struct {
 
     pub const VDecl = struct {
         name: []const u8,
-        lind: usize,
+        localptr: ?*Local,
         utyp: TypeInfo,
     };
 
     pub const VRef = struct {
         name: []const u8,
-        lind: ?usize = null, // Into decl.locals
-        sind: ?usize = null, // Into program.statics, set in analysis postProcess
+        localptr: ?*Local = null,
     };
 
     pub const VDeref = struct {
         name: []const u8,
-        lind: ?usize = null, // Into decl.locals
-        sind: ?usize = null, // Into program.statics, set in analysis postProcess
+        localptr: ?*Local = null,
     };
 
     pub const Wild = struct {
@@ -1033,7 +1031,6 @@ pub const ASTNode = struct {
         body: ASTNodeList,
         variant: usize = 0,
         calls: usize = 0,
-        locals: StackBuffer(Local, 8) = StackBuffer(Local, 8).init(null),
         scope: *Scope,
         is_private: bool = false,
         is_method: ?TypeInfo = null,
@@ -1042,12 +1039,6 @@ pub const ASTNode = struct {
         is_inline: Inline = .Auto,
 
         pub const Inline = enum { Auto, Always, Never };
-
-        pub const Local = struct {
-            name: []const u8,
-            ind: usize,
-            rtyp: TypeInfo,
-        };
     };
 
     pub const Quote = struct {
@@ -1090,6 +1081,7 @@ pub const ASTNode = struct {
             .Decl => {
                 new.Decl.variations = ASTNodePtrList.init(gpa.allocator());
                 new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program);
+                new.Decl.scope = new.Decl.scope.shallowclone();
             },
             .Quote => |q| {
                 const newdef = deepclone(q.def.*, parent, program);
@@ -1156,6 +1148,17 @@ pub const Error = struct {
     pub const AList = std.ArrayList(@This());
 };
 
+pub const Local = struct {
+    __prev: ?*@This() = null,
+    __next: ?*@This() = null,
+
+    name: []const u8,
+    ind: ?usize = null,
+    rtyp: TypeInfo,
+
+    pub const List = LinkedList(@This());
+};
+
 pub const Static = struct {
     type: TypeInfo,
     count: usize,
@@ -1170,18 +1173,29 @@ pub const Static = struct {
 
 pub const Scope = struct {
     defs: ASTNodePtrList,
-    macs: ASTNodePtrList,
+    locals: Local.List,
     imports: ASTNodePtrList,
     types: std.ArrayList(usize),
     parent: ?*Scope,
 
     pub const AList = std.ArrayList(Scope);
 
+    pub fn shallowclone(self: *Scope) *Scope {
+        const new = Scope.create(self.parent);
+        new.defs.appendSlice(self.defs.items) catch unreachable;
+        var iter = self.locals.iterator();
+        while (iter.next()) |local|
+            new.locals.append(local.*) catch unreachable;
+        new.imports.appendSlice(self.imports.items) catch unreachable;
+        new.types.appendSlice(self.types.items) catch unreachable;
+        return new;
+    }
+
     pub fn create(parent: ?*Scope) *@This() {
         const p = gpa.allocator().create(@This()) catch unreachable;
         p.* = .{
             .defs = ASTNodePtrList.init(gpa.allocator()),
-            .macs = ASTNodePtrList.init(gpa.allocator()),
+            .locals = Local.List.init(gpa.allocator()),
             .imports = ASTNodePtrList.init(gpa.allocator()),
             .types = std.ArrayList(usize).init(gpa.allocator()),
             .parent = parent,
@@ -1280,6 +1294,25 @@ pub const Scope = struct {
             }
         } else if (self.parent) |parent| b: {
             break :b parent.findType(name, p, allow_private);
+        } else null;
+    }
+
+    pub fn findLocal(self: *Scope, name: []const u8, p: *Program, allow_private: bool) ?*Local {
+        for (self.imports.items) |import| {
+            if (import.node.Import.is_defiling) {
+                if (import.node.Import.scope.findLocal(name, p, false)) |n|
+                    return n;
+            } else if (mem.indexOfScalar(u8, name, '/')) |n| {
+                if (mem.eql(u8, name[0..n], import.node.Import.name))
+                    if (import.node.Import.scope.findLocal(name[n + 1 ..], p, false)) |d|
+                        return d;
+            }
+        }
+        var iter = self.locals.iterator();
+        return while (iter.next()) |local| {
+            if (mem.eql(u8, local.name, name)) break local;
+        } else if (self.parent) |parent| b: {
+            break :b parent.findLocal(name, p, allow_private);
         } else null;
     }
 };

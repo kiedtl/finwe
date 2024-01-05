@@ -526,7 +526,7 @@ pub const Parser = struct {
                         .node = .{ .VDecl = .{
                             .name = name,
                             .utyp = ltyp,
-                            .lind = 0xFFFF,
+                            .localptr = null,
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -975,34 +975,41 @@ pub const Parser = struct {
         // Also check calls to determine what type they are.
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+                const scope = if (parent) |p| switch (p.node) {
+                    .Decl => |d| d.scope,
+                    .Import => |i| i.scope,
+                    else => unreachable,
+                } else self.global_scope;
+
                 switch (node.node) {
                     .Import => |i| if (i.is_dupe) return error._Continue,
                     .Value => |v| switch (v.val.typ) {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.val.AmbigEnumLit, node.srcloc),
                         else => {},
                     },
-                    .VDecl => |*vd| {
-                        parent.?.node.Decl.locals.append(.{
-                            .name = vd.name,
-                            .rtyp = vd.utyp,
-                            .ind = 0xFFFF,
-                        }) catch unreachable;
-                        vd.lind = parent.?.node.Decl.locals.len - 1;
-                    },
-                    .VRef => |*v| {
-                        v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
-                            if (mem.eql(u8, v.name, local.name))
-                                break i;
-                        } else return self.perr(error.UnknownLocal, node.srcloc);
-                    },
-                    .VDeref => |*v| {
-                        v.lind = for (parent.?.node.Decl.locals.constSlice(), 0..) |local, i| {
-                            if (mem.eql(u8, v.name, local.name))
-                                break i;
-                        } else return self.perr(error.UnknownLocal, node.srcloc);
-                    },
                     else => {},
                 }
+
+                // Do variables, but ONLY global scope
+                //
+                if (parent == null) switch (node.node) {
+                    .VDecl => |*vd| {
+                        scope.locals.append(.{
+                            .name = vd.name,
+                            .rtyp = try vd.utyp.resolveTypeRef(scope, null, self),
+                        }) catch unreachable;
+                        vd.localptr = scope.locals.last().?;
+                    },
+                    .VRef => |*v| {
+                        v.localptr = scope.findLocal(v.name, self, false) orelse
+                            return self.perr(error.UnknownLocal, node.srcloc);
+                    },
+                    .VDeref => |*v| {
+                        v.localptr = scope.findLocal(v.name, self, false) orelse
+                            return self.perr(error.UnknownLocal, node.srcloc);
+                    },
+                    else => {},
+                };
             }
         }.f);
     }

@@ -19,6 +19,7 @@ const VTList16 = TypeInfo.List16;
 const StackBuffer = @import("buffer.zig").StackBuffer;
 
 pub const Error = error{
+    UnknownLocal,
     NoSuchType,
     GenericNotMatching,
     TypeNotMatching,
@@ -757,14 +758,21 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .VDecl => |*vd| {
-                parent.locals.slice()[vd.lind].rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program);
+                parent.scope.locals.append(.{
+                    .name = vd.name,
+                    .rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program),
+                }) catch unreachable;
+                vd.localptr = parent.scope.locals.last().?;
             },
-            .VRef => |v| {
-                const t = parent.locals.slice()[v.lind.?].rtyp;
-                a.stack.append(t.ptrize16(program)) catch unreachable;
+            .VRef => |*v| {
+                v.localptr = parent.scope.findLocal(v.name, program, false) orelse
+                    return program.aerr(error.UnknownLocal, node.srcloc);
+                a.stack.append(v.localptr.?.rtyp.ptrize16(program)) catch unreachable;
             },
-            .VDeref => |v| {
-                const t = parent.locals.slice()[v.lind.?].rtyp;
+            .VDeref => |*v| {
+                v.localptr = parent.scope.findLocal(v.name, program, false) orelse
+                    return program.aerr(error.UnknownLocal, node.srcloc);
+                const t = v.localptr.?.rtyp;
                 if (t.size(program)) |sz| if (sz > 2)
                     return program.aerr(error.StructNotForStack, node.srcloc);
                 a.stack.append(t) catch unreachable;
@@ -1062,45 +1070,24 @@ pub fn postProcess(self: *Program) Error!void {
                     if (cond.else_branch) |branch|
                         try walkNodes(program, parent, branch);
                 },
-                .VDecl => |vd| {
-                    // FIXME: we should do all this in one shot, after before
-                    // walking over decls
-
-                    // std.log.info("{}: {s} ({x}): added static of type {} from parent {s} {s}", .{
-                    //     program.statics.items.len,
-                    //     parent.?.node.Decl.locals.slice()[vd.lind].name,
-                    //     @intFromPtr(parent.?),
-                    //     parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
-                    //     parent.?.node.Decl.name,
-                    //     parent.?.node.Decl.arity orelse BlockAnalysis{},
-                    // });
-
-                    program.statics.append(.{
-                        .type = parent.?.node.Decl.locals.slice()[vd.lind].rtyp,
-                        .count = 1,
-                        .default = .None,
-                    }) catch unreachable;
-                    parent.?.node.Decl.locals.slice()[vd.lind].ind = program.statics.items.len - 1;
-                },
-                .VRef => |*v| {
-                    v.sind = parent.?.node.Decl.locals.constSlice()[v.lind.?].ind;
-                    // std.log.info("{x}: {s}: @{s}: linked to {?}", .{
-                    //     @intFromPtr(parent.?), parent.?.node.Decl.name, v.name, v.sind,
-                    // });
-                },
-                .VDeref => |*v| {
-                    v.sind = parent.?.node.Decl.locals.constSlice()[v.lind.?].ind;
-                    // std.log.info("{x}: {s}: @{s}: linked to {?}", .{
-                    //     @intFromPtr(parent.?), parent.?.node.Decl.name, v.name, v.sind,
-                    // });
-                },
                 else => {},
             }
         }
+
+        pub fn registerLocals(decl: *ASTNode.Decl, program: *Program) !void {
+            var iter = decl.scope.locals.iterator();
+            while (iter.next()) |local| if (local.ind == null) {
+                program.statics.append(.{ .type = local.rtyp, .count = 1, .default = .None }) catch unreachable;
+                local.ind = program.statics.items.len - 1;
+            };
+        }
     };
+
     for (self.defs.items) |def|
-        if (def.node.Decl.calls > 0)
+        if (def.node.Decl.calls > 0) {
+            try _S.registerLocals(&def.node.Decl, self);
             try _S.walkNodes(self, def, def.node.Decl.body);
+        };
 
     for (self.defs.items) |def|
         if (def.node.Decl.is_test)
