@@ -783,8 +783,7 @@ pub const Parser = struct {
                 {
                     break :b try self.parseTypeDecl(ast, metadata);
                 } else {
-                    std.log.info("Unknown keyword: {s}", .{k});
-                    break :b error.UnknownKeyword;
+                    break :b self.program.perr(error.UnknownKeyword, ast[0].location);
                 }
             },
             .List => |l| try self.parseList(l.body.items, l.metadata.items, p_scope),

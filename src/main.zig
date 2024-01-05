@@ -57,7 +57,7 @@ pub fn main() anyerror!void {
         );
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
-                errors.printErrors(&program, buf);
+                errors.printErrors(&program, filename);
                 std.os.exit(1);
             } else {
                 @panic(@errorName(e));
@@ -66,7 +66,7 @@ pub fn main() anyerror!void {
 
         analyser.analyse(&program, args.args.@"test" > 0) catch |e| {
             if (program.errors.items.len > 0) {
-                errors.printErrors(&program, buf);
+                errors.printErrors(&program, filename);
                 std.os.exit(1);
             } else {
                 @panic(@errorName(e));
