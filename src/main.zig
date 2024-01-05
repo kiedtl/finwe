@@ -7,7 +7,6 @@ const errors = @import("errors.zig");
 const analyser = @import("analyser.zig");
 const codegen = @import("codegen.zig");
 const common = @import("common.zig");
-const emitter = @import("emitter.zig");
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
 const vmm = @import("vm.zig");
@@ -89,7 +88,7 @@ pub fn main() anyerror!void {
 
         if (args.args.emit != 0) {
             const stdout = std.io.getStdOut().writer();
-            try emitter.spitout(stdout, assembled.items);
+            try codegen.emitBytecode(stdout, assembled.items);
         } else if (args.args.@"test" != 0) {
             var vm = vmm.VM.init(&program, assembled.items);
             defer vm.deinit();

@@ -448,3 +448,17 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     return buf;
 }
+
+pub fn emitBytecode(writer: anytype, program: []const Ins) !void {
+    for (program) |ins| {
+        if (ins.op == .Oraw) {
+            try writer.writeByte(ins.op.Oraw);
+        } else {
+            const byte = @intFromEnum(@as(OpTag, ins.op));
+            const ms: u8 = if (ins.short) 0x20 else 0;
+            const mr: u8 = if (ins.stack == RT_STACK) 0x40 else 0;
+            const mk: u8 = if (ins.keep) 0x80 else 0;
+            try writer.writeByte(byte | ms | mr | mk);
+        }
+    }
+}

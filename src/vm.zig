@@ -6,7 +6,7 @@ const meta = std.meta;
 const assert = std.debug.assert;
 const linux = std.os.linux;
 
-const emitter = @import("emitter.zig");
+const codegen = @import("codegen.zig");
 const ASTNode = @import("common.zig").ASTNode;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Value = @import("common.zig").Value;
@@ -100,7 +100,7 @@ pub const VM = struct {
         var fbstream = std.io.fixedBufferStream(self.ram);
         var writer = fbstream.writer();
         writer.writeByteNTimes(0, 0x0100) catch unreachable;
-        emitter.spitout(writer, self.assembled) catch unreachable;
+        codegen.emitBytecode(writer, self.assembled) catch unreachable;
     }
 
     pub fn execute(self: *VM) void {
