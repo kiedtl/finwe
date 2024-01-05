@@ -6,9 +6,9 @@
 	[wst        U8]
 	[rst        U8]
 	[metadata  U16] // @Metadata
-	[red       U16]
-	[green     U16]
-	[blue      U16]
+	[r         U16]
+	[g         U16]
+	[b         U16]
 	[debug      U8]
 	[state      U8]
 )

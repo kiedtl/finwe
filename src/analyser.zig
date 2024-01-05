@@ -358,7 +358,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
 
     const args_needed: usize = switch (i.op) {
         .Obrk => 0,
-        .Ojsr, .Osth, .Oinc, .Olda, .Odeo, .Odup, .Opop => 1,
+        .Ojsr, .Osth, .Oinc, .Olda, .Odei, .Odup, .Opop => 1,
         .Orot => 3,
         else => 2,
     };
@@ -389,7 +389,8 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
         i.short = switch (i.op) {
             .Osta => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
-            .Osth, .Oinc, .Odup, .Opop, .Odeo => a1b.? == 16,
+            .Odei, .Odeo => a1.? == .Dev16,
+            .Osth, .Oinc, .Odup, .Opop => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             .Osft => a2b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
@@ -426,7 +427,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
         },
         .Odeo => {
             a.args.append(if (i.short) .Any16 else .Any8) catch unreachable;
-            a.args.append(.AnyDev) catch unreachable;
+            a.args.append(if (i.short) .Dev16 else .Dev8) catch unreachable;
         },
         .Odei => {
             a.args.append(if (i.short) .Dev16 else .Dev8) catch unreachable;
