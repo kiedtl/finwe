@@ -357,8 +357,8 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
     var a = BlockAnalysis{};
 
     const args_needed: usize = switch (i.op) {
-        .Ohalt => 0,
-        .Ojsr, .Osth, .Oinc, .Olda, .Odeo, .Odup, .Odrop => 1,
+        .Obrk => 0,
+        .Ojsr, .Osth, .Oinc, .Olda, .Odeo, .Odup, .Opop => 1,
         .Orot => 3,
         else => 2,
     };
@@ -389,7 +389,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
         i.short = switch (i.op) {
             .Osta => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
             .Olda => if (a1.?.deptrize(prog).bits(prog)) |b| b == 16 else false,
-            .Osth, .Oinc, .Odup, .Odrop, .Odeo => a1b.? == 16,
+            .Osth, .Oinc, .Odup, .Opop, .Odeo => a1b.? == 16,
             .Orot => a1b.? == 16 and a2b.? == 16 and a3b.? == 16,
             .Osft => a2b.? == 16,
             else => a1b.? == 16 and a2b.? == 16,
@@ -446,13 +446,13 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
-        .Odrop => a.args.append(a1 orelse any) catch unreachable,
+        .Opop => a.args.append(a1 orelse any) catch unreachable,
         .Osft, .Oand, .Oora, .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
             a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
         },
-        .Oeq, .Oneq, .Olt, .Ogt => {
+        .Oequ, .Oneq, .Olth, .Ogth => {
             a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(.Bool) catch unreachable;
@@ -483,7 +483,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
             // Actually, the function returns, so doesn't make sense to do this
             //a.rstack.append(.Ptr16) catch unreachable;
         },
-        .Ohalt => {},
+        .Obrk => {},
         else => {
             std.log.info("{} not implmented", .{i});
             @panic("todo");
@@ -495,7 +495,6 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
         //     a.args.append(.Bool) catch unreachable;
         //     a.args.append(.Ptr8) catch unreachable;
         // },
-        // .Osr, .Ozj, .Onac, .Oroll, .Odmod => unreachable,
     }
 
     if (i.keep) a.args.clear();
@@ -1109,6 +1108,7 @@ pub fn postProcess(self: *Program) Error!void {
                     .type = .RCheckpoint,
                     .parent_test = &def.node.Decl,
                     .must_execute = true,
+                    .srcloc = def.srcloc,
                 } },
                 .srcloc = def.srcloc,
             }) catch unreachable;
@@ -1124,14 +1124,23 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
     // }
 
     if (tests) {
-        for (program.defs.items) |d| if (d.node.Decl.is_test) {
-            const utest = &d.node.Decl;
-            utest.calls += 1;
+        // Crash when using normal for iterating loop. Debugging revealed
+        // no obvious cause -- memory was accessible, pointers were okay.
+        // Segfault occurred in the for statement itself, weirdly enough.
+        //
+        // Not sure, but probably a miscompilation? idk
+        //
+        for (0..program.defs.items.len) |i| {
+            const d = program.defs.items[i];
+            if (d.node.Decl.is_test) {
+                const utest = &d.node.Decl;
+                utest.calls += 1;
 
-            assert(!utest.is_analysed);
-            utest.is_analysed = true;
-            _ = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
-        };
+                assert(!utest.is_analysed);
+                utest.is_analysed = true;
+                _ = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
+            }
+        }
     } else {
         const entrypoint = &program.global_scope.findDeclAny("main").?.node.Decl;
         entrypoint.calls += 1;

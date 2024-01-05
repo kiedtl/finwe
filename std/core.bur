@@ -7,6 +7,9 @@
 //#inline (word bi* [ [dip] dip do                                        ])
 //#inline (word bi& [ dup bi*                                             ])
 
+// do  (     AnyFn -- (Effects $0 [...]))
+// sip ( Any AnyFn -- (Effects $0 [ $1 ... ]) $1)
+
 (test do [
 	[ (-- U8 U8 U8) 1 2 3 ] do
 	(should eq 3) (should eq 2) (should eq 1)
@@ -35,7 +38,7 @@
 (word nip   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Onip)       ])
 (word dup   (           Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
 (word swap  ((AnySz $0) Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
-(word drop  (           Any --              ) [ (asm "g" .Op/Odrop)      ])
+(word drop  (           Any --              ) [ (asm "g" .Op/Opop)       ])
 (word 2drop ((AnySz $0) Any --              ) [ drop drop                ])
 (word over  ((AnySz $0) Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
 (word 2dup  ((AnySz $0) Any -- $1 $0 $1 $0  ) [ over over                ])
@@ -82,12 +85,12 @@
 // #(warn arg-gt $0 7)
 (word bshr  (       Any  U8 -- $1           ) [ (asm "g" .Op/Osft)       ])
 (word bnot  (           Any -- Bool         ) [ 0xFFFFs (as $0) beor     ])
-(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeq)        ])
+(word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oequ)       ])
 (word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)       ])
 (word nil?  (          Bool -- Bool         ) [ nil =                    ])
 (word T?    (          Bool -- Bool         ) [ T =                      ])
-(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olt)        ])
-(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogt)        ])
+(word <     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Olth)       ])
+(word >     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Ogth)       ])
 (word <=    ((AnySz $0) Any -- Bool         ) [ > not                    ])
 (word >=    ((AnySz $0) Any -- Bool         ) [ < not                    ])
 (word +     ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oadd)       ])
@@ -183,7 +186,7 @@
 	0
 	(wild (--) [ (asm "s" .Op/Oovr) ])
 	(wild (--) [ (asm "" .Op/Orot)  ])
-	(wild (--) [ (asm "" .Op/Odrop) ])
+	(wild (--) [ (asm "" .Op/Opop) ])
 ])
 
 (word swap-sb (Any16 Any8 -- $0 $1) [

@@ -158,7 +158,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             .stk_two_b => |gch2b| if (gch2b.ind == 0) {
                 try emit(buf, null, 0, false, false, .Onip);
             } else if (gch2b.ind == 1) {
-                try emit(buf, null, 0, false, false, .Odrop);
+                try emit(buf, null, 0, false, false, .Opop);
             },
             .stk_one_b => {},
             .mem => |gchmem| {
@@ -235,7 +235,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try genNodeList(program, buf, u.cond, ual);
 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
-                    try emit(buf, node, WK_STACK, false, false, .Oeq);
+                    try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                     try emit(buf, node, WK_STACK, false, true, .Olit);
                     const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
@@ -254,7 +254,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
-                    try emit(buf, node, WK_STACK, false, false, .Oeq);
+                    try emit(buf, node, WK_STACK, false, false, .Oequ);
                     try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
                 },
             }
@@ -311,7 +311,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 //try emitDUP(buf, WK_STACK);
                 try genNodeList(program, buf, branch.cond, ual);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
-                try emit(buf, node, WK_STACK, false, false, .Oeq);
+                try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                 try emit(buf, node, WK_STACK, false, false, .Olit);
                 const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
@@ -368,7 +368,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         // });
         try genNodeList(program, &buf, d.body, &ual);
         if (d.is_test) {
-            try emit(&buf, def, WK_STACK, false, false, .Ohalt);
+            try emit(&buf, def, WK_STACK, false, false, .Obrk);
         } else {
             try emit(&buf, def, RT_STACK, false, true, .Ojmp);
         }

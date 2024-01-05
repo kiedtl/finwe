@@ -153,5 +153,5 @@
 		1-
 	])
 	"Aborting.\n" print-string
-	(asm "" .Op/Ohalt)
+	(asm "" .Op/Obrk)
 ])

@@ -121,12 +121,11 @@ pub const Parser = struct {
 
         const ast_arity = (try self.expectNode(.List, node)).body;
         for (ast_arity.items) |*arity_item| {
-            var dst: *TypeInfo.List16 = undefined;
-            if (before) {
-                dst = if (norm_stack) &arity.args else &arity.rargs;
-            } else {
-                dst = if (norm_stack) &arity.stack else &arity.rstack;
-            }
+            var dst: *TypeInfo.List16 = if (before) b: {
+                break :b if (norm_stack) &arity.args else &arity.rargs;
+            } else b: {
+                break :b if (norm_stack) &arity.stack else &arity.rstack;
+            };
 
             if (arity_item.node == .Keyword and mem.eql(u8, arity_item.node.Keyword, "--")) {
                 assert(before);
@@ -258,10 +257,13 @@ pub const Parser = struct {
             .Quote => |q| b: {
                 const scope = Scope.create(p_scope);
 
-                var arity: BlockAnalysis = undefined;
-                var body: ASTNodeList = undefined;
+                var arity: ?BlockAnalysis = null;
+                var body: ?ASTNodeList = null;
 
-                if (q.items.len == 0) {} else if (q.items.len == 1 and q.items[0].node == .List) {
+                if (q.items.len == 0) {
+                    arity = BlockAnalysis{};
+                    body = ASTNodeList.init(self.alloc);
+                } else if (q.items.len == 1 and q.items[0].node == .List) {
                     if (self.parseArity(&q.items[0])) |ar| {
                         arity = ar;
                         body = try self.parseStatements(q.items[1..], scope);
@@ -286,8 +288,8 @@ pub const Parser = struct {
                 dnode.* = ASTNode{ .node = .{ .Decl = .{
                     .name = name,
                     .variations = ASTNodePtrList.init(self.alloc),
-                    .arity = arity,
-                    .body = body,
+                    .arity = arity.?,
+                    .body = body.?,
                     .scope = scope,
                 } }, .srcloc = node.location };
                 break :b ASTNode{
@@ -649,9 +651,17 @@ pub const Parser = struct {
                         @panic("Invalid breakpoint type");
                     }
 
-                    break :b ASTNode{ .node = .{ .Breakpoint = .{
-                        .type = b,
-                    } }, .srcloc = ast[0].location };
+                    break :b ASTNode{
+                        .node = .{
+                            .Breakpoint = .{
+                                .type = b,
+                                // later replaced by analyser, probably needlessly
+                                // TODO investigate
+                                .srcloc = ast[0].location,
+                            },
+                        },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "debug")) {
                     break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {
@@ -1095,7 +1105,7 @@ pub const Parser = struct {
             return error.NoMainFunction;
 
         try main_func.node.Decl.body.append(ASTNode{ .node = .{
-            .Asm = .{ .stack = WK_STACK, .op = .Ohalt },
+            .Asm = .{ .stack = WK_STACK, .op = .Obrk },
         }, .srcloc = .{} });
 
         try self.program.ast.insertAtInd(0, ASTNode{ .node = .{ .Call = .{
