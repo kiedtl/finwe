@@ -22,20 +22,27 @@ x Imports
 x Arrays (sized, unknown-size)
 x Vec
 x Metadata
-- (r) keyword (use rt-stack)
-- Signed numbers
+x (r) keyword (use rt-stack)
+x Signed numbers
   x Comparison
   x Printing
   x Lexer/Parser
-  - Abs/Neg?/Division
-- Fixed-point
-  - Printing
-- Shadowcaster
+  x Abs/Neg?/Division
+- A* pathfinding
 x Refactoring
   x Scopes
   x Explicit main function
   x Decls within decls
 - Enums
+- Fixed-point
+  - Printing
+- Solve Effects issue
+  - i.e. how to represent effect of quote in arity def?
+  - would require being able to "expand" typeref...
+  - need major refactoring?
+- Fix: inlining func w/ early return
+- Inline locals
+- Metadata
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
