@@ -42,7 +42,7 @@
 
 // ( bytes -- *ptr )
 (word get ( U16 -- (Of std/Maybe0 @Opaque) ) [
-	(var size U16)
+	(let size U16)
 	@size <-
 
 	// Allocating " print-string
@@ -72,7 +72,7 @@
 
 	//Chosen: " print-string dup print nl nl
 
-	(var chosen @Header)
+	(let chosen @Header)
 	@chosen <-
 
 
@@ -81,7 +81,7 @@
 	$chosen chunk-size $size -
 		(sizeof Header) (as U16) 1+
 	< not (when [
-		(var next @Header)
+		(let next @Header)
 		(sizeof Header) (as U16) $size $chosen + + @next <-
 
 		$chosen          $next   :prev <-
@@ -196,7 +196,7 @@
 (test alloc/defrag [
 	init
 	
-	(var ptrs [@Opaque 4])
+	(let ptrs [@Opaque 4])
 
 	107s get ;unwrap drop
 	107s get ;unwrap @ptrs :0 (as @@Opaque) <-

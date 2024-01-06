@@ -63,7 +63,7 @@
 
 (test lang_monomorphic_var_static_alloc [
 	(word variable (Type -- @$0) [
-		(var _S $0)
+		(let _S $0)
 		@_S
 	])
 	
@@ -98,7 +98,7 @@
 ])
 
 (word main [
-	(var sprite [U16 8])
+	(let sprite [U16 8])
 	0x6cfes @sprite :0 <-
 	0xfe7cs @sprite :1 <-
 	0x3810s @sprite :2 <-

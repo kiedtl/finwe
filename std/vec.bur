@@ -74,13 +74,13 @@
 (test Vector/init-sized [
 	alloc/init
 
-	(var v1 (Of Vector U8))
+	(let v1 (Of Vector U8))
 	20s @v1 init-sized
 	@v1 :len -> (should eq 0s)
 	@v1 :capacity -> (should eq 20s)
 	@v1 ;deinit
 
-	(var v2 (Of Vector U16))
+	(let v2 (Of Vector U16))
 	10s @v2 init-sized
 	@v2 :capacity -> (should eq 10s)
 	@v2 ;deinit
@@ -88,7 +88,7 @@
 
 (test Vector/append [
 	alloc/init
-	(var lst (Of Vector U16))
+	(let lst (Of Vector U16))
 	@lst init
 
 	   0x8s @lst ;append
@@ -107,7 +107,7 @@
 // It should shrink the len while retaining capacity.
 (test Vector/shrink-by [
 	alloc/init
-	(var lst (Of Vector U16))
+	(let lst (Of Vector U16))
 	@lst init
 
 	1s @lst ;append
@@ -125,7 +125,7 @@
 
 (test Vector/last [
 	alloc/init
-	(var lst (Of Vector U16))
+	(let lst (Of Vector U16))
 	@lst init
 
 	0x0008s @lst ;append
@@ -142,7 +142,7 @@
 
 (test Vector/pop [
 	alloc/init
-	(var lst (Of Vector U16))
+	(let lst (Of Vector U16))
 	@lst init
 
 	0x0008s @lst ;append
