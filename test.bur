@@ -103,8 +103,6 @@
 ])
 
 (word main [
-	@sprite debug drop
-
 	(word draw-sprite [
 		0x20s .Screen/x deo
 		0x40s .Screen/y deo

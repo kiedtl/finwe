@@ -1,0 +1,57 @@
+// Ported from uxn-utils b64enc.rom
+// https://git.sr.ht/~rabbits/uxn-utils/blob/main/cli/base64/b64enc.tal
+//
+// (c) 100r
+
+(use* varvara)
+(use* core)
+
+(let queue U8)
+
+(let MIME [U8] [
+	"ABCDEFGHIJKLMNOP"
+	"QRSTUVWXYZabcdef"
+	"ghijklmnopqrstuv"
+	"wxyz0123456789+/"
+])
+
+(word main [
+	[ (--) on-console halt ] .Console/vector deo
+])
+
+(word on-console (--) [
+	#noreturn
+	(word terminate ( U8 -- ) [
+		$queue <> (when [ 0 b64enc ])
+		0x80 .System/state deo
+		halt
+	])
+
+	.Console/read dei
+	dup 0= (when [terminate])
+	b64enc
+	.Console/type dei
+		4 <> (when [halt]) //terminate])
+])
+
+(word b64enc (U8 -- ) [
+	(let inc U8)
+	(let buf U8)
+	@buf <-
+
+	0x08 0x00
+	(until [ drop 2dup > not ] [
+		$buf over 7 swap - bsft 1 band
+		$inc dup 1+ 6 2dup / * - @inc <-
+		// ( bit id -- )
+		swap $queue bor dup + @queue <-
+		5 = (when [
+			$queue 1 bshr (as U16) @MIME + ->
+			.Console/write deo
+			0 @queue <-
+		])
+		1+
+	])
+
+	2drop
+])
