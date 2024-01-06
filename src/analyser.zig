@@ -1075,8 +1075,8 @@ pub fn postProcess(self: *Program) Error!void {
             }
         }
 
-        pub fn registerLocals(decl: *ASTNode.Decl, program: *Program) !void {
-            var iter = decl.scope.locals.iterator();
+        pub fn registerLocals(scope: *Scope, program: *Program) !void {
+            var iter = scope.locals.iterator();
             while (iter.next()) |local| if (local.ind == null) {
                 program.statics.append(.{ .type = local.rtyp, .count = 1, .default = local.default }) catch unreachable;
                 local.ind = program.statics.items.len - 1;
@@ -1086,9 +1086,10 @@ pub fn postProcess(self: *Program) Error!void {
 
     for (self.defs.items) |def|
         if (def.node.Decl.calls > 0) {
-            try _S.registerLocals(&def.node.Decl, self);
+            try _S.registerLocals(def.node.Decl.scope, self);
             try _S.walkNodes(self, def, def.node.Decl.body);
         };
+    try _S.registerLocals(self.global_scope, self);
 
     for (self.defs.items) |def|
         if (def.node.Decl.is_test)
