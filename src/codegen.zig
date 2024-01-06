@@ -379,8 +379,9 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     for (program.statics.items) |*data| {
         data.romloc = buf.items.len;
         switch (data.default) {
-            .String => |s| {
-                assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
+            .Mixed, .String => |s| {
+                if (data.default == .String)
+                    assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
                 for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
                 try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
                 program.romloc_code_end = buf.items.len;

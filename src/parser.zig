@@ -518,15 +518,44 @@ pub const Parser = struct {
                         .scope = Scope.create(p_scope),
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "let")) {
-                    try self.validateListLength(ast, 3);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);
+
+                    const default = if (ast.len == 3)
+                        common.Static.Default.None
+                    else switch (ast[3].node) {
+                        .String => |s| common.Static.Default{ .String = s },
+                        .Quote => |q| bz: {
+                            var mixed = std.ArrayList(u8).init(self.alloc);
+                            for (q.items) |item| switch (item.node) {
+                                .String => |s| mixed.appendSlice(s.items) catch
+                                    unreachable,
+                                else => {
+                                    const v = try self.parseValue(&item);
+                                    const bits = v.typ.bits(self.program).?;
+                                    if (bits == 16) {
+                                        const v16 = v.toU16(self.program);
+                                        mixed.append(@intCast(v16 >> 8)) catch
+                                            unreachable;
+                                        mixed.append(@intCast(v16 & 0xFF)) catch
+                                            unreachable;
+                                    } else if (bits == 8) {
+                                        mixed.append(v.toU8(self.program)) catch
+                                            unreachable;
+                                    } else unreachable;
+                                },
+                            };
+                            break :bz common.Static.Default{ .Mixed = mixed };
+                        },
+                        else => return self.program.perr(error.ExpectedNode, ast[3].location),
+                    };
 
                     break :b ASTNode{
                         .node = .{ .VDecl = .{
                             .name = name,
                             .utyp = ltyp,
                             .localptr = null,
+                            .default = default,
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -997,6 +1026,7 @@ pub const Parser = struct {
                         scope.locals.append(.{
                             .name = vd.name,
                             .rtyp = try vd.utyp.resolveTypeRef(scope, null, self),
+                            .default = vd.default,
                         }) catch unreachable;
                         vd.localptr = scope.locals.last().?;
                     },

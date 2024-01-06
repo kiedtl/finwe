@@ -953,6 +953,7 @@ pub const ASTNode = struct {
         name: []const u8,
         localptr: ?*Local,
         utyp: TypeInfo,
+        default: Static.Default,
     };
 
     pub const VRef = struct {
@@ -1155,6 +1156,7 @@ pub const Local = struct {
     name: []const u8,
     ind: ?usize = null,
     rtyp: TypeInfo,
+    default: Static.Default,
 
     pub const List = LinkedList(@This());
 };
@@ -1162,11 +1164,29 @@ pub const Local = struct {
 pub const Static = struct {
     type: TypeInfo,
     count: usize,
-    default: union(enum) {
-        String: String,
-        None,
-    },
+    default: Default,
     romloc: usize = 0xFFFF,
+
+    pub const Default = union(enum) {
+        String: String,
+        Mixed: std.ArrayList(u8),
+        // TODO: embeds
+        // Embed: struct {
+        //     path: []const u8,
+        //     kind: union(enum) {
+        //         Chr,
+        //         Ufx,
+        //         Raw,
+        //     },
+        //     compress: bool,
+        // },
+        None,
+        // TODO: struct literals
+        // StructLit: struct {
+        //     type: usize,
+        //     values: std.ArrayList(Value),
+        // },
+    };
 
     pub const AList = std.ArrayList(@This());
 };

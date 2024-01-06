@@ -761,6 +761,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 parent.scope.locals.append(.{
                     .name = vd.name,
                     .rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program),
+                    .default = vd.default,
                 }) catch unreachable;
                 vd.localptr = parent.scope.locals.last().?;
             },
@@ -1077,7 +1078,7 @@ pub fn postProcess(self: *Program) Error!void {
         pub fn registerLocals(decl: *ASTNode.Decl, program: *Program) !void {
             var iter = decl.scope.locals.iterator();
             while (iter.next()) |local| if (local.ind == null) {
-                program.statics.append(.{ .type = local.rtyp, .count = 1, .default = .None }) catch unreachable;
+                program.statics.append(.{ .type = local.rtyp, .count = 1, .default = local.default }) catch unreachable;
                 local.ind = program.statics.items.len - 1;
             };
         }

@@ -98,15 +98,10 @@
 ])
 
 (word main [
-	(let sprite [U16 8])
-	0x6cfes @sprite :0 <-
-	0xfe7cs @sprite :1 <-
-	0x3810s @sprite :2 <-
-	0x0000s @sprite :3 <-
-	0x6cfes @sprite :4 <-
-	0xfe7cs @sprite :5 <-
-	0x3810s @sprite :6 <-
-	0x0000s @sprite :7 <-
+	(let sprite [U16 8] [
+		0x6cfes 0xfe7cs 0x3810s 0x0000s
+		0x6cfes 0xfe7cs 0x3810s 0x0000s
+	])
 
 	(word draw-sprite [
 		0x20s .Screen/x deo
