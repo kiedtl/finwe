@@ -835,8 +835,8 @@ pub const ASTNode = struct {
                     .While => |u| try writer.print("While<{s}>", .{@tagName(u.cond_prep)}),
                 },
                 .Asm => |a| try writer.print("Asm<{}>", .{a}),
-                .Value => |v| try writer.print("Val<{}, {}>", .{ v.typ, v.val }),
-                .Cast => |c| try writer.print("Cast<{}, {} ${?}>", .{ c.of, c.to, c.ref }),
+                .Value => |v| try writer.print("Val<{}, {}>", .{ v.val.typ, v.val.val }),
+                //.Cast => |c| try writer.print("Cast<{}, {} ${?}>", .{ c.of, c.to, c.ref }),
                 else => try writer.print("{s}", .{s}),
             }
         }
@@ -1034,6 +1034,7 @@ pub const ASTNode = struct {
         calls: usize = 0,
         scope: *Scope,
         is_private: bool = false,
+        is_noreturn: bool = false,
         is_method: ?TypeInfo = null,
         is_analysed: bool = false,
         is_test: bool = false,

@@ -665,6 +665,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     //try cdecl.analysis.mergeInto(a, program, node.srcloc);
                     cdecl.calls += 1;
                 }
+
+                if (cdecl.is_noreturn) {
+                    info.early_return = true;
+                    break;
+                }
             },
             .Loop => |*l| {
                 var nctx = ctx;

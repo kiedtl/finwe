@@ -50,6 +50,8 @@
 (word tuck  ((AnySz $0) Any -- $0 $1 $0     ) [ swap over                ])
 (word tuck> ((AnySz $0) Any -- $1 $1 $0     ) [ over swap                ])
 
+//(word merge (Any8 Any8 Type -- $0           ) [ (wild ($2 $1 -- $0) [])  ])
+
 // TODO (waitfor dumper) [rot signb swap signb <> ...] might be smaller than
 // using ret stack
 
@@ -80,13 +82,14 @@
 	/ (r [* move]) * (as $0)
 ])
 
-(word band  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oand)       ])
-(word bor   ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oora)       ])
-(word beor  ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oeor)       ])
+(word band  ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oand)       ])
+(word bor   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oora)       ])
+(word beor  ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oeor)       ])
+(word bsft  (       Any  U8 -- $1           ) [ (asm "g" .Op/Osft)       ])
 // TODO: warn if bshr/bshl arg is higher than 7
 // #(warn arg-gt $0 7)
-(word bshr  (       Any  U8 -- $1           ) [ (asm "g" .Op/Osft)       ])
-(word bnot  (           Any -- Bool         ) [ 0xFFFFs (as $0) beor     ])
+(word bshr  (       Any  U8 -- $1           ) [ bsft                     ])
+(word bnot  (           Any -- $0           ) [ 0xFFFFs (as $0) beor     ])
 (word =     ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oequ)       ])
 (word <>    ((AnySz $0) Any -- Bool         ) [ (asm "g" .Op/Oneq)       ])
 (word nil?  (          Bool -- Bool         ) [ nil =                    ])

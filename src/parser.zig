@@ -447,6 +447,7 @@ pub const Parser = struct {
                 if (mem.eql(u8, k, "word")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
 
+                    var is_noreturn: bool = false;
                     var is_method: ?TypeInfo = null;
                     var is_private: bool = false;
                     var is_inline: common.ASTNode.Decl.Inline = .Auto;
@@ -467,6 +468,8 @@ pub const Parser = struct {
                         .Keyword => |kwd| {
                             if (mem.eql(u8, kwd, "private")) {
                                 is_private = true;
+                            } else if (mem.eql(u8, kwd, "noreturn")) {
+                                is_noreturn = true;
                             } else if (mem.eql(u8, kwd, "inline")) {
                                 is_inline = .Always;
                             } else if (mem.eql(u8, kwd, "no-inline")) {
@@ -497,6 +500,7 @@ pub const Parser = struct {
                         .scope = scope,
                         .is_method = is_method,
                         .is_private = is_private,
+                        .is_noreturn = is_noreturn,
                         .is_inline = is_inline,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
@@ -827,7 +831,7 @@ pub const Parser = struct {
                 switch (node.node) {
                     .Decl => |d| {
                         // const pname: []const u8 = if (parent) |p| switch (p.node) {
-                        //     .Decl => |d| d.name,
+                        //     .Decl => |de| de.name,
                         //     .Import => |i| i.name,
                         //     else => unreachable,
                         // } else "<global>";
