@@ -97,12 +97,14 @@
 	(r move)    (should eq 27)
 ])
 
-(let sprite [U16 8] [
+(let sprite [U16] [
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 ])
 
 (word main [
+	@sprite debug drop
+
 	(word draw-sprite [
 		0x20s .Screen/x deo
 		0x40s .Screen/y deo

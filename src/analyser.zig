@@ -764,6 +764,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     .default = vd.default,
                 }) catch unreachable;
                 vd.localptr = parent.scope.locals.last().?;
+                vd.localptr.?.inferLength(program);
             },
             .VRef => |*v| {
                 v.localptr = parent.scope.findLocal(v.name, program, false) orelse

@@ -1159,6 +1159,27 @@ pub const Local = struct {
     default: Static.Default,
 
     pub const List = LinkedList(@This());
+
+    pub fn inferLength(self: *Local, program: *Program) void {
+        if (self.rtyp == .Array and self.rtyp.Array.count == null) {
+            const artyp = program.ztype(self.rtyp.Array.typ);
+            switch (self.default) {
+                .String => |s| {
+                    if (artyp != .Char8 and artyp != .U8)
+                        @panic("Can only infer length of Char8/U8 array when given string");
+                    self.rtyp.Array.count = @intCast(s.items.len + 1);
+                },
+                .Mixed => |b| {
+                    const typsz = artyp.size(program).?;
+                    const bufsz = @as(u16, @intCast(b.items.len));
+                    if (bufsz % typsz != 0)
+                        @panic("Data size in bytes no evenly divisible by local type size (hint: provide concrete array length)");
+                    self.rtyp.Array.count = bufsz / typsz;
+                },
+                .None => @panic("Need default for inferred array length"),
+            }
+        }
+    }
 };
 
 pub const Static = struct {

@@ -1029,6 +1029,7 @@ pub const Parser = struct {
                             .default = vd.default,
                         }) catch unreachable;
                         vd.localptr = scope.locals.last().?;
+                        vd.localptr.?.inferLength(self);
                     },
                     .VRef => |*v| {
                         v.localptr = scope.findLocal(v.name, self, false) orelse
