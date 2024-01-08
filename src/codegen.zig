@@ -213,6 +213,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .RBlock => |r| try genNodeList(program, buf, r.body, ual),
         .Quote => |q| {
+            const qdef = q.def.node.Decl;
+            std.log.info("- requesting {s}_{}, {}", .{ qdef.name, qdef.variant, qdef.calls });
             try emitUA(buf, ual, q.def.node.Decl.name, node);
 
             // const quote_jump_addr = buf.items.len;
@@ -357,9 +359,12 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         const d = def.node.Decl;
         try genNodeList(program, &buf, program.ast, &ual);
         if (d.calls == 0) {
-            //std.log.info("skipping {s}", .{d.name});
+            std.log.info("skipping {s}_{}", .{ d.name, d.variant });
             continue;
+        } else {
+            std.log.info("*** genn {s}_{}", .{ d.name, d.variant });
         }
+        assert(d.is_analysed);
         def.romloc = buf.items.len;
         // const a = d.arity orelse analyser.BlockAnalysis{};
         // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
@@ -424,8 +429,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         },
         .Quote => |q| {
             if (q.def.romloc == 0xFFFF) {
-                std.log.err("[Bug] codegen: lambda {s} was never generated", .{
-                    q.def.node.Decl.name,
+                std.log.err("[Bug] codegen: lambda {s}_{} not generated", .{
+                    q.def.node.Decl.name, q.def.node.Decl.variant,
                 });
                 unreachable;
             }

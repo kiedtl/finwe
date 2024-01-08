@@ -291,6 +291,7 @@ pub const Parser = struct {
                     .arity = arity.?,
                     .body = body.?,
                     .scope = scope,
+                    .in_scope = scope,
                 } }, .srcloc = node.location };
                 break :b ASTNode{
                     .node = .{ .Quote = .{ .def = dnode } },
@@ -483,6 +484,10 @@ pub const Parser = struct {
                         },
                     };
 
+                    // TODO: require methods not be in nested decls (bc it
+                    // doesn't make any sense, scoping doesn't change vs
+                    // putting it outside parent decl)
+
                     var arity: ?BlockAnalysis = null;
                     if (ast.len == 4)
                         arity = try self.parseArity(&ast[2]);
@@ -498,6 +503,7 @@ pub const Parser = struct {
                         .arity = arity,
                         .body = body,
                         .scope = scope,
+                        .in_scope = scope,
                         .is_method = is_method,
                         .is_private = is_private,
                         .is_noreturn = is_noreturn,
@@ -507,6 +513,7 @@ pub const Parser = struct {
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const body = try self.parseStatements(ast_body.items, p_scope);
+                    const scope = Scope.create(p_scope);
 
                     // const new_name = try std.fmt.allocPrint(
                     //     common.gpa.allocator(),
@@ -519,7 +526,8 @@ pub const Parser = struct {
                         .body = body,
                         .is_test = true,
                         .variations = undefined,
-                        .scope = Scope.create(p_scope),
+                        .scope = scope,
+                        .in_scope = scope,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "let")) {
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -840,14 +848,14 @@ pub const Parser = struct {
                         //     pname,
                         // });
 
-                        const scope = if (parent) |p| switch (p.node) {
+                        const norm_scope = if (parent) |p| switch (p.node) {
                             .Decl => |de| de.scope,
                             .Import => |i| i.scope,
                             else => unreachable,
                         } else self.global_scope;
 
                         const method_scope = if (d.is_method) |method_type|
-                            if (scope.findType(method_type.Unresolved.ident, self, true)) |t|
+                            if (norm_scope.findType(method_type.Unresolved.ident, self, true)) |t|
                                 self.types.items[t].scope
                             else
                                 return self.aerr(
@@ -857,7 +865,9 @@ pub const Parser = struct {
                         else
                             null;
 
-                        try (method_scope orelse scope).defs.append(node);
+                        const scope = method_scope orelse norm_scope;
+                        node.node.Decl.in_scope = scope;
+                        try scope.defs.append(node);
                         try self.defs.append(node);
                     },
                     else => {},

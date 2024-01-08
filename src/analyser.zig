@@ -611,14 +611,19 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         c.node = cdecl.variations.items[ind];
 
                     if (var_ind == null) {
-                        const newdef_ = d.deepclone(null, program);
-                        const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
-                        c.node = newdef;
-                        program.defs.append(newdef) catch unreachable;
-
-                        cdecl.variations.append(newdef) catch unreachable;
-                        newdef.node.Decl.variant = cdecl.variations.items.len;
+                        const newdef = d.deepcloneDecl(&program.ast, program);
                         newdef.node.Decl.arity = ungenericified;
+                        newdef.node.Decl.calls += 1;
+                        c.node = newdef;
+
+                        // const newdef_ = d.deepclone(null, program);
+                        // const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
+                        // c.node = newdef;
+                        // program.defs.append(newdef) catch unreachable;
+
+                        // cdecl.variations.append(newdef) catch unreachable;
+                        // newdef.node.Decl.variant = cdecl.variations.items.len;
+                        // newdef.node.Decl.arity = ungenericified;
 
                         var ab = BlockAnalysis{};
                         const sr = if (ctx.r_blk) c.args.len else 0;
@@ -631,8 +636,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         for (ungenericified.args.constSlice()[0..end2]) |arg|
                             ab.stack.append(arg) catch unreachable;
 
-                        newdef.node.Decl.arity = ungenericified;
-                        newdef.node.Decl.calls += 1;
                         _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
                         newdef.node.Decl.is_analysed = true;
                     } else {
@@ -787,14 +790,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Quote => |q| {
                 const qdef = &q.def.node.Decl;
                 if (!qdef.is_analysed) {
+                    std.log.info("[{s}_{}] analysing quote {s}_{} ({})", .{ parent.name, parent.variant, qdef.name, qdef.variant, qdef.calls });
                     for (0..qdef.arity.?.args.len) |i|
                         qdef.analysis.stack.append(qdef.arity.?.args.slice()[qdef.arity.?.args.len - i - 1]) catch unreachable;
                     _ = try analyseBlock(program, qdef, qdef.body, &qdef.analysis, .{});
                     qdef.is_analysed = true;
-                }
+                } else std.log.info("[{s}_{}] already analysed quote {s}_{}, {}", .{ parent.name, parent.variant, qdef.name, qdef.variant, qdef.calls });
 
                 a.stack.append(TypeInfo.ptr16(program, .{ .Fn = .{ .arity = &qdef.arity.? } }, 1)) catch unreachable;
-                qdef.calls = 1;
+                qdef.calls += 1;
             },
             // TODO: ptr8 (will require special handling in codegen -- can't
             // multiply u8 (ptr) w/ u16 (index) right?)

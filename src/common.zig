@@ -1033,6 +1033,11 @@ pub const ASTNode = struct {
         variant: usize = 0,
         calls: usize = 0,
         scope: *Scope,
+
+        // What scope is it found in? not necessarily same as scope.parent
+        // e.g. if method, then will be type's scope
+        in_scope: *Scope,
+
         is_private: bool = false,
         is_noreturn: bool = false,
         is_method: ?TypeInfo = null,
@@ -1054,6 +1059,27 @@ pub const ASTNode = struct {
             new.append(item.deepclone(parent, program)) catch unreachable;
         }
         return new;
+    }
+
+    // Clone a Decl node, but also "register" it by adding it to list of variations
+    // of original node, and add it to list of defs (program.defs).
+    //
+    pub fn deepcloneDecl(self: *@This(), astlst: *ASTNodeList, program: *Program) *@This() {
+        var node = self.node;
+        node.Decl.variations = ASTNodePtrList.init(gpa.allocator());
+        node.Decl.body = _deepcloneASTList(node.Decl.body, &node.Decl, program);
+        node.Decl.scope = node.Decl.scope.shallowclone();
+        const new = ASTNode{
+            .node = node,
+            .srcloc = self.srcloc,
+            .romloc = self.romloc,
+        };
+        const nptr = astlst.appendAndReturn(new) catch unreachable;
+        self.node.Decl.variations.append(nptr) catch unreachable;
+        nptr.node.Decl.variant = self.node.Decl.variations.items.len;
+        nptr.node.Decl.in_scope.defs.append(nptr) catch unreachable;
+        program.defs.append(nptr) catch unreachable;
+        return nptr;
     }
 
     pub fn deepclone(self: @This(), parent: ?*Decl, program: *Program) @This() {
@@ -1081,14 +1107,25 @@ pub const ASTNode = struct {
                 }
             },
             .Decl => {
+                // Technically should use deepcloneDecl for this. Still used
+                // for nested decls (since deepcloneASTList doesn't
+                // special-handle decls)
+                //
+                // It's okay to do this without "registering" in program.defs,
+                // not sure why it's okay though <shrug>
+                //
+                // Best guess is because it's cloned anyway later when called.
+                //
+                // Anyway, wouldn't work because the calls have already been
+                // resolved in parser post-processing, and cloning would break
+                // those.
+                //
                 new.Decl.variations = ASTNodePtrList.init(gpa.allocator());
                 new.Decl.body = _deepcloneASTList(new.Decl.body, &new.Decl, program);
                 new.Decl.scope = new.Decl.scope.shallowclone();
             },
-            .Quote => |q| {
-                const newdef = deepclone(q.def.*, parent, program);
-                new.Quote.def = gpa.allocator().create(ASTNode) catch unreachable;
-                new.Quote.def.* = newdef;
+            .Quote => |*q| {
+                q.def = q.def.deepcloneDecl(&program.ast, program);
             },
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .RBlock => new.RBlock.body = _deepcloneASTList(new.RBlock.body, parent, program),
