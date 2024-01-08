@@ -653,12 +653,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 } else {
                     assert(!ctx.r_blk);
 
-                    //if (!cdecl.is_analysed) {
-                    //_ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis, .{});
-                    //cdecl.is_analysed = true;
-                    //}
+                    // if (!cdecl.is_analysed) {
+                    //     _ = try analyseBlock(program, cdecl, cdecl.body, &cdecl.analysis, .{});
+                    //     cdecl.is_analysed = true;
+                    // }
 
                     _ = try analyseBlock(program, cdecl, cdecl.body, a, .{});
+                    cdecl.is_analysed = true;
 
                     if (a.isGeneric(program)) {
                         std.log.err("{s} is generic and has no declared arity", .{cdecl.name});

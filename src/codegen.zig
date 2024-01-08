@@ -359,10 +359,15 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         if (d.calls == 0) {
             // std.log.info("skipping {s}_{}", .{ d.name, d.variant });
             continue;
-        } else {
-            // std.log.info("*** genn {s}_{}", .{ d.name, d.variant });
         }
-        assert(d.is_analysed);
+
+        if (!d.is_analysed) {
+            std.log.err("[Bug] codegen: word {s} (var {}) was never analysed", .{
+                d.name, d.variant,
+            });
+            unreachable;
+        }
+
         def.romloc = buf.items.len;
         // const a = d.arity orelse analyser.BlockAnalysis{};
         // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
