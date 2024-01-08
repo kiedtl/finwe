@@ -22,19 +22,24 @@
 (word on-console (--) [
 	#noreturn
 	(word terminate ( U8 -- ) [
-		$queue <> (when [ 0 b64enc ])
+		$queue <> (when [ 0 print-b64enc ])
 		0x80 .System/state deo
 		halt
 	])
 
 	.Console/read dei
 	dup 0= (when [terminate])
-	b64enc
-	.Console/type dei
-		4 <> (when [halt]) //terminate])
+	print-b64enc
 ])
 
-(word b64enc (U8 -- ) [
+(word print-b64enc (U8 -- ) [
+	[ (U8 -- ) emit ] b64enc
+])
+
+(word b64enc (U8 @(Fn (U8 -- )) -- ) [
+	(let fun $0)
+	@fun <-
+
 	(let inc U8)
 	(let buf U8)
 	@buf <-
@@ -47,7 +52,7 @@
 		swap $queue bor dup + @queue <-
 		5 = (when [
 			$queue 1 bshr (as U16) @MIME + ->
-			.Console/write deo
+			$fun do
 			0 @queue <-
 		])
 		1+
