@@ -213,8 +213,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .RBlock => |r| try genNodeList(program, buf, r.body, ual),
         .Quote => |q| {
-            const qdef = q.def.node.Decl;
-            std.log.info("- requesting {s}_{}, {}", .{ qdef.name, qdef.variant, qdef.calls });
             try emitUA(buf, ual, q.def.node.Decl.name, node);
 
             // const quote_jump_addr = buf.items.len;
@@ -359,10 +357,10 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         const d = def.node.Decl;
         try genNodeList(program, &buf, program.ast, &ual);
         if (d.calls == 0) {
-            std.log.info("skipping {s}_{}", .{ d.name, d.variant });
+            // std.log.info("skipping {s}_{}", .{ d.name, d.variant });
             continue;
         } else {
-            std.log.info("*** genn {s}_{}", .{ d.name, d.variant });
+            // std.log.info("*** genn {s}_{}", .{ d.name, d.variant });
         }
         assert(d.is_analysed);
         def.romloc = buf.items.len;
