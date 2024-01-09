@@ -157,5 +157,6 @@
 		1-
 	])
 	"Aborting.\n" print-string
+	0x01 .System/state deo
 	(asm "" .Op/Obrk)
 ])
