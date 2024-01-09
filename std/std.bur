@@ -147,6 +147,7 @@
 	10s @foo + -> (should eq 'X)
 ])
 
+#noreturn
 (word panic (@U8 -- ) [
 	"Panic: " print-string print-string nl
 	.System/rst (asm "" .Op/Odei) 2 /
