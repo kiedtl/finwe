@@ -35,13 +35,15 @@
 (word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)       ])
 (word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)      ])
 (word <-   ((Child $0) AnyPtr16 --          ) [ sta                      ])
+(word -<   (AnyPtr16 (Child $1) --          ) [ swap sta                 ])
 (word ->   (AnyPtr16        -- (Child $0)   ) [ lda                      ])
 
 (word nip   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Onip)       ])
 (word dup   (           Any -- $0 $0        ) [ (asm "g" .Op/Odup)       ])
 (word swap  ((AnySz $0) Any -- $0 $1        ) [ (asm "g" .Op/Oswp)       ])
 (word drop  (           Any --              ) [ (asm "g" .Op/Opop)       ])
-(word 2drop ((AnySz $0) Any --              ) [ drop drop                ])
+(word 2drop (       Any Any --              ) [ drop drop                ])
+(word 3drop (   Any Any Any --              ) [ drop drop drop           ])
 (word over  ((AnySz $0) Any -- $1 $0 $1     ) [ (asm "g" .Op/Oovr)       ])
 (word 2dup  ((AnySz $0) Any -- $1 $0 $1 $0  ) [ over over                ])
 
@@ -125,6 +127,7 @@
 	 121i -121i < (should eq nil)
 ])
 
+// TODO: optimize (xor by sign bit? idk)
 (word abs ( AnySigned -- (USz $0) ) [
 	dup sign 0= (when [return])
 	(as (USz $0)) bnot 1+
@@ -160,6 +163,10 @@
 	nil t   and (should eq nil)
 	t   t   and (should eq T)
 	nil nil and (should eq nil)
+])
+
+(word rot-sbb (Any16 Any8 Any8 -- $1 $0 $2) [
+	(wild (--) [ (asm "s" .Op/Oswp)  ])
 ])
 
 (word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
@@ -203,6 +210,7 @@
 	(wild (--) [ (asm "" .Op/Orot) ])
 ])
 
+(test rot-sbb  [ 2s 1 0  rot-sbb  (should eq 2s) (should eq 0)  (should eq 1)   ])
 (test rot-sbs  [ 2s 1 0s rot-sbs  (should eq 2s) (should eq 0s) (should eq 1)   ])
 (test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
 (test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
