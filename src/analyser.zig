@@ -277,7 +277,7 @@ pub const BlockAnalysis = struct {
         }
 
         for (r.stack.slice()) |*stack|
-            if (stack.* == .TypeRef or stack.* == .Expr) {
+            if (stack.isResolvable(p)) {
                 stack.* = try stack.resolveTypeRef(scope, r, p);
             };
 
@@ -808,6 +808,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             // multiply u8 (ptr) w/ u16 (index) right?)
             //
             .GetIndex => |*gind| {
+                assert(!ctx.r_blk);
+
                 var target: TypeInfo = undefined;
                 var indtype: ?TypeInfo = undefined;
                 var known_target_len: ?u16 = null;
@@ -879,6 +881,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 a.stack.append(result) catch unreachable;
             },
             .GetChild => |*gch| {
+                assert(!ctx.r_blk);
+
                 // error message: (replacing nuh uh)
                 // Error: Need to know type at this point
                 //  Hint: Try explicit cast.
@@ -988,6 +992,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Builtin => |*builtin| switch (builtin.type) {
                 .SplitCast => |*c| {
+                    assert(!ctx.r_blk);
+
                     c.resolved1 = try c.original1.resolveTypeRef(parent.scope, parent.arity, program);
                     c.resolved2 = try c.original2.resolveTypeRef(parent.scope, parent.arity, program);
 
@@ -1011,6 +1017,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (!into.isGeneric(program)) c.of = into;
                 },
                 .Make => |*make| {
+                    assert(!ctx.r_blk);
+
                     make.resolved = try make.original.resolveTypeRef(parent.scope, parent.arity, program);
                     var b = BlockAnalysis{};
                     if (make.resolved.size(program)) |sz| {
@@ -1028,6 +1036,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     try b.mergeInto(a, program, node.srcloc);
                 },
                 .SizeOf => |*sizeof| {
+                    assert(!ctx.r_blk);
+
                     sizeof.resolved = try sizeof.original.resolveTypeRef(parent.scope, parent.arity, program);
                     const s = sizeof.resolved.size(program);
                     if (s == null or s.? <= 255) {
@@ -1043,9 +1053,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         .resolveTypeRef(parent.scope, parent.arity, program);
 
                 var casta = BlockAnalysis{};
+                const stk = if (ctx.r_blk) &a.rstack else &a.stack;
 
                 for (c.resolved.constSlice(), 0..) |resolved, i| {
-                    const from = a.stack.last() orelse .Any;
+                    const from = stk.last() orelse .Any;
                     casta.args.append(from) catch unreachable;
                     casta.stack.append(resolved) catch unreachable;
                     if (!from.isGeneric(program))
