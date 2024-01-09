@@ -570,9 +570,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Call => |*c| {
                 if (c.node == null) {
                     const scope = if (!c.is_method) parent.scope else switch (a.stack.last().?) {
+                        .EnumLit => |n| program.types.items[n].scope,
                         .Struct => |n| program.types.items[n].scope,
                         .Ptr16, .Ptr8 => |p| switch (program.ztype(p.typ)) {
                             .Struct => |n| program.types.items[n].scope,
+                            .EnumLit => |n| program.types.items[n].scope,
                             else => return program.aerr(error.CannotCallMethod, node.srcloc),
                         },
                         else => return program.aerr(error.CannotCallMethod, node.srcloc),
