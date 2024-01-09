@@ -674,6 +674,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     info.early_return = true;
                     break;
                 }
+
+                if (cdecl.is_noreturn)
+                    c.goto = true;
             },
             .Loop => |*l| {
                 var nctx = ctx;
