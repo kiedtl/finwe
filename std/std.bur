@@ -47,10 +47,8 @@
 	0xFFFFs (as (FieldType $0 value)) = (when [ "Unwrapped FF value" panic ])
 ])
 
-#(method MaybeFF) (word orelse (
-	(FieldType $0 value) (AnyOf Maybe0) -- (FieldType $0 value)
-) [
-       :value dup 0= (when [ drop ] [ nip ])
+#(method MaybeFF) (word orelse ( (FieldType $0 value) (AnyOf MaybeFF) -- (FieldType $0 value)) [
+       :value dup 0xFFFFs (as (FieldType $0 value)) = (when [ drop ] [ nip ])
 ])
 
 (test MaybeFF/maybe? [
@@ -58,6 +56,9 @@
 	0xFF  (make (Of MaybeFF U8)) ;maybe? (should eq nil)
 	0xFFs (make (Of MaybeFF U16)) ;maybe? (should eq t)
 ])
+
+(test MaybeFF/maybe-not? [ 0xFF (make (Of MaybeFF U8)) ;maybe-not? (should eq t) ])
+(test MaybeFF/orelse [ 0xFF (make (Of MaybeFF U8)) 12 swap ;orelse (should eq 12) ])
 //}}}
 
 // FIXME: hundred ways to optimize this, see ;scmp from left project
