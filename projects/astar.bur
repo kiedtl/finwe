@@ -1,7 +1,7 @@
 (use* core)
 (use* varvara)
 
-(let MAP [U8] [
+(let MAP [[U8 20] 21] [
 	"#.................##"
 	"..######...........#"
 	"..#....#............"
@@ -25,13 +25,25 @@
 	"##.................#"
 ])
 
-(struct Coord [y U8] [x U8])
+(struct Coord [x U8] [y U8])
 
-(word on-frame ( -- ) [
+(word on-frame ( -- ) [ ])
+
+(word on-mouse ( -- ) [
+	.Mouse/state dei 0= (when [
+		draw
+		// Movement
+		.Mouse/x dei 8s / (as U8)
+		.Mouse/y dei 8s / (as U8)
+		(make Coord) highlight-coord
+	] [
+		// Button press
+	])
 ])
 
 (word main [
 	[ (--) on-frame halt ] .Screen/vector deo
+	[ (--) on-mouse halt ] .Mouse/vector deo
 
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
@@ -39,52 +51,92 @@
 
 	20s 8s * .Screen/width deo
 	21s 8s * .Screen/height deo
-	0x8 .Screen/auto deo
 
-	draw-map
+	draw
+
+	1 1 (make Coord) highlight-coord
+	19 19 (make Coord) highlight-coord
 ])
 
-(word at ( Coord -- U8 ) [
-	(split U8 U8)
-	(as U16) @MAP + swap-bs (as U16) 20s * + (as @U8)
-	->
+(word highlight-coord (Coord -- ) [
+	(split U8 U8) 2dup
+	(as U16) 8s * .Screen/y deo
+	(as U16) 8s * .Screen/x deo
+	@MAP : : -> draw-char-inverse
+])
+
+(word draw ( -- ) [
+	draw-map
+	draw-mouse
 ])
 
 (word draw-map ( -- ) [
+	0x1 .Screen/auto deo
+
 	(let anchorx U16 [0])
 	(let anchory U16 [0])
 
-	0s .Screen/x deo
-	0s .Screen/y deo
+	0s dup @anchorx <- .Screen/x deo
+	0s dup @anchory <- .Screen/y deo
 
 	0 (until [ 21 = ] [
+		0s dup @anchorx <- .Screen/x deo
+
 		0 (until [ 20 = ] [
-			2dup (make Coord) at draw-char
+			2dup swap @MAP : : -> draw-char
 
-			$anchorx 8s + @anchorx <-
-			$anchorx .Screen/x deo
-
+			$anchorx 8s + dup @anchorx <- .Screen/x deo
 			1+
 		])
 		drop
 
-		$anchory 8s + @anchory <-
-		$anchory .Screen/y deo
-		0s @anchorx <-
-		$anchorx .Screen/x deo
-
+		$anchory 8s + dup @anchory <- .Screen/y deo
 		1+
 	])
+
+	drop
 ])
 
 (word draw-char (U8 -- ) [
-	32 - (as U16) 0x30 bsft @FONT + .Screen/addr deo
-	0x01 .Screen/sprite deo
+	set-glyph-addr
+	0x04 .Screen/sprite deo
+])
+
+(word draw-char-inverse (U8 -- ) [
+	set-glyph-addr
 	0x01 .Screen/sprite deo
 ])
 
+(word draw-mouse ( -- ) [
+	(let oldx U16)
+	(let oldy U16)
+
+	0x0 .Screen/auto deo
+
+	$oldx .Screen/x deo
+	$oldy .Screen/y deo
+	@MOUSE .Screen/addr deo
+	0x40 .Screen/sprite deo
+
+	.Mouse/x dei dup @oldx <- .Screen/x deo
+	.Mouse/y dei dup @oldy <- .Screen/y deo
+
+	0x41 .Screen/sprite deo
+])
+
+(word set-glyph-addr (U8 -- ) [
+	32 - @FONT : .Screen/addr deo
+])
+
+(struct Sprite8 [data [U8 8]])
+
+// Taken from left
+(let MOUSE Sprite8 [
+	0x80c0s 0xe0f0s 0xf8e0s 0x1000s
+])
+
 // atari8
-(let FONT [U8] [
+(let FONT [Sprite8] [
 	0x0000s 0x0000s 0x0000s 0x0000s 0x6060s 0x6060s 0x6000s 0x6000s
 	0x6666s 0x6600s 0x0000s 0x0000s 0x006cs 0xfe6cs 0x6cfes 0x6c00s
 	0x183es 0x603cs 0x067cs 0x1800s 0x0066s 0x6c18s 0x3066s 0x4600s
