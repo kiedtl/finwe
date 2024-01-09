@@ -1,15 +1,18 @@
 (use* core)
 (use* varvara)
+(use std)
+(use vec)
+(use alloc)
 
 (let MAP [[U8 20] 21] [
 	"#.................##"
 	"..######...........#"
 	"..#....#............"
-	"..#....#............"
-	"..######............"
-	"...................."
-	"...................."
-	"...................."
+	"..#....#.....#......"
+	"..######.....#......"
+	".............#......"
+	".............#......"
+	"......########......"
 	"...................."
 	".....#......####...."
 	".....#......#..#...."
@@ -17,15 +20,63 @@
 	".....#......#..#...."
 	".....#......####...."
 	".....#.............."
-	".....#.............."
-	"...................."
-	"...................."
-	"...................."
-	"#..................."
+	".....#...#######...."
+	"........###...###..."
+	"........#.......#..."
+	"........##.....##..."
+	"#........###.###...."
 	"##.................#"
 ])
 
+(enum Direction U8 [n 0] [s 1] [e 2] [w 3] [ne 4] [nw 5] [se 6] [sw 7])
+
+#(method Direction) (word move (Coord Direction -- Coord) [
+	move (split U8 U8)
+
+	// TODO: cond statement
+	(r copy) .Direction/n  = (when [ 1- (make Coord) (r drop) return ])
+	(r copy) .Direction/s  = (when [ 1+ (make Coord) (r drop) return ])
+	(r copy) .Direction/e  = (when [ swap 1+ swap (make Coord) (r drop) return ])
+	(r copy) .Direction/w  = (when [ swap 1- swap (make Coord) (r drop) return ])
+	(r copy) .Direction/ne = (when [ 1- swap 1+ swap (make Coord) (r drop) return ])
+	(r copy) .Direction/nw = (when [ 1- swap 1- swap (make Coord) (r drop) return ])
+	(r copy) .Direction/se = (when [ 1+ swap 1+ swap (make Coord) (r drop) return ])
+	(r copy) .Direction/sw = (when [ 1+ swap 1- swap (make Coord) (r drop) return ])
+	"Bad enum" std/panic
+])
+
+(test Direction/move [
+	0 0 (make Coord) .Direction/s ;move (split U8 U8) (should eq 1) (should eq 0)
+	3 3 (make Coord) .Direction/n ;move (split U8 U8) (should eq 2) (should eq 3)
+	3 3 (make Coord) .Direction/e ;move (split U8 U8) (should eq 3) (should eq 4)
+	3 3 (make Coord) .Direction/w ;move (split U8 U8) (should eq 3) (should eq 2)
+])
+
 (struct Coord [x U8] [y U8])
+
+#(method Coord) (word print ( Coord -- ) [
+	(split U8 U8) swap "(" print-string print-dec ", " print-string print-dec ")" print-string
+])
+
+#(method Coord) (word eq? (Coord Coord -- Bool) [ (as U16 U16) = ])
+
+#(method Coord) (word at (@[[Any 20] 21] Coord -- @(Child (Child $1))) [
+	(split U8 U8) rot-sbb : :
+])
+
+#(method Coord) (word distance (Coord Coord -- U16) [
+	(split U8 U8) move
+	swap-sb (split U8 U8) move
+	- (as I8) abs (as U16)
+	(r [ - move ]) (as I8) abs (as U16)
+	+
+])
+
+(test Coord/distance [
+	0 0 (make Coord) 0 1 (make Coord) ;distance (should eq 1s)
+	0 0 (make Coord) 1 1 (make Coord) ;distance (should eq 2s)
+	0 9 (make Coord) 0 0 (make Coord) ;distance (should eq 9s)
+])
 
 (word on-frame ( -- ) [ ])
 
@@ -35,7 +86,7 @@
 		// Movement
 		.Mouse/x dei 8s / (as U8)
 		.Mouse/y dei 8s / (as U8)
-		(make Coord) highlight-coord
+		(make Coord) get-path
 	] [
 		// Button press
 	])
@@ -45,6 +96,9 @@
 	[ (--) on-frame halt ] .Screen/vector deo
 	[ (--) on-mouse halt ] .Mouse/vector deo
 
+	alloc/init
+	@buf vec/init
+
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
 	0xf0c0s .System/b deo
@@ -53,9 +107,158 @@
 	21s 8s * .Screen/height deo
 
 	draw
+	// Movement
+	.Mouse/x dei 8s / (as U8)
+	.Mouse/y dei 8s / (as U8)
+	(make Coord) get-path
+	18 21 (make Coord) get-path
+	draw-path
+	8 4 (make Coord) get-path
+	draw-path
+	2 9 (make Coord) get-path
+	draw
+	draw-path
+])
 
-	1 1 (make Coord) highlight-coord
-	19 19 (make Coord) highlight-coord
+(struct Node
+	[came-from Coord]
+	[unvisited Bool]
+)
+(let nodes [[Node 20] 21])
+(let g-score [[U16 20] 21])
+(let open-list (Of vec/Vector Coord))
+(let f-score [[U16 20] 21])
+(let goal Coord)
+
+(let buf (Of vec/Vector Coord))
+
+(word get-path ( Coord -- ) [
+	(let cache Coord)
+
+	dup $cache ;eq? (when [ drop return ])
+	@cache <-
+
+	@buf ;deinit
+	alloc/defrag
+	@buf vec/init
+
+	@buf 1 1 (make Coord) $cache astar drop
+])
+
+(word draw-path ( -- ) [
+	0s
+	(while [ @buf :len -> < ] [
+		dup @buf :items -> : -> highlight-coord
+		1+
+	]) drop
+])
+
+// ( start end -- path )
+(word astar (@(Of vec/Vector Coord) Coord Coord -- Bool) [
+	(word open-list-contains? ( Coord -- Bool ) [
+		0s
+		(while [ @open-list :len -> < ] [
+			dup @open-list :items -> : ->
+			rot tuck
+			;eq? (when [ 2drop t return ])
+			swap
+			1+
+		])
+		2drop nil
+	])
+
+	(word get-current ( -- Coord ) [
+		(let best-fscore U16)
+		(let best-value Coord)
+		(let best-index U16)
+
+		0xFF @best-fscore <-
+		@open-list :len -> @best-index <-
+		@open-list ;last @best-value <-
+	
+		@open-list :len ->
+		(while [ 0<> ] [
+			1-
+			dup @open-list :items -> : ->
+			// ( ind coord )
+			@f-score over ;at ->
+			// ( ind coord f )
+			dup $best-fscore < (when [
+				@best-fscore <-
+				@best-value <-
+				dup @best-index <-
+			] [ drop drop ])
+		]) drop
+
+		$best-index @open-list ;swap-remove
+		@nodes over ;at :unvisited nil swap-sb <-
+	])
+
+	// ( current neighbor -- )
+	(word check-neighbor ( Coord Coord -- ) [
+		dup (split U8 U8) 21 >= swap 20 >= or (when [2drop return])
+		@nodes over ;at :unvisited -> not (when [2drop return])
+		@MAP over ;at -> '. <> (when [2drop return])
+
+		// tenative_gscore = gscore[current] + dist(current, neighbor)
+		over @g-score swap ;at -> move
+		2dup ;distance (r move) +
+
+		// ( current neighbor tentative-gscore )
+		over @g-score swap ;at -> tuck>
+
+		// ( current neighbor tentative-gscore tentative-gscore old-gscore )
+		< (when [
+			//over @g-score over ;at <-
+			// ( current neighbor gscore )
+			// fscore = gscore + distance(goal, neighbor)
+			over $goal ;distance +
+			over @f-score swap ;at <-
+			// ( current neighbor )
+			dup open-list-contains? not (when [
+				dup @open-list ;append
+			])
+			@nodes swap ;at :came-from <-
+		] [ 3drop ])
+	])
+
+	0xFF (sizeof [[Node 20] 21]) @nodes std/memset8
+	0xFF (sizeof [[U16 20] 21]) @g-score std/memset8
+	0xFF (sizeof [[U16 20] 21]) @f-score std/memset8
+
+	over @g-score swap ;at 0s -<
+	2dup ;distance over @f-score swap ;at <-
+
+	@open-list vec/init
+	swap @open-list ;append
+
+	@goal <-
+
+	0 (while [ drop @open-list :len -> 0<> ] [
+		drop
+		get-current
+		dup $goal ;eq? (when [
+			@open-list ;deinit
+			@nodes swap ;at :came-from ->
+			(while [ 0xFF 0xFF (make Coord) ;eq? not ] [
+				2dup swap ;append
+				@nodes swap ;at :came-from ->
+			])
+			drop
+			$goal swap ;append
+			t return
+		])
+		0s (until [ 7s = ] [
+			2dup (as U8) (as Direction) ;move
+			rot tuck swap check-neighbor
+			swap 1+
+		])
+		2drop
+		0
+	]) drop
+
+	drop
+	nil
 ])
 
 (word highlight-coord (Coord -- ) [
@@ -67,6 +270,7 @@
 
 (word draw ( -- ) [
 	draw-map
+	draw-path
 	draw-mouse
 ])
 
@@ -92,9 +296,7 @@
 
 		$anchory 8s + dup @anchory <- .Screen/y deo
 		1+
-	])
-
-	drop
+	]) drop
 ])
 
 (word draw-char (U8 -- ) [
