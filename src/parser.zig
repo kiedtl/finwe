@@ -411,6 +411,33 @@ pub const Parser = struct {
             };
         } else if (mem.eql(u8, k, "struct")) {
             parsed = try self.parseStructDecl(ast);
+        } else if (mem.eql(u8, k, "enum")) {
+            const name = try self.expectNode(.Keyword, &ast[1]);
+            const etyp = try self.parseType(&ast[2]);
+            if (etyp != .U8 and etyp != .U16)
+                @panic("Enum type can only be U8 or U16");
+            var fields = ASTNode.TypeDef.EnumField.AList.init(self.alloc);
+            for (ast[3..]) |node| switch (node.node) {
+                .Quote => |q| {
+                    try self.validateListLength(q.items, 2);
+                    const n = try self.expectNode(.Keyword, &q.items[0]);
+                    const v = try self.parseValue(&q.items[1]);
+                    fields.append(.{ .name = n, .value = v, .srcloc = node.location }) catch
+                        unreachable;
+                },
+                .Keyword => |kwd| {
+                    fields.append(.{ .name = kwd, .value = null, .srcloc = node.location }) catch
+                        unreachable;
+                },
+                else => return self.program.perr(error.ExpectedNode, node.location),
+            };
+            parsed = ASTNode{
+                .node = .{ .TypeDef = .{
+                    .name = name,
+                    .def = .{ .Enum = .{ .type = etyp, .fields = fields } },
+                } },
+                .srcloc = ast[0].location,
+            };
         } else if (mem.eql(u8, k, "typealias")) {
             const name = try self.expectNode(.Keyword, &ast[1]);
             const val = try self.parseType(&ast[2]);
@@ -820,6 +847,7 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "device") or
                     mem.eql(u8, k, "typealias") or
+                    mem.eql(u8, k, "enum") or
                     mem.eql(u8, k, "struct"))
                 {
                     break :b try self.parseTypeDecl(ast, metadata);
@@ -948,6 +976,52 @@ pub const Parser = struct {
                             } },
                         }) catch unreachable;
                         scope.types.append(self.types.items.len - 1) catch unreachable;
+                    },
+                    .Enum => |enumdef| {
+                        assert(enumdef.type == .U16 or enumdef.type == .U8);
+
+                        self.types.append(UserType{
+                            .node = node,
+                            .name = node.node.TypeDef.name,
+                            .scope = Scope.create(scope),
+                            .is_private = node.node.TypeDef.is_private,
+                            .def = .{ .Enum = .{
+                                .is_short = enumdef.type == .U16,
+                                .fields = UserType.EnumField.AList.init(parser.alloc),
+                            } },
+                        }) catch unreachable;
+                        scope.types.append(self.types.items.len - 1) catch unreachable;
+                        const fields = &self.types.items[self.types.items.len - 1].def.Enum.fields;
+
+                        for (enumdef.fields.items) |field| {
+                            if (field.value) |val| {
+                                if (!val.typ.eq(enumdef.type))
+                                    @panic("Mismatched enum field types");
+                            }
+
+                            const val_a: u8 = switch (enumdef.type) {
+                                .U8 => if (field.value) |v|
+                                    v.val.u8
+                                else
+                                    self.rng.random().int(u8),
+                                .U16 => if (field.value) |v|
+                                    @as(u8, @intCast(v.val.u16 & 0xFF))
+                                else
+                                    self.rng.random().int(u8),
+                                else => unreachable,
+                            };
+
+                            const val_b: ?u8 = switch (enumdef.type) {
+                                .U8 => null,
+                                .U16 => if (field.value) |v|
+                                    @as(u8, @intCast((v.val.u16 >> 8) & 0xFF))
+                                else
+                                    self.rng.random().int(u8),
+                                else => unreachable,
+                            };
+
+                            fields.append(.{ .name = field.name, .value_a = val_a, .value_b = val_b }) catch unreachable;
+                        }
                     },
                     .Struct => |strdef| {
                         self.types.append(UserType{

@@ -97,6 +97,13 @@
 	(r move)    (should eq 27)
 ])
 
+(test lang_enums [
+	(enum Foo U8 a [b 99] c [d 88])
+	.Foo/a .Foo/c (should neq)
+	.Foo/b (as U8) (should eq 99)
+	.Foo/d (as U8) (should eq 88)
+])
+
 (let sprite [U16] [
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 	0x6cfes 0xfe7cs 0x3810s 0x0000s

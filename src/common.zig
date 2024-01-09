@@ -896,6 +896,7 @@ pub const ASTNode = struct {
     pub const TypeDef = struct {
         name: []const u8,
         def: union(enum) {
+            Enum: EnumDef,
             Device: DeviceDef,
             Struct: StructDef,
             Alias: AliasDef,
@@ -914,6 +915,14 @@ pub const ASTNode = struct {
             pub const AList = std.ArrayList(Field);
         };
 
+        pub const EnumField = struct {
+            name: []const u8,
+            value: ?Value,
+            srcloc: Srcloc,
+
+            pub const AList = std.ArrayList(EnumField);
+        };
+
         pub const DeviceDef = struct {
             start: u8,
             fields: Field.AList,
@@ -922,6 +931,11 @@ pub const ASTNode = struct {
         pub const StructDef = struct {
             args: ?TypeInfo.List16 = null,
             fields: Field.AList,
+        };
+
+        pub const EnumDef = struct {
+            type: TypeInfo,
+            fields: EnumField.AList,
         };
     };
 
@@ -1484,7 +1498,7 @@ pub const Program = struct {
                 };
                 inline for (info.fields) |field| {
                     const va: u8 = if (info.tag_type == u16) @as(u16, @intCast(field.value)) & 0xFF else @intCast(field.value);
-                    const vb: ?u8 = if (info.tag_type == u16) (@as(u16, @intCast(field.value)) >> 4) & 0xFF else null;
+                    const vb: ?u8 = if (info.tag_type == u16) (@as(u16, @intCast(field.value)) >> 8) & 0xFF else null;
                     t.def.Enum.fields.append(.{ .name = field.name, .value_a = va, .value_b = vb }) catch unreachable;
                 }
                 self.types.append(t) catch unreachable;
@@ -1574,6 +1588,8 @@ pub const UserType = struct {
         name: []const u8,
         value_a: u8,
         value_b: ?u8,
+
+        pub const AList = std.ArrayList(@This());
     };
 
     pub fn deepclone(self: @This()) @This() {
