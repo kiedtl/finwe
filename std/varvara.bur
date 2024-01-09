@@ -38,6 +38,21 @@
 	[sprite          U8]
 )
 
+(device Mouse 0x90
+	[vector @(Fn (--))]
+	[x             U16]
+	[y             U16]
+	[state          U8]
+
+	[_unused1      U16]
+	[_unused2       U8]
+
+	[scrollx       U16]
+	[scrollx       U16]
+
+	[_unused3      U16]
+)
+
 (word dbg   (                  --              ) [ 0x1 .System/debug deo    ])
 (word dei   (           AnyDev -- (USz $0)     ) [ (asm "g" .Op/Odei)       ])
 (word deo   ((AnySz $0) AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
