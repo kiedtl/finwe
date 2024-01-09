@@ -105,6 +105,8 @@
 		stak                      // ( end val  ptr  )
 		1+ rot-sbs                // ( val ptr+ end  )
 	])
+
+	3drop
 ])
 
 // ( len src* dst* -- dst* )

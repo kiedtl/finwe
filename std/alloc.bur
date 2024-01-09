@@ -168,7 +168,7 @@
 
 			] [ drop ])
 		] [ :next -> ])
-	])
+	]) drop
 ])
 
 (word print-chunk (@Header -- ) [
