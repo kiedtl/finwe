@@ -13,6 +13,14 @@
 	[state      U8]
 )
 
+(enum ConsoleType U8 
+	[no-queue   0]
+	[stdin      1]
+	[arg        2]
+	[arg-spacer 3]
+	[arg-end    4]
+)
+
 (device Console 0x10
 	[vector @(Fn ( U8 -- ))]
 	[read                U8]
@@ -20,7 +28,7 @@
 	[mode                U8]    // ? (not documented)
 	[dead                U8]    // ? (not documented)
 	[exit                U8]    // ? (not documented)
-	[type                U8]//type ConsoleType] // enum
+	[type       ConsoleType]
 	[write               U8]    // stdout
 	[error               U8]    // stderr
 )
