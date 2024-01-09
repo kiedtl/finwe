@@ -647,6 +647,7 @@ pub const TypeInfo = union(enum) {
             .Expr => |e| .{ .Expr = e.resolveGeneric(with, program) },
             .Ptr16 => |p| program.ztype(p.typ).resolveGeneric(program.ztype(with.Ptr16.typ), program).ptrize16(program),
             .Ptr8 => |p| .{ .Ptr8 = .{ .typ = program.btype(program.builtin_types.items[p.typ].resolveGeneric(with, program)), .ind = p.ind } },
+            .Array => |a| .{ .Array = .{ .typ = program.btype(program.ztype(a.typ).resolveGeneric(program.ztype(with.Array.typ), program)), .count = a.count } },
             else => self,
         };
     }
@@ -657,6 +658,7 @@ pub const TypeInfo = union(enum) {
             .Expr => |e| e.isGeneric(program),
             .Ptr8, .Ptr16 => |ptr| program.ztype(ptr.typ).isGeneric(program),
             .Struct => |s| program.types.items[s].def.Struct.args != null,
+            .Array => |arr| program.ztype(arr.typ).isGeneric(program),
             // Stack overflow when struct references itself (via Ptr etc)
             // .Struct => |s| b: {
             //     const fields = program.types.items[s].def.Struct.fields;
