@@ -499,7 +499,7 @@ pub const TypeInfo = union(enum) {
                         //
                         //b = program.ztype(b.Array.typ);
                         //
-                        unreachable;
+                        //unreachable;
                     }
 
                     break :b b;
@@ -580,7 +580,6 @@ pub const TypeInfo = union(enum) {
                     .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
                 };
             } else {
-                std.log.info("No such type {s}", .{k.ident});
                 return program.aerr(error.NoSuchType, k.srcloc);
             },
             else => a,
