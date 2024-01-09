@@ -961,6 +961,12 @@ pub const ASTNode = struct {
             stk_unresolved,
         },
         multiplier: u16 = 0xFFFF,
+        order: union(enum) {
+            moot, // known index
+            it, // ind then target
+            ti, // target then ind
+            unchecked,
+        } = .unchecked,
     };
 
     pub const VDecl = struct {
@@ -1189,6 +1195,16 @@ pub const Srcloc = struct {
     line: usize = 0,
     column: usize = 0,
     file: []const u8 = "<unknown>",
+
+    pub fn format(self: @This(), comptime f: []const u8, _: fmt.FormatOptions, w: anytype) !void {
+        if (comptime mem.eql(u8, f, "")) {
+            //
+        } else {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        try fmt.format(w, "{s}:{}:{}", .{ self.file, self.line, self.column });
+    }
 };
 
 pub const Error = struct {
@@ -1209,6 +1225,7 @@ pub const Local = struct {
     ind: ?usize = null,
     rtyp: TypeInfo,
     default: Static.Default,
+    declnode: *ASTNode,
 
     pub const List = LinkedList(@This());
 
@@ -1239,6 +1256,7 @@ pub const Static = struct {
     count: usize,
     default: Default,
     romloc: usize = 0xFFFF,
+    srcloc: Srcloc,
 
     pub const Default = union(enum) {
         String: String,

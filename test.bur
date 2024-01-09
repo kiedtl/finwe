@@ -104,6 +104,22 @@
 	.Foo/d (as U8) (should eq 88)
 ])
 
+(test lang_getindex [
+	(let array [U8] "Day will come again!")
+
+	@array    :0   -> (should eq 'D)
+	0 @array  :    -> (should eq 'D)
+	0s @array :    -> (should eq 'D)
+	@array 0  :    -> (should eq 'D)
+	@array 0s :    -> (should eq 'D)
+
+	@array     :18 -> (should eq 'n)
+	18 @array  :   -> (should eq 'n)
+	18s @array :   -> (should eq 'n)
+	@array 18  :   -> (should eq 'n)
+	@array 18s :   -> (should eq 'n)
+])
+
 (let sprite [U16] [
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 	0x6cfes 0xfe7cs 0x3810s 0x0000s

@@ -103,6 +103,7 @@ pub const Parser = struct {
                     .type = .Char8,
                     .count = s.items.len + 1,
                     .default = .{ .String = s },
+                    .srcloc = node.location,
                 }) catch unreachable;
                 break :b .{
                     .typ = .{ .StaticPtr = self.program.statics.items.len - 1 },
@@ -1115,6 +1116,7 @@ pub const Parser = struct {
                             .name = vd.name,
                             .rtyp = try vd.utyp.resolveTypeRef(scope, null, self),
                             .default = vd.default,
+                            .declnode = node,
                         }) catch unreachable;
                         vd.localptr = scope.locals.last().?;
                         vd.localptr.?.inferLength(self);

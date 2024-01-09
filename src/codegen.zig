@@ -173,16 +173,25 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             },
         },
         .GetIndex => |gind| {
+            assert(gind.order != .unchecked);
             assert(gind.multiplier != 0xFFFF);
+            assert(gind.ind != .stk_unresolved);
             if (gind.ind == .known) {
                 const v = gind.ind.known * gind.multiplier;
                 try emitIMM16(buf, node, WK_STACK, false, .Olit, v);
+                assert(gind.order == .moot);
             }
             if (gind.ind == .stk_b) {
+                if (gind.order == .ti) try emit(buf, null, 0, false, false, .Orot);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oswp);
             }
-            if (gind.ind != .known) {
+            if (gind.ind != .known and gind.multiplier > 1) {
+                // Swap if target is first and index isn't byte
+                // (If index is byte we've already swapped)
+                //
+                if (gind.order == .ti and gind.ind != .stk_b)
+                    try emit(buf, null, 0, false, true, .Oswp);
                 try emitIMM16(buf, node, WK_STACK, false, .Olit, gind.multiplier);
                 try emit(buf, null, 0, false, true, .Omul);
             }
@@ -386,22 +395,26 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     for (program.statics.items) |*data| {
         data.romloc = buf.items.len;
+        const typsz = data.type.size(program).?;
+        const totalsz = typsz * data.count;
+        assert(totalsz > 0);
+        var done: usize = 0;
+
         switch (data.default) {
             .Mixed, .String => |s| {
-                if (data.default == .String)
-                    assert(s.items.len + 1 == data.count); // TODO: pad when this isn't the case
+                const emitnullbyte = data.default == .String;
+                assert((s.items.len + if (emitnullbyte) @as(usize, 1) else 0) <= totalsz);
+
                 for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
-                try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+                if (emitnullbyte) try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+                done += s.items.len + if (emitnullbyte) @as(usize, 1) else 0;
                 program.romloc_code_end = buf.items.len;
             },
-            .None => {
-                const typsz = data.type.size(program).?;
-                const totalsz = typsz * data.count;
-                assert(totalsz > 0);
-                for (0..totalsz) |_|
-                    try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
-            },
+            .None => {},
         }
+
+        for (0..(totalsz - done)) |_|
+            try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
     }
 
     const here = buf.items.len;

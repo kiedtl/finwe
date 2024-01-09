@@ -774,6 +774,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     .name = vd.name,
                     .rtyp = try vd.utyp.resolveTypeRef(parent.scope, parent.arity, program),
                     .default = vd.default,
+                    .declnode = node,
                 }) catch unreachable;
                 vd.localptr = parent.scope.locals.last().?;
                 vd.localptr.?.inferLength(program);
@@ -807,19 +808,34 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             // multiply u8 (ptr) w/ u16 (index) right?)
             //
             .GetIndex => |*gind| {
-                const indtype: ?TypeInfo = if (gind.ind != .known) a.stack.pop() catch @panic("nuh uh x2") else null;
-                const target = a.stack.pop() catch @panic("nuh uh");
+                var target: TypeInfo = undefined;
+                var indtype: ?TypeInfo = undefined;
                 var known_target_len: ?u16 = null;
+                var deref_target = false;
+
+                if (gind.ind == .known) {
+                    indtype = null;
+                    target = a.stack.pop() catch @panic("nuh uh");
+                    gind.order = .moot;
+                } else if (a.stack.last().? != .U8 and a.stack.last().? != .U16) {
+                    target = a.stack.pop() catch @panic("nuh uh");
+                    indtype = a.stack.pop() catch @panic("nuh uh x2");
+                    gind.order = .ti;
+                } else {
+                    indtype = a.stack.pop() catch @panic("nuh uh x2");
+                    target = a.stack.pop() catch @panic("nuh uh");
+                    gind.order = .it;
+                }
 
                 const childtype = switch (target) {
                     .Array => @panic("How on earth"), // Array on the stack??
                     .Ptr16 => |ptr| switch (program.ztype(ptr.typ)) {
                         .Array => |arr| b: {
+                            const arrchild = program.ztype(arr.typ);
+                            deref_target = arrchild == .Array;
                             known_target_len = arr.count;
-                            break :b program.ztype(arr.typ);
+                            break :b arrchild;
                         },
-                        .Ptr16 => program.ztype(ptr.typ).deptrize(program),
-                        .Ptr8 => @panic("TODO"),
                         else => |t| t,
                     },
                     .Ptr8 => @panic("TODO"),
@@ -859,7 +875,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         return program.aerr(error.IndexTooLarge, node.srcloc);
                 }
 
-                a.stack.append(target) catch unreachable;
+                const result = if (deref_target) childtype.ptrize16(program) else target;
+                a.stack.append(result) catch unreachable;
             },
             .GetChild => |*gch| {
                 // error message: (replacing nuh uh)
@@ -1091,7 +1108,12 @@ pub fn postProcess(self: *Program) Error!void {
         pub fn registerLocals(scope: *Scope, program: *Program) !void {
             var iter = scope.locals.iterator();
             while (iter.next()) |local| if (local.ind == null) {
-                program.statics.append(.{ .type = local.rtyp, .count = 1, .default = local.default }) catch unreachable;
+                program.statics.append(.{
+                    .type = local.rtyp,
+                    .count = 1,
+                    .default = local.default,
+                    .srcloc = local.declnode.srcloc,
+                }) catch unreachable;
                 local.ind = program.statics.items.len - 1;
             };
         }
