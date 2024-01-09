@@ -3,6 +3,15 @@
 (use alloc)
 (use* varvara)
 
+#private
+(word unwrap-or-oom! ( (Of std/Maybe0 @Opaque) -- @Opaque ) [
+	dup ;maybe-not? (when [
+		"Out of memory!\n" print-string
+		alloc/print-chunks
+		"Please close a few Chrome tabs. Oh wait" std/panic
+	]) :value
+])
+
 (struct Vector (Any)
 	[capacity U16]
 	[len U16]
@@ -19,9 +28,14 @@
 	swap
 	// ( vec* capacity )
 	(sizeof (Child (FieldType (Child $0) items))) (as U16) *
-		alloc/get ;unwrap (as @(Of Vector $0))
+		alloc/get unwrap-or-oom! (as @(Of Vector $0))
 	// ( vec* items* )
 	swap :items <-
+])
+
+#(method Vector)
+(word add-return ( @(AnyOf Vector) -- @(Child (FieldType (Child $0) items)) ) [
+	dup ;add-one ;last-ptr
 ])
 
 #(method Vector)
@@ -34,14 +48,43 @@
 ])
 
 #(method Vector)
+(word last-ptr ( @(AnyOf Vector) -- @(Child (FieldType (Child $0) items)) ) [
+	dup :items -> swap :len -> 1- :
+])
+
+#(method Vector)
 (word last ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
-	dup :items -> swap :len -> 1- : ->
+	;last-ptr ->
+])
+
+#(method Vector)
+(word swap-remove ( U16 @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
+	2dup :len -> = (when [
+		nip ;pop
+	] [
+		tuck :items -> :
+		dup -> move       // ( vec &vec[ind] | vec[ind] )
+		swap ;pop swap <-
+		(r move)
+	])
 ])
 
 #(method Vector)
 (word pop ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
 	dup ;last 1s rot ;shrink-by
 ])
+
+#(method Vector)
+(word add-one ( @(AnyOf Vector) -- ) [
+	dup :len -> 1+ over :len <-
+	dup :len -> over ;ensure-capacity
+])
+
+#(method Vector)
+(word shrink-to ( U16 @(AnyOf Vector) -- ) [
+	:len <-
+])
+
 
 #(method Vector)
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
@@ -59,7 +102,7 @@
 		swap (sizeof (Child (FieldType (Child $0) items))) (as U16) *
 		// ( new-len vec* computed-size )
 		over :items -> (as @Opaque) alloc/reget
-		;unwrap (as $0)
+		unwrap-or-oom! (as $0)
 		// ( new-len vec* item* )
 		swap :items <-
 		drop
@@ -156,4 +199,26 @@
 	@lst ;pop (should eq 0x0007s)
 	@lst ;pop (should eq 0x0314s)
 	@lst ;pop (should eq 0x0008s)
+])
+
+(test Vector/swap-remove [
+	alloc/init
+	(let lst (Of Vector U16))
+	@lst init
+
+	1s @lst ;append
+	2s @lst ;append
+	3s @lst ;append
+	4s @lst ;append
+	5s @lst ;append
+
+	2s @lst ;swap-remove (should eq 3s)
+	@lst :len -> (should eq 4s)
+
+	3s @lst ;swap-remove (should eq 4s)
+	@lst :len -> (should eq 3s)
+
+	0s @lst ;swap-remove (should eq 1s)
+	@lst :len -> (should eq 2s)
+	0 @lst :items -> : -> (should eq 5s)
 ])
