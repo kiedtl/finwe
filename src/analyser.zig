@@ -797,8 +797,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Quote => |q| {
                 const qdef = &q.def.node.Decl;
                 if (!qdef.is_analysed) {
-                    for (0..qdef.arity.?.args.len) |i|
-                        qdef.analysis.stack.append(qdef.arity.?.args.slice()[qdef.arity.?.args.len - i - 1]) catch unreachable;
+                    const resarity = try qdef.arity.?.resolveTypeRef(parent.scope, parent.arity, program);
+                    for (0..resarity.args.len) |i|
+                        qdef.analysis.stack.append(resarity.args.constSlice()[resarity.args.len - i - 1]) catch unreachable;
                     _ = try analyseBlock(program, qdef, qdef.body, &qdef.analysis, .{});
                     qdef.is_analysed = true;
                 }
