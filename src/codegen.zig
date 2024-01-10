@@ -14,6 +14,7 @@ const Program = @import("common.zig").Program;
 const Ins = @import("common.zig").Ins;
 const Op = @import("common.zig").Op;
 const OpTag = @import("common.zig").OpTag;
+const ErrorSet = @import("common.zig").Error.Set;
 
 const WK_STACK = @import("common.zig").WK_STACK;
 const RT_STACK = @import("common.zig").RT_STACK;
@@ -481,6 +482,48 @@ pub fn emitBytecode(writer: anytype, program: []const Ins) !void {
             const mr: u8 = if (ins.stack == RT_STACK) 0x40 else 0;
             const mk: u8 = if (ins.keep) 0x80 else 0;
             try writer.writeByte(byte | ms | mr | mk);
+        }
+    }
+}
+
+pub fn emitDebug(writer: anytype, program: *Program) !void {
+    const Item = struct {
+        romloc: usize,
+        node: *ASTNode,
+        parent: ?*ASTNode,
+        pub const AList = std.ArrayList(@This());
+    };
+
+    var items = Item.AList.init(gpa.allocator());
+    defer items.deinit();
+
+    try program.walkNodes(null, program.ast, &items, struct {
+        pub fn f(node: *ASTNode, parent: ?*ASTNode, _: *Program, buf: *Item.AList) ErrorSet!void {
+            if (node.romloc != 0xFFFF)
+                buf.append(.{
+                    .romloc = node.romloc + 0x100,
+                    .node = node,
+                    .parent = parent,
+                }) catch unreachable;
+        }
+    }.f);
+
+    std.sort.insertion(Item, items.items, {}, struct {
+        pub fn lessThan(_: void, lhs: Item, rhs: Item) bool {
+            return lhs.romloc < rhs.romloc;
+        }
+    }.lessThan);
+
+    for (items.items) |item| {
+        if (item.parent) |par| {
+            const s = switch (par.node) {
+                .Import => |i| i.name,
+                .Decl => |d| d.name,
+                else => unreachable,
+            };
+            try writer.print("{x:0>4}\t{s}\t{}\n", .{ item.romloc, s, item.node.srcloc });
+        } else {
+            try writer.print("{x:0>4}\t<???>\t{}\n", .{ item.romloc, item.node.srcloc });
         }
     }
 }

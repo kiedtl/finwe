@@ -19,6 +19,8 @@ pub fn main() anyerror!void {
         clap.parseParam("-1, --debug-asm   Output ASM to stderr.") catch unreachable,
         clap.parseParam("-2, --debug-inf   Output word analysis to stderr.") catch unreachable,
         clap.parseParam("-x, --emit <str>  Output UXN rom to file.") catch unreachable,
+        clap.parseParam("-d, --emit-debug  Output debug info to syms file. Requires -x.") catch
+            unreachable,
         clap.parseParam("<str>...") catch unreachable,
     };
 
@@ -35,25 +37,27 @@ pub fn main() anyerror!void {
     };
     defer args.deinit();
 
+    const alloc = gpa.allocator();
+
     for (args.positionals) |filename| {
         const file = try std.fs.cwd().openFile(filename, .{});
         defer file.close();
 
         const size = try file.getEndPos();
-        const buf = try gpa.allocator().alloc(u8, size);
-        defer gpa.allocator().free(buf);
+        const buf = try alloc.alloc(u8, size);
+        defer alloc.free(buf);
         _ = try file.readAll(buf);
 
-        var lexer = lexerm.Lexer.init(buf, filename, gpa.allocator());
+        var lexer = lexerm.Lexer.init(buf, filename, alloc);
         const lexed = try lexer.lexList(.Root);
         defer lexer.deinit();
 
-        var program = common.Program.init(gpa.allocator());
+        var program = common.Program.init(alloc);
 
         var parser = parserm.Parser.init(
             &program,
             args.args.@"test" > 0,
-            gpa.allocator(),
+            alloc,
         );
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
@@ -86,10 +90,17 @@ pub fn main() anyerror!void {
             };
         std.log.info("--------------------------------------------", .{});
 
-        if (args.args.emit) |outfilename| {
-            const out = try std.fs.cwd().createFile(outfilename, .{});
+        if (args.args.emit) |fname| {
+            const out = try std.fs.cwd().createFile(fname, .{});
             defer out.close();
             try codegen.emitBytecode(out.writer(), assembled.items);
+            if (args.args.@"emit-debug" != 0) {
+                const sfname = std.fmt.allocPrint(alloc, "{s}.syms", .{fname}) catch unreachable;
+                defer alloc.free(sfname);
+                const outsyms = try std.fs.cwd().createFile(sfname, .{});
+                defer outsyms.close();
+                try codegen.emitDebug(outsyms.writer(), &program);
+            }
         } else if (args.args.@"test" != 0) {
             var vm = vmm.VM.init(&program, assembled.items);
             defer vm.deinit();
