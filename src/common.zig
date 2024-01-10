@@ -1090,6 +1090,7 @@ pub const ASTNode = struct {
         node.Decl.variations = ASTNodePtrList.init(gpa.allocator());
         node.Decl.body = _deepcloneASTList(node.Decl.body, &node.Decl, program);
         node.Decl.scope = node.Decl.scope.shallowclone();
+        node.Decl.scope.resetChildParents();
         const new = ASTNode{
             .node = node,
             .srcloc = self.srcloc,
@@ -1303,6 +1304,15 @@ pub const Scope = struct {
         return new;
     }
 
+    // When we clone a decl, we clone the old scope, so we need to set any
+    // child decl's scope parents to the new scope
+    //
+    pub fn resetChildParents(self: *Scope) void {
+        for (self.defs.items) |defnode| {
+            defnode.node.Decl.scope.parent = self;
+        }
+    }
+
     pub fn create(parent: ?*Scope) *@This() {
         const p = gpa.allocator().create(@This()) catch unreachable;
         p.* = .{
@@ -1420,10 +1430,15 @@ pub const Scope = struct {
                         return d;
             }
         }
+        // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
         var iter = self.locals.iterator();
         return while (iter.next()) |local| {
+            // std.log.info("    - ... {s}", .{local.name});
             if (mem.eql(u8, local.name, name)) break local;
         } else if (self.parent) |parent| b: {
+            // std.log.info("[{x}] search parent {x} for {s}", .{
+            //     @intFromPtr(self), @intFromPtr(parent), name,
+            // });
             break :b parent.findLocal(name, p, allow_private);
         } else null;
     }
