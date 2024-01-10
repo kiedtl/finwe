@@ -15,10 +15,10 @@ const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const params = comptime [_]clap.Param(clap.Help){
-        clap.parseParam("-x, --emit        Directly output UXN binary.") catch unreachable,
-        clap.parseParam("-t, --test        Run test harness. Incompatible with -x.") catch unreachable,
+        clap.parseParam("-t, --test        Run test harness.") catch unreachable,
         clap.parseParam("-1, --debug-asm   Output ASM to stderr.") catch unreachable,
         clap.parseParam("-2, --debug-inf   Output word analysis to stderr.") catch unreachable,
+        clap.parseParam("-x, --emit <str>  Output UXN rom to file.") catch unreachable,
         clap.parseParam("<str>...") catch unreachable,
     };
 
@@ -86,9 +86,10 @@ pub fn main() anyerror!void {
             };
         std.log.info("--------------------------------------------", .{});
 
-        if (args.args.emit != 0) {
-            const stdout = std.io.getStdOut().writer();
-            try codegen.emitBytecode(stdout, assembled.items);
+        if (args.args.emit) |outfilename| {
+            const out = try std.fs.cwd().createFile(outfilename, .{});
+            defer out.close();
+            try codegen.emitBytecode(out.writer(), assembled.items);
         } else if (args.args.@"test" != 0) {
             var vm = vmm.VM.init(&program, assembled.items);
             defer vm.deinit();
