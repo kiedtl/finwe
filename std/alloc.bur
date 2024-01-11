@@ -53,13 +53,11 @@
 		swap-sb chunk-size $size <
 		or
 	] [
-		//    Skipping " print-string dup print nl
-
-		dup :next -> 0= (when [
+		:next ->
+		dup 0xFFFFs = (when [
 			0s (as @Opaque) (make (Of std/Maybe0 @Opaque))
 			return
 		])
-		    :next ->
 	])
 
 	(let chosen @Header)
@@ -81,12 +79,38 @@
 		T                $next   :free <-
 		$next            $chosen :next -> :prev <-
 		$next            $chosen :next <-
-		0xc0             $chosen :guard1 <-
-		0xfe             $chosen :guard2 <-
+		0xc0             $next   :guard1 <-
+		0xfe             $next   :guard2 <-
+		$chosen burdampe/assert-prot
+		$next   (sizeof Header) (as U16) burdampe/protect
+
+		burdampe/priv-exit
 	])
 
 	$chosen (sizeof Header) (as @Opaque) +
 	(make (Of std/Maybe0 @Opaque))
+])
+(test alloc/alloc_dealloc_basic [
+	init
+
+	100s get ;unwrap
+		dup 0 100s rot-sbs std/memset8
+		de
+	002s get ;unwrap
+		dup (as @U16) 0xAAs -<
+		de
+
+	(let ptrs [@Opaque 100])
+	100s (until [ 0= ] [
+		100s get ;unwrap
+		dup 0 100s rot-sbs std/memset8
+		over @ptrs : <-
+		1-
+	])
+	100s (until [ 0= ] [
+		dup @ptrs : -> de
+		1-
+	])
 ])
 
 // ( bytes oldptr -- Maybe<newptr> )
@@ -108,18 +132,17 @@
 	init
 
 	"Foo"
-	dup std/strlen swap
-	over get ;unwrap (as @U8)
-	std/memcpy
-	100s swap reget
-	;unwrap
+	dup std/strlen tuck get ;unwrap (as @U8) std/memcpy
+	100s swap reget ;unwrap (as @U8)
+	dup "Foo" std/strequ (should eq t)
 
-	"Foo" std/strequ (should eq t)
+	1s swap reget ;unwrap (as @U8)
+	dup :0 -> (should eq 'F)
+	dup :1 -> (should eq 'o)
 ])
 
 (word de (AnyPtr16 -- ) [
-	get-header
-	//Dealloc'ing: " print-string dup print nl
+	dup get-header
 
 	//dup     :guard1 -> 0xc0 <>
 	//over-sb :guard2 -> 0xfe <> or
@@ -154,7 +177,7 @@
 
 (word defrag (--) [
 	first
-	(until [ :next -> 0= ] [
+	(until [ 0xFFFFs = ] [
 		dup     :free ->
 		over-sb :next -> :free -> and
 		(when [
@@ -168,14 +191,17 @@
 				// ( current next @current->next )
 				over :next -> swap <-
 
-			dup :next -> 0<> (when [
-				// ( current next )
-				:next ->
-					// ( current $next->next )
-					:prev
-					// ( current $next->next->prev )
-					over swap <-
-					// ( current )
+			// ( current next )
+			dup 0xFFFFs = (when [ "Assertion failed" std/panic ])
+
+			// ( current next )
+			:next ->
+				// ( current $next->next )
+				:prev
+				// ( current $next->next->prev )
+				over swap <-
+				// ( current )
+
 
 			burdampe/priv-exit
 		] [ :next -> ])
@@ -187,16 +213,18 @@
 	dup :free -> print-bool "\t" print-string
 	dup :prev -> print " \t" print-string
 	dup :next -> print " \t" print-string
-	dup chunk-size print-dec
+	dup chunk-size print-dec "\t" print-string
+	//dup :guard1 -> print "\t" print-string
+	//dup :guard2 -> print
 	nl
 	drop
 ])
 
 (word print-chunks (--) [
-	"Chunk\tFree\tPrev\tNext\tSize\n" print-string
+	"Chunk\tFree\tPrev\tNext\tSize\tG1\tG2\n" print-string
 
 	first
-	(while [ :next -> 0<> ] [
+	(until [ 0xFFFFs = ] [
 		dup print-chunk
 		:next ->
 	])
