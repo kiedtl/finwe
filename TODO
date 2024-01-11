@@ -29,11 +29,13 @@ x Signed numbers
   x Lexer/Parser
   x Abs/Neg?/Division
 - A* pathfinding
+  - GetIndex fixes
+  - (len)
+  - Enums
 x Refactoring
   x Scopes
   x Explicit main function
   x Decls within decls
-- Enums
 - Fixed-point
   - Printing
 - Solve Effects issue
@@ -41,8 +43,7 @@ x Refactoring
   - would require being able to "expand" typeref...
   - need major refactoring?
 - Fix: inlining func w/ early return
-- Inline locals
-- Metadata
+x Metadata
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
@@ -52,6 +53,7 @@ x Refactoring
 Optimizations
 -------------
 
+- Inline locals
 - Eliminate duplicate decls (from generics)
   - E.g. 0 1 swap and 0 (as ptr) 1 (as ptr) swap -> two different functions,
     which is unnecessary (only one needs to be generated)
@@ -63,3 +65,10 @@ Optimizations
   - Metadata: always/never inline
 - Tail recursion
   - (recurse) builtin
+
+Warnings
+--------
+
+- Sprite structs can have metadata to warn if 0-initialized (either not enough
+  data or no data)
+  - #(warn zero-init)
