@@ -147,13 +147,23 @@
 	10s @foo + -> (should eq 'X)
 ])
 
+#noreturn #burdampe
+(word panic (@U8 -- ) [
+	"Panic: " print-string print-string nl
+	0x40 .System/debug deo
+	"Aborting.\n" print-string
+	0x01 .System/state deo
+	(asm "" .Op/Obrk)
+])
+
 #noreturn
 (word panic (@U8 -- ) [
 	"Panic: " print-string print-string nl
 	.System/rst (asm "" .Op/Odei) 2 /
 	(while [ 0> ] [
 		"  at " print-string
-		(asm "sr" .Op/Osth) print nl
+		(wild ( -- U16) [ (asm "sr" .Op/Osth) ])
+			print nl
 		1-
 	])
 	"Aborting.\n" print-string
