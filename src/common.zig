@@ -818,7 +818,6 @@ pub const ASTNode = struct {
         GetChild: GetChild,
         GetIndex: GetIndex,
         TypeDef: TypeDef,
-        Here,
         Builtin: Builtin,
         Breakpoint: Breakpoint,
         Debug,
@@ -873,6 +872,8 @@ pub const ASTNode = struct {
             SizeOf: SizeOf,
             Make: Make,
             SplitCast: SplitCast,
+            Here,
+            StaticsHere,
         },
 
         pub const SplitCast = struct {
@@ -1159,7 +1160,7 @@ pub const ASTNode = struct {
                 new.Cast.original = new.Cast.original.clone();
                 new.Cast.resolved = new.Cast.resolved.clone();
             },
-            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Here, .Return => {},
+            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Return => {},
         }
 
         return .{
@@ -1488,7 +1489,7 @@ pub const Program = struct {
     pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Here, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Import => |b| try walkNodes(self, node, b.body, ctx, func),
             .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
             .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),

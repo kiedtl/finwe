@@ -303,7 +303,15 @@ pub const Parser = struct {
                 if (mem.eql(u8, i, "return")) {
                     break :b ASTNode{ .node = .Return, .srcloc = node.location };
                 } else if (mem.eql(u8, i, "here")) {
-                    break :b ASTNode{ .node = .Here, .srcloc = node.location };
+                    break :b ASTNode{
+                        .node = .{ .Builtin = .{ .type = .Here } },
+                        .srcloc = node.location,
+                    };
+                } else if (mem.eql(u8, i, "here-statics")) {
+                    break :b ASTNode{
+                        .node = .{ .Builtin = .{ .type = .StaticsHere } },
+                        .srcloc = node.location,
+                    };
                 } else if (mem.eql(u8, i, "debug")) {
                     break :b ASTNode{ .node = .Debug, .srcloc = node.location };
                 }
@@ -667,7 +675,15 @@ pub const Parser = struct {
                     try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "here")) {
-                    break :b ASTNode{ .node = .Here, .srcloc = ast[0].location };
+                    break :b ASTNode{
+                        .node = .{ .Builtin = .{ .type = .Here } },
+                        .srcloc = ast[0].location,
+                    };
+                } else if (mem.eql(u8, k, "here-statics")) {
+                    break :b ASTNode{
+                        .node = .{ .Builtin = .{ .type = .StaticsHere } },
+                        .srcloc = ast[0].location,
+                    };
                 } else if (mem.eql(u8, k, "of")) {
                     if (ast[1].node == .MethodCall)
                         @panic("TODO: of() w/ method calls");

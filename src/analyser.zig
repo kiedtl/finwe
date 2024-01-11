@@ -554,7 +554,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Debug => std.log.debug("[debug] Current analysis: {s}", .{
                 AnalysisFmt.from(a, program),
             }),
-            .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
             .Decl => {}, // Only analyse if/when called
             .RBlock => |r| {
                 var nctx = ctx;
@@ -1049,6 +1048,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         a.stack.append(.U16) catch unreachable;
                     } else unreachable;
                 },
+                .Here => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
+                .StaticsHere => a.stack.append(TypeInfo.ptrize16(.U8, program)) catch unreachable,
             },
             .Cast => |*c| {
                 for (c.resolved.slice(), 0..) |*resolved, i|

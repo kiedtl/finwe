@@ -78,7 +78,7 @@ fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) Code
             .StaticPtr => {},
             else => unreachable,
         },
-        .Quote, .Here, .VRef, .VDeref => {},
+        .Quote, .Builtin, .VRef, .VDeref => {},
         else => unreachable,
     }
 }
@@ -111,7 +111,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
         .Debug => {},
-        .Here => try emitUA(buf, ual, "", node),
         .Builtin => |builtin| switch (builtin.type) {
             .SplitCast => {},
             .Make => {},
@@ -124,6 +123,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emitIMM(buf, node, WK_STACK, false, .Olit, @as(u8, @intCast(s)));
                 }
             },
+            .Here => try emitUA(buf, ual, "", node),
+            .StaticsHere => try emitUA(buf, ual, "", node),
         },
         .Breakpoint => |brk| {
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0b);
@@ -392,7 +393,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
-    //program.romloc_code_end = buf.items.len;
+    program.romloc_code_end = buf.items.len;
 
     for (program.statics.items) |*data| {
         data.romloc = buf.items.len;
@@ -409,7 +410,6 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
                 if (emitnullbyte) try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
                 done += s.items.len + if (emitnullbyte) @as(usize, 1) else 0;
-                program.romloc_code_end = buf.items.len;
             },
             .None => {},
         }
@@ -420,7 +420,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     const here = buf.items.len;
 
-    // // std.log.info("here: {x}", .{buf.items.len + 0x100});
+    // std.log.info("here: {x}", .{buf.items.len + 0x100});
     // for (program.statics.items) |*data| {
     //     std.log.info("Static: {s} {x}...{x}", .{
     //         @tagName(data.default), data.romloc + 0x100, data.romloc + (data.type.size(program).? * data.count) + 0x100,
@@ -428,7 +428,11 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     // }
 
     for (ual.items) |ua| switch (ua.node.node) {
-        .Here => reemitAddr16(&buf, ua.loc, here),
+        .Builtin => |b| switch (b.type) {
+            .Here => reemitAddr16(&buf, ua.loc, here),
+            .StaticsHere => reemitAddr16(&buf, ua.loc, program.romloc_code_end + 0x100),
+            else => unreachable,
+        },
         .VRef => |v| {
             const loc = program.statics.items[v.localptr.?.ind.?].romloc;
             // std.log.info("Static @ {s}: {x}", .{ v.name, loc + 0x100 });
