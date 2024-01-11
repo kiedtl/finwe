@@ -2,31 +2,8 @@
 (use* varvara)
 (use std)
 (use vec)
+(use burdampe)
 (use alloc)
-
-(let MAP [[U8 20] 21] [
-	"#.................##"
-	"..######...........#"
-	"..#....#............"
-	"..#....#.....#......"
-	"..######.....#......"
-	".............#......"
-	".............#......"
-	"......########......"
-	"...................."
-	".....#......####...."
-	".....#......#..#...."
-	".....#......#..#...."
-	".....#......#..#...."
-	".....#......####...."
-	".....#.............."
-	".....#...#######...."
-	"........###...###..."
-	"........#.......#..."
-	"........##.....##..."
-	"#........###.###...."
-	"##.................#"
-])
 
 (enum Direction U8 [n 0] [s 1] [e 2] [w 3] [ne 4] [nw 5] [se 6] [sw 7])
 
@@ -78,94 +55,18 @@
 	0 9 (make Coord) 0 0 (make Coord) ;distance (should eq 9s)
 ])
 
-(word on-frame ( -- ) [ ])
-
-(word on-mouse ( -- ) [
-	.Mouse/state dei 0= (when [
-		draw
-		// Movement
-		.Mouse/x dei 8s / (as U8)
-		.Mouse/y dei 8s / (as U8)
-		(make Coord) get-path
-	] [
-		// Button press
-	])
-])
-
-(word main [
-	[ (--) on-frame halt ] .Screen/vector deo
-	[ (--) on-mouse halt ] .Mouse/vector deo
-
-	alloc/init
-	@buf vec/init
-
-	0xf07fs .System/r deo
-	0xf0e0s .System/g deo
-	0xf0c0s .System/b deo
-
-	20s 8s * .Screen/width deo
-	21s 8s * .Screen/height deo
-
-	draw
-	// Movement
-	.Mouse/x dei 8s / (as U8)
-	.Mouse/y dei 8s / (as U8)
-	(make Coord) get-path
-	18 21 (make Coord) get-path
-	draw-path
-	8 4 (make Coord) get-path
-	draw-path
-	2 9 (make Coord) get-path
-	draw
-	draw-path
-])
-
 (struct Node
 	[came-from Coord]
 	[unvisited Bool]
 )
-(let nodes [[Node 20] 21])
-(let g-score [[U16 20] 21])
-(let open-list (Of vec/Vector Coord))
-(let f-score [[U16 20] 21])
-(let goal Coord)
-
-(let buf (Of vec/Vector Coord))
-
-(word get-path ( Coord -- ) [
-	(let cache Coord)
-
-	dup $cache ;eq? (when [ drop return ])
-	@cache <-
-
-	@buf ;deinit
-	alloc/defrag
-	@buf vec/init
-
-	@buf 1 1 (make Coord) $cache astar drop
-])
-
-(word draw-path ( -- ) [
-	0s
-	(while [ @buf :len -> < ] [
-		dup @buf :items -> : -> highlight-coord
-		1+
-	]) drop
-])
 
 // ( start end -- path )
-(word astar (@(Of vec/Vector Coord) Coord Coord -- Bool) [
-	(word open-list-contains? ( Coord -- Bool ) [
-		0s
-		(while [ @open-list :len -> < ] [
-			dup @open-list :items -> : ->
-			rot tuck
-			;eq? (when [ 2drop t return ])
-			swap
-			1+
-		])
-		2drop nil
-	])
+(word astar (@(Fn (Coord -- )) Coord Coord -- Bool) [
+	(let nodes [[Node 20] 21])
+	(let g-score [[U16 20] 21])
+	(let open-list (Of vec/Vector Coord))
+	(let f-score [[U16 20] 21])
+	(let goal Coord)
 
 	(word get-current ( -- Coord ) [
 		(let best-fscore U16)
@@ -192,6 +93,19 @@
 
 		$best-index @open-list ;swap-remove
 		@nodes over ;at :unvisited nil swap-sb <-
+	])
+
+	(word open-list-contains? ( Coord -- Bool ) [
+		// OPT: iterate backwards
+		0s
+		(while [ @open-list :len -> < ] [
+			dup @open-list :items -> : ->
+			rot tuck
+			;eq? (when [ 2drop t return ])
+			swap
+			1+
+		])
+		2drop nil
 	])
 
 	// ( current neighbor -- )
@@ -241,11 +155,11 @@
 			@open-list ;deinit
 			@nodes swap ;at :came-from ->
 			(while [ 0xFF 0xFF (make Coord) ;eq? not ] [
-				2dup swap ;append
+				2dup swap do
 				@nodes swap ;at :came-from ->
 			])
 			drop
-			$goal swap ;append
+			$goal swap do
 			t return
 		])
 		0s (until [ 7s = ] [
@@ -259,6 +173,24 @@
 
 	drop
 	nil
+])
+
+(let buf (Of vec/Vector Coord))
+
+(word get-path ( Coord -- ) [
+	(let cache Coord)
+
+	dup $cache ;eq? (when [ drop return ])
+	@cache <-
+
+	@buf ;deinit
+	alloc/defrag
+	@buf vec/init
+
+	[ (Coord -- ) @buf ;append ]
+		1 1 (make Coord) $cache
+		astar
+	drop
 ])
 
 (word highlight-coord (Coord -- ) [
@@ -332,6 +264,45 @@
 
 (struct Sprite8 [data [U8 8]])
 
+(word draw-path ( -- ) [
+	0s
+	(while [ @buf :len -> < ] [
+		dup @buf :items -> : -> highlight-coord
+		1+
+	]) drop
+])
+
+(word on-frame ( -- ) [ ])
+
+(word on-mouse ( -- ) [
+	.Mouse/state dei 0= (when [
+		draw
+		// Movement
+		.Mouse/x dei 8s / (as U8)
+		.Mouse/y dei 8s / (as U8)
+		(make Coord) get-path
+	] [
+		// Button press
+	])
+])
+
+(word main [
+	[ (--) halt ] .Screen/vector deo
+	[ (--) on-mouse halt ] .Mouse/vector deo
+
+	alloc/init
+	@buf vec/init
+
+	0x100s (as @Opaque) here-statics 0x100s - burdampe/protect
+
+	0xf07fs .System/r deo
+	0xf0e0s .System/g deo
+	0xf0c0s .System/b deo
+
+	20s 8s * .Screen/width deo
+	21s 8s * .Screen/height deo
+])
+
 // Taken from left
 (let MOUSE Sprite8 [
 	0x80c0s 0xe0f0s 0xf8e0s 0x1000s
@@ -387,4 +358,28 @@
 	0x0000s 0x7e0cs 0x1830s 0x7e00s 0x1c30s 0x3060s 0x3030s 0x1c00s
 	0x1818s 0x1818s 0x1818s 0x1818s 0x380cs 0x0c06s 0x0c0cs 0x3800s
 	0x0000s 0x60f2s 0x9e0cs 0x0000s 0x3c42s 0x9985s 0x8599s 0x423cs
+])
+
+(let MAP [[U8 20] 21] [
+	"#.................##"
+	"..######...........#"
+	"..#....#............"
+	"..#....#.....#......"
+	"..######.....#......"
+	".............#......"
+	".............#......"
+	"......########......"
+	"...................."
+	".....#......####...."
+	".....#......#..#...."
+	".....#......#..#...."
+	".....#......#..#...."
+	".....#......####...."
+	".....#.............."
+	".....#...#######...."
+	"........###...###..."
+	"........#.......#..."
+	"........##.....##..."
+	"#........###.###...."
+	"##.................#"
 ])
