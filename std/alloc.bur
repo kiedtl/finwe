@@ -47,18 +47,8 @@
 	(let size U16)
 	@size <-
 
-	// Allocating " print-string
-	//size             print-dec
-	// bytes\n"        print-string
-
 	first
 	(while [
-		//dup "Sz: " print-string chunk-size print-dec nl
-		//    "Rq: " print-string $size print-dec nl
-		//dup "Nx: " print-string :next -> print nl
-		//dup "Av: " print-string :free -> print-bool nl
-		//nl
-
 		dup :free -> not
 		swap-sb chunk-size $size <
 		or
@@ -71,8 +61,6 @@
 		])
 		    :next ->
 	])
-
-	//Chosen: " print-string dup print nl nl
 
 	(let chosen @Header)
 	@chosen <-
