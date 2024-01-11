@@ -21,6 +21,7 @@ const StackBuffer = @import("buffer.zig").StackBuffer;
 pub const Error = error{
     UnknownLocal,
     NoSuchType,
+    NoSuchField,
     GenericNotMatching,
     TypeNotMatching,
     CannotGetFieldMultiPtr,
@@ -922,7 +923,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 };
                 const i = for (tstruct.fields.items, 0..) |f, i| {
                     if (mem.eql(u8, f.name, gch.name)) break i;
-                } else @panic("no such field");
+                } else return program.aerr(error.NoSuchField, node.srcloc);
                 _ = a.stack.pop() catch unreachable;
                 if (b == .Struct) {
                     if (b.isGeneric(program)) {
@@ -1182,7 +1183,7 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
             }
         }
     } else {
-        const entrypoint = &program.global_scope.findDeclAny("main").?.node.Decl;
+        const entrypoint = &program.global_scope.findDeclAny(program, "main").?.node.Decl;
         entrypoint.calls += 1;
 
         assert(!entrypoint.is_analysed);

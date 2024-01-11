@@ -53,6 +53,7 @@ pub fn main() anyerror!void {
         defer lexer.deinit();
 
         var program = common.Program.init(alloc);
+        program.flag_burdampe = args.args.emit == null;
 
         var parser = parserm.Parser.init(
             &program,

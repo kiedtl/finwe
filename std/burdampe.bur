@@ -1,0 +1,18 @@
+(use* varvara)
+
+// 
+// burdampe
+// bur debugging and memory protection extension
+//
+
+#burdampe (word protect     (AnyPtr16 U16 --  ) [ 0x41 .System/debug deo      ])
+#burdampe (word unprotect   (    AnyPtr16 --  ) [ 0x42 .System/debug deo      ])
+#burdampe (word priv-enter  (             --  ) [ 0x43 .System/debug deo      ])
+#burdampe (word priv-exit   (             --  ) [ 0x44 .System/debug deo      ])
+#burdampe (word assert-prot (    AnyPtr16 --  ) [ 0x45 .System/debug deo      ])
+
+(word protect               (AnyPtr16 U16 --  ) [ 2drop                       ])
+(word unprotect             (    AnyPtr16 --  ) [ drop                        ])
+(word priv-enter            (             --  ) [                             ])
+(word priv-exit             (             --  ) [                             ])
+(word assert-prot           (    AnyPtr16 --  ) [ drop                        ])

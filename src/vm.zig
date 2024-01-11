@@ -41,6 +41,15 @@ extern "c" fn emu_resize(width: c_int, height: c_int) c_int;
 extern "c" fn emu_end(uxn: [*c]c.Uxn) c_int;
 extern "c" fn base_emu_deo(uxn: [*c]c.Uxn, addr: c_char) void;
 
+const Item = struct { romloc: usize, node: *ASTNode };
+
+const Range = struct {
+    a: usize,
+    b: usize,
+    rst: [0x100]u8,
+    rst_ptr: usize,
+};
+
 pub const VM = struct {
     uxn: c.Uxn = undefined,
     ram: []u8,
@@ -49,10 +58,12 @@ pub const VM = struct {
     program: *Program,
     captured_stdout: std.ArrayList(u8),
     captured_stderr: std.ArrayList(u8),
+    protected: std.ArrayList(Range),
 
     is_testing: bool = false,
     is_test_done: bool = false,
     is_breakpoint: bool = false,
+    is_privileged: bool = false,
 
     pub fn init(program: *Program, assembled: []const Ins) VM {
         const ram = gpa.allocator().alloc(u8, 0x10000 * c.RAM_PAGES) catch
@@ -66,6 +77,7 @@ pub const VM = struct {
             .assembled = assembled,
             .captured_stdout = std.ArrayList(u8).init(gpa.allocator()),
             .captured_stderr = std.ArrayList(u8).init(gpa.allocator()),
+            .protected = std.ArrayList(Range).init(gpa.allocator()),
         };
         self.load();
         self.uxn.ram = ram.ptr;
@@ -94,6 +106,7 @@ pub const VM = struct {
         gpa.allocator().free(self.ram);
         self.captured_stdout.deinit();
         self.captured_stderr.deinit();
+        self.protected.deinit();
     }
 
     pub fn load(self: *VM) void {
@@ -103,54 +116,64 @@ pub const VM = struct {
         codegen.emitBytecode(writer, self.assembled) catch unreachable;
     }
 
+    fn _getFuncNameForAddr(self: *VM, items: []const Item, addr: u16) ?*ASTNode {
+        if (addr > self.here)
+            return null;
+
+        var prev: ?Item = null;
+        for (items) |item| {
+            if (item.romloc > addr) {
+                if (prev != null and prev.?.romloc <= addr) {
+                    return prev.?.node;
+                } else {
+                    return null;
+                }
+            }
+            prev = item;
+        }
+        return null;
+    }
+
+    pub fn printBacktrace(self: *VM, rst: []const u8, rst_ptr: usize) void {
+        const stderr = std.io.getStdErr().writer();
+
+        var items = std.ArrayList(Item).init(gpa.allocator());
+        defer items.deinit();
+
+        for (self.program.defs.items) |def|
+            items.append(.{ .romloc = def.romloc + 0x100, .node = def }) catch unreachable;
+
+        std.sort.insertion(Item, items.items, {}, struct {
+            pub fn lessThan(_: void, lhs: Item, rhs: Item) bool {
+                return lhs.romloc < rhs.romloc;
+            }
+        }.lessThan);
+
+        var ptr = rst_ptr;
+        while (ptr > 0) : (ptr -= 2) {
+            const addr = @as(u16, @intCast(rst[ptr -| 2])) << 8 | rst[ptr -| 1];
+            stderr.print("  \x1b[36mat \x1b[m{x:0>4}", .{addr}) catch unreachable;
+            if (self._getFuncNameForAddr(items.items, addr)) |node| {
+                const s = if (node.node.Decl.is_test) "<test>" else node.node.Decl.name;
+                stderr.print(" \x1b[37;1m{s: <15}\x1b[m", .{s}) catch unreachable;
+                stderr.print(" ({s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m)\n", .{
+                    node.srcloc.file, node.srcloc.line, node.srcloc.column,
+                }) catch unreachable;
+            } else {
+                stderr.print(" \x1b[37;1m???\x1b[m\n", .{}) catch unreachable;
+            }
+        }
+    }
+
     pub fn execute(self: *VM) void {
         self.is_testing = false;
 
-        // TODO: argument handling for roms that need it
-        //self.uxn.dev[0x17] = argc - i;
-
-        // const end = self.program.romloc_code_end + 0x100;
-
-        // const copy = gpa.allocator().alloc(u8, 0x10000) catch unreachable;
-        // @memcpy(
-        //     copy[0..end],
-        //     self.ram[0..end],
-        // );
-
-        // const stderr = std.io.getStdErr().writer();
-        // std.log.info("romloc end: {x}", .{end});
+        const stderr = std.io.getStdErr().writer();
 
         var ctr: usize = 0;
         var pc: c_ushort = c.PAGE_PROGRAM;
         while (true) : (ctr += 1) {
-            // stderr.print("{}: pc: {x} {x:0<2} ({x:0<2}) {: <3} {x}\n", .{
-            //     ctr,
-            //     pc,
-            //     self.ram[pc],
-            //     copy[pc],
-            //     self.uxn.wst.ptr,
-            //     self.uxn.wst.dat[self.uxn.wst.ptr -| 1],
-            // }) catch unreachable;
-
-            // var xi: usize = 0;
-            // while (xi < self.uxn.wst.ptr) : (xi += 1)
-            //     stderr.print(" {x:0<2}", .{self.uxn.wst.dat[xi]}) catch unreachable;
-            // if (xi == 0)
-            //     stderr.print(" <empty>", .{}) catch unreachable;
-            // stderr.print(" \n", .{}) catch unreachable;
-
-            // for (copy[c.PAGE_PROGRAM..end], c.PAGE_PROGRAM..) |byte, i|
-            //     if (byte != self.ram[i]) {
-            //         std.log.info("differs at {x}", .{i});
-            //         var xi: usize = 0;
-            //         while (xi < self.uxn.rst.ptr) : (xi += 1)
-            //             stderr.print(" {x:0<2}", .{self.uxn.rst.dat[xi]}) catch unreachable;
-            //         if (xi == 0)
-            //             stderr.print(" <empty>", .{}) catch unreachable;
-            //         stderr.print(" \n", .{}) catch unreachable;
-            //         break :f;
-            //     };
-
+            self._checkInstruction(pc, stderr);
             pc = c.uxn_eval_once(&self.uxn, pc);
             if (pc <= 1) break;
             assert(!self.is_breakpoint);
@@ -286,6 +309,7 @@ pub const VM = struct {
             stderr.print("\x1b[34..\x1b[m", .{}) catch unreachable;
 
             // TODO: assert that stacks are empty after each test
+            self.protected.shrinkAndFree(0);
             self.uxn.wst.ptr = 0;
             self.uxn.rst.ptr = 0;
             @memset(self.ram[0..], 0);
@@ -295,6 +319,7 @@ pub const VM = struct {
             assert(pc != 0xFFFF);
 
             while (true) {
+                self._checkInstruction(pc, stderr);
                 pc = c.uxn_eval_once(&self.uxn, pc);
                 if (pc == 0) @panic("test halted");
                 if (pc == 1) break;
@@ -334,24 +359,153 @@ pub const VM = struct {
 
         _ = emu_end(&self.uxn);
     }
+
+    fn _findProtectedRangeStrict(self: *VM, addr: u16) ?usize {
+        return for (self.protected.items, 0..) |prange, i| {
+            if (prange.a == addr) break i;
+        } else null;
+    }
+
+    fn _findProtectedRangeContaining(self: *VM, addr: u16) ?usize {
+        return for (self.protected.items, 0..) |prange, i| {
+            if (addr >= prange.a and addr < prange.b) break i;
+        } else null;
+    }
+
+    fn _checkInstruction(self: *VM, pc: c_ushort, stderr: anytype) void {
+        const ins = self.uxn.ram[pc];
+        switch (ins & 0x3f) {
+            0x15, // STA
+            0x35, // STA2
+            => if (self.protected.items.len > 0 and !self.is_privileged) {
+                const stk = if (ins & 0x40 != 0) &self.uxn.rst else &self.uxn.wst;
+                const wst: [*c]u8 = @ptrCast(&stk.dat[stk.ptr -| 1]);
+                const addr = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
+
+                for (self.protected.items) |protected_range| {
+                    if (addr >= protected_range.a and addr < protected_range.b) {
+                        _printHappyPercent(stderr);
+                        stderr.print("Protection exception\n", .{}) catch unreachable;
+                        stderr.print("Write to {x:0>4} (in {x:0>4}..{x:0>4})\n", .{
+                            addr, protected_range.a, protected_range.b,
+                        }) catch unreachable;
+                        self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                        stderr.print("Initial protection:\n", .{}) catch unreachable;
+                        self.printBacktrace(&protected_range.rst, protected_range.rst_ptr);
+                        stderr.print("Aborting.\n", .{}) catch unreachable;
+                        std.os.exit(1);
+                    }
+                }
+            },
+            else => {},
+        }
+    }
 };
 
 pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     const self = @fieldParentPtr(VM, "uxn", u);
-    if (self.is_testing) {
-        switch (addr) {
-            0x0e => if (u.*.dev[0x0e] == 0x0b) {
+    switch (addr) {
+        0x0e => switch (u.*.dev[0x0e]) {
+            0x0b => if (self.is_testing) {
                 self.is_breakpoint = true;
-            } else base_emu_deo(u, addr),
-            0x18 => self.captured_stdout.append(u.*.dev[0x18]) catch unreachable,
-            0x19 => self.captured_stderr.append(u.*.dev[0x19]) catch unreachable,
+            },
+            0x40 => {
+                self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+            },
+            0x41 => {
+                //
+                // TODO: rst
+                //
+                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
+                const count = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
+                const begin = @as(u16, @intCast((wst - @as(u8, 3)).*)) << 8 | (wst - @as(u8, 2)).*;
+                self.uxn.wst.ptr -= 4;
+                if (self._findProtectedRangeContaining(begin)) |i| {
+                    const stderr = std.io.getStdErr().writer();
+                    const existing = self.protected.items[i];
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Range {x:0>4} already protected (in {x:0>4}..{x:0>4})\n", .{
+                        begin, existing.a, existing.b,
+                    }) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Initial protection:\n", .{}) catch unreachable;
+                    self.printBacktrace(&existing.rst, existing.rst_ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                } else {
+                    self.protected.append(.{
+                        .a = begin,
+                        .b = begin + count,
+                        .rst = self.uxn.rst.dat,
+                        .rst_ptr = self.uxn.rst.ptr,
+                    }) catch unreachable;
+                }
+            },
+            0x42 => {
+                //
+                // TODO: rst
+                //
+                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
+                const paddr = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
+                self.uxn.wst.ptr -= 2;
+                if (self._findProtectedRangeStrict(paddr)) |i| {
+                    _ = self.protected.swapRemove(i);
+                } else {
+                    const stderr = std.io.getStdErr().writer();
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Bad range to unprotect {x:0>4}\n", .{paddr}) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                }
+            },
+            0x43 => {
+                self.is_privileged = true;
+            },
+            0x44 => {
+                self.is_privileged = false;
+            },
+            0x45 => {
+                //
+                // TODO: rst
+                //
+                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
+                const paddr = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
+                self.uxn.wst.ptr -= 2;
+                if (self._findProtectedRangeContaining(paddr) == null) {
+                    const stderr = std.io.getStdErr().writer();
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Address {x:0>4} not protected\n", .{paddr}) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                }
+            },
             else => base_emu_deo(u, addr),
-        }
-    } else {
-        base_emu_deo(u, addr);
+        },
+        0x18 => if (self.is_testing)
+            self.captured_stdout.append(u.*.dev[0x18]) catch unreachable
+        else
+            base_emu_deo(u, addr),
+        0x19 => if (self.is_testing)
+            self.captured_stderr.append(u.*.dev[0x19]) catch unreachable
+        else
+            base_emu_deo(u, addr),
+        else => base_emu_deo(u, addr),
     }
 }
 
+// Print '%' just in case program didn't print a newline, then print a bunch of
+// spaces if a newline was output; the spaces will not stay on a line and we
+// can output a carriage return to get back to the start of the line.
+// Otherwise, the spaces will wrap to the next line, where we can safely
+// carriage return to the start of the line.
+//
+// Stolen from a blogpost describing this same feature in the fish/zsh shells
+//
 fn _printHappyPercent(stderr: anytype) void {
     var wsz: std.os.linux.winsize = undefined;
     const fd = @as(usize, @bitCast(@as(isize, 1)));
@@ -362,6 +516,6 @@ fn _printHappyPercent(stderr: anytype) void {
         else => return, // Not a tty, stick head in sand immediately
     };
     stderr.print("\x1b[7m%\x1b[m", .{}) catch unreachable;
-    stderr.writeByteNTimes(' ', columns - 2) catch unreachable;
+    stderr.writeByteNTimes(' ', columns - 1) catch unreachable;
     stderr.print("\r", .{}) catch unreachable;
 }

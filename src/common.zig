@@ -904,6 +904,7 @@ pub const ASTNode = struct {
             Alias: AliasDef,
         },
         is_private: bool = false,
+        is_targ_burdampe: bool = false,
 
         pub const AliasDef = struct {
             val: TypeInfo,
@@ -1066,6 +1067,7 @@ pub const ASTNode = struct {
         is_analysed: bool = false,
         is_test: bool = false,
         is_inline: Inline = .Auto,
+        is_targ_burdampe: bool = false,
 
         pub const Inline = enum { Auto, Always, Never };
     };
@@ -1339,7 +1341,7 @@ pub const Scope = struct {
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
 
-        self._findDecl(name, &buf, true);
+        self._findDecl(name, &buf, true, program);
 
         var type_args = @TypeOf(caller_args.args).init(null);
         for (caller_node.node.Call.args.constSlice()) |arg|
@@ -1357,14 +1359,14 @@ pub const Scope = struct {
         return buf.getLastOrNull();
     }
 
-    pub fn findDeclAny(self: *Scope, name: []const u8) ?*ASTNode {
+    pub fn findDeclAny(self: *Scope, program: *Program, name: []const u8) ?*ASTNode {
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
-        self._findDecl(name, &buf, true);
+        self._findDecl(name, &buf, true, program);
         return if (buf.items.len == 0) null else buf.items[0];
     }
 
-    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, allow_private: bool) void {
+    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, allow_private: bool, program: *Program) void {
         for (self.imports.items) |import| {
             if (import.node.Import.is_defiling) {
                 // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
@@ -1373,10 +1375,10 @@ pub const Scope = struct {
                 //     @intFromPtr(import.node.Import.scope),
                 //     name,
                 // });
-                import.node.Import.scope._findDecl(name, buf, false);
+                import.node.Import.scope._findDecl(name, buf, false, program);
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
                 if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, false);
+                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, false, program);
             }
         }
         // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
@@ -1384,6 +1386,7 @@ pub const Scope = struct {
             const decl = def.node.Decl;
             // std.log.info("    - ... {s}", .{decl.name});
             if (!decl.is_test and (allow_private or !decl.is_private) and
+                (!decl.is_targ_burdampe or program.flag_burdampe) and
                 mem.eql(u8, decl.name, name))
             {
                 buf.append(def) catch unreachable;
@@ -1393,7 +1396,7 @@ pub const Scope = struct {
             // std.log.info("[{x}] search parent {x} for {s}", .{
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
-            parent._findDecl(name, buf, allow_private);
+            parent._findDecl(name, buf, allow_private, program);
         }
     }
 
@@ -1411,6 +1414,7 @@ pub const Scope = struct {
         return for (self.types.items) |type_ind| {
             const typedef = p.types.items[type_ind];
             if ((allow_private or !typedef.is_private) and
+                (!typedef.is_targ_burdampe or p.flag_burdampe) and
                 mem.eql(u8, typedef.name, name))
             {
                 break type_ind;
@@ -1460,6 +1464,8 @@ pub const Program = struct {
 
     // Keep track of which files evaluated, to avoid import infinite loop
     imports: ASTNodePtrList,
+
+    flag_burdampe: bool = false,
 
     pub fn init(alloc: mem.Allocator) @This() {
         return Program{
@@ -1572,7 +1578,9 @@ pub const UserType = struct {
     name: []const u8,
     def: Def,
     scope: *Scope, // for methods etc
+
     is_private: bool = false,
+    is_targ_burdampe: bool = false,
 
     pub const AList = std.ArrayList(UserType);
 
