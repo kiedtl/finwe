@@ -92,9 +92,14 @@ pub fn main() anyerror!void {
         std.log.info("--------------------------------------------", .{});
 
         if (args.args.emit) |fname| {
-            const out = try std.fs.cwd().createFile(fname, .{});
-            defer out.close();
-            try codegen.emitBytecode(out.writer(), assembled.items);
+            if (mem.eql(u8, fname, "-")) {
+                const stdout = std.io.getStdOut().writer();
+                try codegen.emitBytecode(stdout, assembled.items);
+            } else {
+                const out = try std.fs.cwd().createFile(fname, .{});
+                defer out.close();
+                try codegen.emitBytecode(out.writer(), assembled.items);
+            }
             if (args.args.@"emit-debug" != 0) {
                 const sfname = std.fmt.allocPrint(alloc, "{s}.syms", .{fname}) catch unreachable;
                 defer alloc.free(sfname);
