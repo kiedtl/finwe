@@ -1,6 +1,7 @@
 (use* core)
 (use* varvara)
 (use std)
+(use burdampe)
 
 // I wanted to have U16 guards, that way we could have 0x1cedc0fe
 //
@@ -26,6 +27,7 @@
 	T       first :free <-
 	0xc0    first :guard1 <-
 	0xfe    first :guard2 <-
+	first (sizeof Header) (as U16) burdampe/protect
 ])
 
 // ( block-count oldptr block-type -- (sizeof block-type)*block-count )
@@ -74,13 +76,15 @@
 
 	(let chosen @Header)
 	@chosen <-
-
-
-	nil $chosen :free <-
+	burdampe/priv-enter
+		nil $chosen :free <-
+		burdampe/priv-exit
 
 	$chosen chunk-size $size -
 		(sizeof Header) (as U16) 1+
 	< not (when [
+		burdampe/priv-enter
+
 		(let next @Header)
 		(sizeof Header) (as U16) $size $chosen + + @next <-
 
@@ -127,11 +131,26 @@
 	get-header
 	//Dealloc'ing: " print-string dup print nl
 
-		dup     :guard1 -> 0xc0 <>
-		over-sb :guard2 -> 0xfe <>
-	or (when [ "Bad ptr" std/panic ])
+	//dup     :guard1 -> 0xc0 <>
+	//over-sb :guard2 -> 0xfe <> or
+		//(when [ "Invalid pointer" error-dealloc ])
+	dup :free ->
+		(when [ "Double-free" error-dealloc ])
 
-	T swap-sb :free <-
+	burdampe/priv-enter
+		T swap-sb :free <-
+		burdampe/priv-exit
+	drop
+])
+
+// ( chunk chunk-header error-string )
+#private #noreturn
+(word error-dealloc ( AnyPtr16 AnyPtr16 @[U8] -- ) [
+	print-string ": " print-string
+	swap print
+	" (Header: " print-string print ")\n" print-string
+	print-chunks
+	"Deallocation error" std/panic
 ])
 
 (word get-header (@Opaque -- @Header) [
@@ -149,7 +168,9 @@
 		dup     :free ->
 		over-sb :next -> :free -> and
 		(when [
+			burdampe/priv-enter
 			dup :next ->
+			dup burdampe/unprotect
 
 			// current->next = next->next
 			// ( current next )
@@ -166,7 +187,7 @@
 					over swap <-
 					// ( current )
 
-			] [ drop ])
+			burdampe/priv-exit
 		] [ :next -> ])
 	]) drop
 ])
