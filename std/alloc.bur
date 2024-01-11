@@ -95,10 +95,12 @@
 	dup get-header chunk-size
 	rot
 	// ( old old-sz new-sz )
+	tuck min swap
+	// ( old min(old-sz,new-sz) new-sz )
 	get :value dup 0= (when [ nip nip (make (Of std/Maybe0 @Opaque)) return ])
-	// ( old old-chunk-sz new-unwrapped )
+	// ( old min-sz new-unwrapped )
 	rot copy swap
-	// ( old-chunk-sz old new | new old )
+	// ( min-sz old new )
 	(as @U8) std/memcpy (make (Of std/Maybe0 @Opaque))
 	(r move) de
 ])
