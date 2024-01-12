@@ -137,8 +137,7 @@
 
 	@goal <-
 
-	0 (while [ drop @open-list :len -> 0<> ] [
-		drop
+	(while [ ( -- Bool ) @open-list :len -> 0<> ] [
 		get-current
 		dup $goal ;eq? (when [
 			@open-list ;deinit
@@ -156,8 +155,7 @@
 		dup .Dir/e  check-neighbor dup .Dir/w  check-neighbor
 		dup .Dir/se check-neighbor dup .Dir/sw check-neighbor
 		dup .Dir/se check-neighbor     .Dir/sw check-neighbor
-		0
-	]) drop
+	])
 
 	drop
 	nil
