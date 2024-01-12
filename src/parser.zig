@@ -250,31 +250,46 @@ pub const Parser = struct {
         };
     }
 
+    // FIXME: remove out param
+    fn parseBlockArityPair(self: *Parser, out_arity: *?BlockAnalysis, q: []const lexer.Node, p_scope: *Scope, require_arity: bool) !ASTNodeList {
+        if (require_arity) {
+            if (q.len == 0) {
+                out_arity.* = BlockAnalysis{};
+                return ASTNodeList.init(self.alloc);
+            } else if (q.len == 1 and q[0].node == .List) {
+                self.program.forget_errors = true;
+                if (self.parseArity(&q[0])) |ar| {
+                    out_arity.* = ar;
+                    self.program.forget_errors = false;
+                    return ASTNodeList.init(self.alloc);
+                } else |_| {
+                    @panic("need arity for quotes");
+                }
+            } else {
+                out_arity.* = try self.parseArity(&q[0]);
+                return try self.parseStatements(q[1..], p_scope);
+            }
+        } else {
+            self.program.forget_errors = true;
+            if (self.parseArity(&q[0])) |ar|
+                out_arity.* = ar
+            else |_| {}
+            self.program.forget_errors = false;
+            const start = if (out_arity.* == null) @as(usize, 0) else 1;
+            return try self.parseStatements(q[start..], p_scope);
+        }
+        unreachable;
+    }
+
     fn parseStatement(self: *Parser, node: *const lexer.Node, p_scope: *Scope) ParserError!ASTNode {
         return switch (node.node) {
             .List => |l| {
                 return self.parseList(l.body.items, l.metadata.items, p_scope);
             },
             .Quote => |q| b: {
-                const scope = Scope.create(p_scope);
-
                 var arity: ?BlockAnalysis = null;
-                var body: ?ASTNodeList = null;
-
-                if (q.items.len == 0) {
-                    arity = BlockAnalysis{};
-                    body = ASTNodeList.init(self.alloc);
-                } else if (q.items.len == 1 and q.items[0].node == .List) {
-                    if (self.parseArity(&q.items[0])) |ar| {
-                        arity = ar;
-                        body = try self.parseStatements(q.items[1..], scope);
-                    } else |_| {
-                        @panic("need arity for quotes");
-                    }
-                } else {
-                    arity = try self.parseArity(&q.items[0]);
-                    body = try self.parseStatements(q.items[1..], scope);
-                }
+                const scope = Scope.create(p_scope);
+                const body = try self.parseBlockArityPair(&arity, q.items, scope, true);
 
                 const name = try std.fmt.allocPrint(
                     common.gpa.allocator(),
@@ -290,7 +305,7 @@ pub const Parser = struct {
                     .name = name,
                     .variations = ASTNodePtrList.init(self.alloc),
                     .arity = arity.?,
-                    .body = body.?,
+                    .body = body,
                     .scope = scope,
                     .in_scope = scope,
                 } }, .srcloc = node.location };
@@ -758,8 +773,9 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {
                     try self.validateListLength(ast, 3);
 
+                    var arity: ?BlockAnalysis = null;
                     const ast_cond = try self.expectNode(.Quote, &ast[1]);
-                    const cond = try self.parseStatements(ast_cond.items, p_scope);
+                    const cond = try self.parseBlockArityPair(&arity, ast_cond.items, p_scope, false);
 
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const body = try self.parseStatements(ast_body.items, p_scope);
@@ -767,9 +783,17 @@ pub const Parser = struct {
                     break :b ASTNode{
                         .node = .{ .Loop = .{
                             .loop = if (mem.eql(u8, k, "while"))
-                                .{ .While = .{ .cond = cond, .cond_prep = .Unchecked } }
+                                .{ .While = .{
+                                    .cond = cond,
+                                    .cond_arity = arity,
+                                    .cond_prep = .unchecked,
+                                } }
                             else
-                                .{ .Until = .{ .cond = cond, .cond_prep = .Unchecked } },
+                                .{ .Until = .{
+                                    .cond = cond,
+                                    .cond_arity = arity,
+                                    .cond_prep = .unchecked,
+                                } },
                             .body = body,
                         } },
                         .srcloc = ast[0].location,

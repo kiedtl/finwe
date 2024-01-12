@@ -104,6 +104,41 @@ fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
     try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
 }
 
+fn genCondPrep(_: *Program, buf: *Ins.List, node: *ASTNode, cp: ASTNode.Loop.CondPrep, _: *UA.List) CodegenError!void {
+    switch (cp) {
+        .unchecked => unreachable,
+        .none => {},
+        .dup_1_b => try emit(buf, node, WK_STACK, false, false, .Odup),
+        .dup_1_s => try emit(buf, node, WK_STACK, false, true, .Odup),
+        .dup_2_bb => try emit(buf, node, WK_STACK, false, true, .Odup),
+        .dup_2_sb => {
+            //
+            // ( short byte -- short byte short byte )
+            // i.e. DUP OVR2
+            //
+            try emit(buf, node, WK_STACK, false, false, .Odup);
+            try emit(buf, node, WK_STACK, false, true, .Oovr);
+        },
+        .dup_2_bs => {
+            //
+            // ( byte short -- byte short byte short )
+            // i.e. ROTk ROT ROT
+            //
+            try emit(buf, node, WK_STACK, true, false, .Orot);
+            try emit(buf, node, WK_STACK, false, false, .Orot);
+            try emit(buf, node, WK_STACK, false, false, .Orot);
+        },
+        .dup_2_ss => {
+            //
+            // ( short short -- short short short short )
+            // i.e. OVR2 OVR2
+            //
+            try emit(buf, node, WK_STACK, false, true, .Oovr);
+            try emit(buf, node, WK_STACK, false, true, .Oovr);
+        },
+    }
+}
+
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) CodegenError!void {
     switch (node.node) {
         .TypeDef => {},
@@ -241,8 +276,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                 .While => |u| {
                     const begin: u16 = @intCast(buf.items.len);
 
-                    assert(u.cond_prep != .Unchecked);
-                    try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
+                    try genCondPrep(program, buf, node, u.cond_prep, ual);
                     try genNodeList(program, buf, u.cond, ual);
 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
@@ -261,8 +295,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     const loop_begin: u16 = @intCast(buf.items.len);
                     try genNodeList(program, buf, l.body, ual);
 
-                    assert(u.cond_prep != .Unchecked);
-                    try emit(buf, node, WK_STACK, false, u.cond_prep == .DupShort, .Odup);
+                    try genCondPrep(program, buf, node, u.cond_prep, ual);
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);

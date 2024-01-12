@@ -685,28 +685,74 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 nctx.loop = true;
 
                 switch (l.loop) {
+                    .While, .Until => |*u| if (u.cond_arity) |arity| {
+                        if (arity.stack.len != 1 or
+                            arity.stack.last().? != .Bool)
+                        {
+                            @panic("Loop condition must return bool, the whole bool, and nothing but the bool");
+                        }
+
+                        switch (arity.args.len) {
+                            0 => u.cond_prep = .none,
+                            1 => if (arity.args.last().?.size(program)) |sz| {
+                                assert(sz <= 2);
+                                u.cond_prep = if (sz == 1) .dup_1_b else .dup_1_s;
+                            },
+                            2 => {
+                                const a1 = arity.args.constSlice()[1];
+                                const a2 = arity.args.constSlice()[0];
+                                if (a1.size(program) != null and a2.size(program) != null) {
+                                    const a1s = a1.size(program).?;
+                                    const a2s = a2.size(program).?;
+                                    if (a1s == 1 and a2s == 1) {
+                                        u.cond_prep = .dup_2_bb;
+                                    } else if (a1s == 2 and a2s == 1) {
+                                        u.cond_prep = .dup_2_bs;
+                                    } else if (a1s == 1 and a2s == 2) {
+                                        u.cond_prep = .dup_2_sb;
+                                    } else if (a1s == 2 and a2s == 2) {
+                                        u.cond_prep = .dup_2_ss;
+                                    } else unreachable;
+                                }
+                            },
+                            else => @panic("Loop condition can take maximum 2 args"),
+                        }
+                    },
+                }
+
+                switch (l.loop) {
                     .Until => |*u| {
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
-                        const t = a.stack.last().?;
-                        a.stack.append(t) catch unreachable;
+
+                        const t = a.stack.last();
+                        try u.cond_prep.execute(a);
+
                         _ = try analyseBlock(program, parent, u.cond, a, nctx);
                         assert(a.stack.last().? == .Bool);
                         _ = a.stack.pop() catch unreachable;
-                        if (t.bits(program)) |b| {
-                            u.cond_prep = if (b == 16) .DupShort else .Dup;
-                        }
+
+                        if (u.cond_arity == null)
+                            if (t.?.bits(program)) |b| {
+                                assert(u.cond_prep == .unchecked);
+                                u.cond_prep = if (b == 16) .dup_1_s else .dup_1_b;
+                            };
                     },
                     .While => |*u| {
                         const oldlen = a.stack.len;
                         const t = a.stack.last().?;
-                        a.stack.append(t) catch unreachable;
+                        try u.cond_prep.execute(a);
+
                         _ = try analyseBlock(program, parent, u.cond, a, nctx);
                         assert(a.stack.last().? == .Bool);
                         assert(a.stack.len == oldlen + 1);
+
                         _ = a.stack.pop() catch unreachable;
-                        if (t.bits(program)) |b| {
-                            u.cond_prep = if (b == 16) .DupShort else .Dup;
-                        }
+
+                        if (u.cond_arity == null)
+                            if (t.bits(program)) |b| {
+                                assert(u.cond_prep == .unchecked);
+                                u.cond_prep = if (b == 16) .dup_1_s else .dup_1_b;
+                            };
 
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
                     },

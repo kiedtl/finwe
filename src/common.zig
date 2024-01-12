@@ -1036,14 +1036,42 @@ pub const ASTNode = struct {
         body: ASTNodeList,
 
         pub const Type = union(enum) {
-            Until: struct {
+            Until: Basic,
+            While: Basic,
+
+            pub const Basic = struct {
                 cond: ASTNodeList,
-                cond_prep: enum { Unchecked, Dup, DupShort }, // TODO: Dup2, DupShort2, etc
-            },
-            While: struct {
-                cond: ASTNodeList,
-                cond_prep: enum { Unchecked, Dup, DupShort }, // TODO: Dup2, DupShort2, etc
-            },
+                cond_arity: ?analyser.BlockAnalysis = null,
+                cond_prep: CondPrep,
+            };
+        };
+
+        pub const CondPrep = enum {
+            unchecked,
+            none,
+            dup_1_b,
+            dup_1_s,
+            dup_2_bb,
+            dup_2_bs,
+            dup_2_sb,
+            dup_2_ss,
+
+            pub fn execute(self: CondPrep, a: *analyser.BlockAnalysis) !void {
+                switch (self) {
+                    // no arity, best guess
+                    .unchecked => a.stack.append(a.stack.last().?) catch unreachable,
+                    .none => {},
+                    .dup_1_b, .dup_1_s => {
+                        a.stack.append(a.stack.last().?) catch unreachable;
+                    },
+                    .dup_2_bb, .dup_2_sb, .dup_2_bs, .dup_2_ss => {
+                        const a1 = a.stack.last().?;
+                        const a2 = a.stack.constSlice()[a.stack.len - 2];
+                        a.stack.append(a2) catch unreachable;
+                        a.stack.append(a1) catch unreachable;
+                    },
+                }
+            }
         };
     };
 
@@ -1467,6 +1495,10 @@ pub const Program = struct {
 
     flag_burdampe: bool = false,
 
+    // Stupid hack to allow "dry-run"'ing parser funcs without keeping errors
+    // around
+    forget_errors: bool = false,
+
     pub fn init(alloc: mem.Allocator) @This() {
         return Program{
             .ast = ASTNodeList.init(alloc),
@@ -1563,7 +1595,8 @@ pub const Program = struct {
     }
 
     pub fn perr(self: *Program, e: parser.Parser.ParserError, srcloc: common.Srcloc) parser.Parser.ParserError {
-        self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
+        if (!self.forget_errors)
+            self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
         return e;
     }
 
