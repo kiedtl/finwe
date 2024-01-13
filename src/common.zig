@@ -675,11 +675,16 @@ pub const TypeInfo = union(enum) {
 
     pub fn doesInclude(self: @This(), other: @This(), program: *Program) bool {
         switch (self) {
+            //.Ptr8, .Ptr16, .Fn, .EnumLit, .AnySet, .AnyOf => {},
             .Fn, .EnumLit, .AnySet, .AnyOf => {},
             else => if (@as(Tag, self) == @as(Tag, other)) return true,
         }
         return switch (self) {
             .Type => true,
+            //.Ptr8, .Ptr16 => |ptr| switch (other) {
+            //.Ptr8, .Ptr16 => |otherptr| program.ztype(otherptr.typ).size(program) == program.ztype(ptr.typ).size(program),
+            //else => return false,
+            //},
             .AnySet => |anyset| for (anyset.set.constSlice()) |i| {
                 if (i.eq(other)) break true;
             } else false,
@@ -1116,7 +1121,7 @@ pub const ASTNode = struct {
     // Clone a Decl node, but also "register" it by adding it to list of variations
     // of original node, and add it to list of defs (program.defs).
     //
-    pub fn deepcloneDecl(self: *@This(), astlst: *ASTNodeList, program: *Program) *@This() {
+    pub fn deepcloneDecl(self: *@This(), astlst: *ASTNodeList, add_to_scope: bool, program: *Program) *@This() {
         var node = self.node;
         node.Decl.variations = ASTNodePtrList.init(gpa.allocator());
         node.Decl.body = _deepcloneASTList(node.Decl.body, &node.Decl, program);
@@ -1130,7 +1135,8 @@ pub const ASTNode = struct {
         const nptr = astlst.appendAndReturn(new) catch unreachable;
         self.node.Decl.variations.append(nptr) catch unreachable;
         nptr.node.Decl.variant = self.node.Decl.variations.items.len;
-        nptr.node.Decl.in_scope.defs.append(nptr) catch unreachable;
+        if (add_to_scope)
+            nptr.node.Decl.in_scope.defs.append(nptr) catch unreachable;
         program.defs.append(nptr) catch unreachable;
         return nptr;
     }
@@ -1178,7 +1184,7 @@ pub const ASTNode = struct {
                 new.Decl.scope = new.Decl.scope.shallowclone();
             },
             .Quote => |*q| {
-                q.def = q.def.deepcloneDecl(&program.ast, program);
+                q.def = q.def.deepcloneDecl(&program.ast, true, program);
             },
             .Wild => new.Wild.body = _deepcloneASTList(new.Wild.body, parent, program),
             .RBlock => new.RBlock.body = _deepcloneASTList(new.RBlock.body, parent, program),

@@ -254,7 +254,7 @@ pub const BlockAnalysis = struct {
         //     std.log.info("ARGS v2 {s}", .{AnalysisFmt.from(&caller, p)});
 
         // std.log.info("Calling {s}: {s}", .{
-        //     call_node.node.Call.name, AnalysisFmt.from(&caller, p),
+        //     call_node.?.node.Call.name, AnalysisFmt.from(&caller, p),
         // });
 
         var i = r.args.len;
@@ -268,10 +268,10 @@ pub const BlockAnalysis = struct {
             tmpcaller.reverse();
             var tmp = r;
             tmp.reverse();
-            //std.log.info("R PAR {s}", .{AnalysisFmt.from(&tmp, p)});
+            // std.log.info("R PAR {s}", .{AnalysisFmt.from(&tmp, p)});
             tmp = try conformGenericTo(tmp, extra_type_args, scope, &tmpcaller, call_node, p, dry_run, true);
-            //std.log.info("R ARG {s}", .{AnalysisFmt.from(&tmpcaller, p)});
-            //std.log.info("R RES {s}", .{AnalysisFmt.from(&tmp, p)});
+            // std.log.info("R ARG {s}", .{AnalysisFmt.from(&tmpcaller, p)});
+            // std.log.info("R RES {s}", .{AnalysisFmt.from(&tmp, p)});
             tmp.reverse();
             r.rstack = tmp.rstack;
             r.rargs = tmp.rargs;
@@ -613,7 +613,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         c.node = cdecl.variations.items[ind];
 
                     if (var_ind == null) {
-                        const newdef = d.deepcloneDecl(&program.ast, program);
+                        const newdef = d.deepcloneDecl(&program.ast, false, program);
                         newdef.node.Decl.arity = ungenericified;
                         newdef.node.Decl.calls += 1;
                         c.node = newdef;
