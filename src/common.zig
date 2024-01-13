@@ -675,16 +675,18 @@ pub const TypeInfo = union(enum) {
 
     pub fn doesInclude(self: @This(), other: @This(), program: *Program) bool {
         switch (self) {
-            //.Ptr8, .Ptr16, .Fn, .EnumLit, .AnySet, .AnyOf => {},
             .Fn, .EnumLit, .AnySet, .AnyOf => {},
             else => if (@as(Tag, self) == @as(Tag, other)) return true,
         }
         return switch (self) {
             .Type => true,
-            //.Ptr8, .Ptr16 => |ptr| switch (other) {
-            //.Ptr8, .Ptr16 => |otherptr| program.ztype(otherptr.typ).size(program) == program.ztype(ptr.typ).size(program),
-            //else => return false,
-            //},
+            // TODO: pointer casting rules
+            // .Ptr8, .Ptr16 => |ptr| switch (other) {
+            //     .Ptr8, .Ptr16 => |otherptr| program.ztype(otherptr.typ).size(program) ==
+            //         program.ztype(ptr.typ).size(program) or
+            //         program.ztype(otherptr.typ).doesInclude(program.ztype(ptr.typ), program),
+            //     else => return true, // TODO: make more strict
+            // },
             .AnySet => |anyset| for (anyset.set.constSlice()) |i| {
                 if (i.eq(other)) break true;
             } else false,
