@@ -1366,10 +1366,12 @@ pub const Scope = struct {
         caller_args: *const analyser.BlockAnalysis,
         r_stk: bool,
     ) !?*ASTNode {
+        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        defer searched_import_buf.deinit();
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
 
-        self._findDecl(name, &buf, true, program);
+        self._findDecl(name, &buf, &searched_import_buf, true, program);
 
         var type_args = @TypeOf(caller_args.args).init(null);
         for (caller_node.node.Call.args.constSlice()) |arg|
@@ -1388,14 +1390,22 @@ pub const Scope = struct {
     }
 
     pub fn findDeclAny(self: *Scope, program: *Program, name: []const u8) ?*ASTNode {
+        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        defer searched_import_buf.deinit();
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
-        self._findDecl(name, &buf, true, program);
+        self._findDecl(name, &buf, &searched_import_buf, true, program);
         return if (buf.items.len == 0) null else buf.items[0];
     }
 
-    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, allow_private: bool, program: *Program) void {
+    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, searched_imports: *ASTNodePtrList, allow_private: bool, program: *Program) void {
         for (self.imports.items) |import| {
+            const already_searched = for (searched_imports.items) |prev_import| {
+                if (mem.eql(u8, prev_import.node.Import.name, import.node.Import.name))
+                    break true;
+            } else false;
+            if (already_searched)
+                continue;
             if (import.node.Import.is_defiling) {
                 // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
                 //     @intFromPtr(self),
@@ -1403,10 +1413,19 @@ pub const Scope = struct {
                 //     @intFromPtr(import.node.Import.scope),
                 //     name,
                 // });
-                import.node.Import.scope._findDecl(name, buf, false, program);
+                import.node.Import.scope._findDecl(name, buf, searched_imports, false, program);
+                searched_imports.append(import) catch unreachable;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
-                if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, false, program);
+                if (mem.eql(u8, name[0..n], import.node.Import.name)) {
+                    // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
+                    //     @intFromPtr(self),
+                    //     import.node.Import.name,
+                    //     @intFromPtr(import.node.Import.scope),
+                    //     name,
+                    // });
+                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, searched_imports, false, program);
+                    searched_imports.append(import) catch unreachable;
+                }
             }
         }
         // std.log.info("[{x}] search self for {s}", .{ @intFromPtr(self), name });
@@ -1424,7 +1443,7 @@ pub const Scope = struct {
             // std.log.info("[{x}] search parent {x} for {s}", .{
             //     @intFromPtr(self), @intFromPtr(parent), name,
             // });
-            parent._findDecl(name, buf, allow_private, program);
+            parent._findDecl(name, buf, searched_imports, allow_private, program);
         }
     }
 
