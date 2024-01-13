@@ -72,7 +72,7 @@
 		(let best-fscore U16)
 		(let best-index U16)
 
-		0xFF @best-fscore <-
+		0xFFs @best-fscore <-
 		@open-list :len -> @best-index <-
 	
 		@open-list :len ->
