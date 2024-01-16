@@ -76,7 +76,7 @@
 	[unvisited Bool]
 )
 
-// ( start end -- path )
+// ( accumulate-func start end -- path )
 (word astar (@(Fn (Coord -- )) Coord Coord -- Bool) [
 	(let nodes [[Node 20] 21])
 	(let g-score [[U16 20] 21])
