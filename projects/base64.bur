@@ -45,7 +45,7 @@
 	@buf <-
 
 	0x08 0x00
-	(until [ drop 2dup > not ] [
+	(until [ (U8 U8 -- Bool) > not ] [
 		$buf over 7 swap - bsft 1 band
 		$inc dup 1+ 6 2dup / * - @inc <-
 		// ( bit id -- )
@@ -59,4 +59,14 @@
 	])
 
 	2drop
+])
+
+(test b64enc [
+	"Many hands make light work."
+	dup -> (until [ 0= ] [
+		print-b64enc
+		1+ dup ->
+	])
+
+	(should stdout-eq "TWFueSBoYW5kcyBtYWtlIGxpZ2h0IHdvcmsu")
 ])
