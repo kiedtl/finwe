@@ -7,19 +7,35 @@
 
 (enum Dir U8 [n 0] [s 1] [e 2] [w 3] [ne 4] [nw 5] [se 6] [sw 7])
 
+#(method Dir) (word print (Dir -- ) [
+	(cond
+		[ .Dir/n  = ] [ "N " ]
+		[ .Dir/s  = ] [ "S " ]
+		[ .Dir/e  = ] [ "E " ]
+		[ .Dir/w  = ] [ "W " ]
+		[ .Dir/ne = ] [ "NE" ]
+		[ .Dir/nw = ] [ "NW" ]
+		[ .Dir/se = ] [ "SE" ]
+		[ .Dir/sw = ] [ "SW" ]
+	)
+	print-string
+	drop
+])
+
 #(method Dir) (word move (Coord Dir -- Coord) [
 	move (split U8 U8)
-
-	// TODO: cond statement
-	(r copy) .Dir/n  = (when [ 1- (make Coord) (r drop) return ])
-	(r copy) .Dir/s  = (when [ 1+ (make Coord) (r drop) return ])
-	(r copy) .Dir/e  = (when [ swap 1+ swap (make Coord) (r drop) return ])
-	(r copy) .Dir/w  = (when [ swap 1- swap (make Coord) (r drop) return ])
-	(r copy) .Dir/ne = (when [ 1- swap 1+ swap (make Coord) (r drop) return ])
-	(r copy) .Dir/nw = (when [ 1- swap 1- swap (make Coord) (r drop) return ])
-	(r copy) .Dir/se = (when [ 1+ swap 1+ swap (make Coord) (r drop) return ])
-	(r copy) .Dir/sw = (when [ 1+ swap 1- swap (make Coord) (r drop) return ])
-	"Bad enum" std/panic
+	(cond
+		[ (-- Bool) (r copy) .Dir/n  = ] [  1-              ]
+		[ (-- Bool) (r copy) .Dir/s  = ] [  1+              ]
+		[ (-- Bool) (r copy) .Dir/e  = ] [  swap 1+ swap    ]
+		[ (-- Bool) (r copy) .Dir/w  = ] [  swap 1- swap    ]
+		[ (-- Bool) (r copy) .Dir/ne = ] [  1- swap 1+ swap ]
+		[ (-- Bool) (r copy) .Dir/nw = ] [  1- swap 1- swap ]
+		[ (-- Bool) (r copy) .Dir/se = ] [  1+ swap 1+ swap ]
+		[ (-- Bool) (r copy) .Dir/sw = ] [  1+ swap 1- swap ]
+	)
+	(r drop)
+	(make Coord)
 ])
 
 (test Dir/move [
@@ -153,7 +169,7 @@
 		// unrolled loop
 		dup .Dir/n  check-neighbor dup .Dir/s  check-neighbor
 		dup .Dir/e  check-neighbor dup .Dir/w  check-neighbor
-		dup .Dir/se check-neighbor dup .Dir/sw check-neighbor
+		dup .Dir/ne check-neighbor dup .Dir/nw check-neighbor
 		dup .Dir/se check-neighbor     .Dir/sw check-neighbor
 	])
 

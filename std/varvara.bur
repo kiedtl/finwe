@@ -66,6 +66,7 @@
 (word deo   ((AnySz $0) AnyDev --              ) [ (asm "g" .Op/Odeo)       ])
 (word emit  (             Any8 --              ) [ .Console/write deo       ])
 (word nl    (                  --              ) [ 0x0a emit                ])
+(word spc   (                  --              ) [ 0x20 emit                ])
 
 (word print-string (@U8 -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
 (word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
