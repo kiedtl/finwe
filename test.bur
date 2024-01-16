@@ -120,6 +120,21 @@
 	@array 18s :   -> (should eq 'n)
 ])
 
+(test lang_cond_no_cond_arity [
+	(word dostuff (U8 -- ) [
+		(cond
+			[ 0 = ] [ "0" print-string nl ]
+			[ 1 = ] [ "1" print-string nl ]
+			[ 2 = ] [ "2" print-string nl ]
+			[ 3 = ] [ "3" print-string nl ]
+			[ 4 = ] [ "4" print-string nl ]
+			[ "???" print-string nl ]
+		)
+	])
+	0 dostuff 1 dostuff 2 dostuff 3 dostuff 4 dostuff 5 dostuff
+	(should stdout-eq "0\n1\n2\n3\n4\n???\n")
+])
+
 (let sprite [U16] [
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
