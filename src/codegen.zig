@@ -104,7 +104,7 @@ fn emitARG16(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, op: OpTag, 
     try emit(buf, node, stack, k, true, Op.fromTag(op) catch unreachable);
 }
 
-fn genCondPrep(_: *Program, buf: *Ins.List, node: *ASTNode, cp: ASTNode.Loop.CondPrep, _: *UA.List) CodegenError!void {
+fn genCondPrep(_: *Program, buf: *Ins.List, node: *ASTNode, cp: ASTNode.CondPrep, _: *UA.List) CodegenError!void {
     switch (cp) {
         .unchecked => unreachable,
         .none => {},
@@ -352,24 +352,27 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             defer end_jumps.deinit();
 
             for (cond.branches.items) |branch| {
-                //try emitDUP(buf, WK_STACK);
+                try genCondPrep(program, buf, node, branch.cond_prep, ual);
                 try genNodeList(program, buf, branch.cond, ual);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
-                try emit(buf, node, WK_STACK, false, false, .Olit);
+                try emit(buf, node, WK_STACK, false, true, .Olit);
                 const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
-                try emit(buf, node, WK_STACK, false, false, .Ojcn);
+                try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                 try genNodeList(program, buf, branch.body, ual);
-                try emit(buf, node, WK_STACK, false, false, .Olit);
-                const end_jmp = try emitRI(buf, node, WK_STACK, true, false, .{ .Oraw = 0 });
-                try emit(buf, node, WK_STACK, false, false, .Ojmp);
+                try emit(buf, node, WK_STACK, false, true, .Olit);
+                const end_jmp = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emit(buf, node, WK_STACK, false, true, .Ojmp);
                 try end_jumps.append(end_jmp);
 
                 // TODO: overflow checks if body > 256 bytes
-                const body_addr: u8 = @intCast(buf.items.len - addr_slot);
-                buf.items[addr_slot].op.Oraw = body_addr;
+                //const body_addr: u8 = @intCast(buf.items.len - addr_slot);
+                //buf.items[addr_slot].op.Oraw = body_addr;
+                reemitAddr16(buf, addr_slot, buf.items.len);
             }
 
             if (cond.else_branch) |branch| {
@@ -380,9 +383,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             // since it's completely unnecessary
 
             const cond_end_addr = buf.items.len;
-            for (end_jumps.items) |end_jump| {
-                buf.items[end_jump].op.Oraw = @intCast(cond_end_addr - end_jump);
-            }
+            for (end_jumps.items) |end_jump|
+                reemitAddr16(buf, end_jump, cond_end_addr);
         },
     }
 }

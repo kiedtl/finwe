@@ -1023,14 +1023,16 @@ pub const ASTNode = struct {
     };
 
     pub const Cond = struct {
-        branches: Branch.List,
+        branches: Branch.AList,
         else_branch: ?ASTNodeList,
 
         pub const Branch = struct {
             cond: ASTNodeList,
+            cond_prep: CondPrep,
+            cond_arity: ?analyser.BlockAnalysis = null,
             body: ASTNodeList,
 
-            pub const List = std.ArrayList(Branch);
+            pub const AList = std.ArrayList(Branch);
         };
     };
 
@@ -1052,34 +1054,69 @@ pub const ASTNode = struct {
                 cond_prep: CondPrep,
             };
         };
+    };
 
-        pub const CondPrep = enum {
-            unchecked,
-            none,
-            dup_1_b,
-            dup_1_s,
-            dup_2_bb,
-            dup_2_bs,
-            dup_2_sb,
-            dup_2_ss,
+    pub const CondPrep = enum {
+        unchecked,
+        none,
+        dup_1_b,
+        dup_1_s,
+        dup_2_bb,
+        dup_2_bs,
+        dup_2_sb,
+        dup_2_ss,
 
-            pub fn execute(self: CondPrep, a: *analyser.BlockAnalysis) !void {
-                switch (self) {
-                    // no arity, best guess
-                    .unchecked => a.stack.append(a.stack.last().?) catch unreachable,
-                    .none => {},
-                    .dup_1_b, .dup_1_s => {
-                        a.stack.append(a.stack.last().?) catch unreachable;
-                    },
-                    .dup_2_bb, .dup_2_sb, .dup_2_bs, .dup_2_ss => {
-                        const a1 = a.stack.last().?;
-                        const a2 = a.stack.constSlice()[a.stack.len - 2];
-                        a.stack.append(a2) catch unreachable;
-                        a.stack.append(a1) catch unreachable;
-                    },
-                }
+        pub fn fromArity(cond_arity: *const analyser.BlockAnalysis, p: *Program) !CondPrep {
+            if (cond_arity.stack.len != 1 or
+                cond_arity.stack.last().? != .Bool)
+            {
+                @panic("Loop condition must return bool, the whole bool, and nothing but the bool");
             }
-        };
+
+            switch (cond_arity.args.len) {
+                0 => return .none,
+                1 => if (cond_arity.args.last().?.size(p)) |sz| {
+                    assert(sz <= 2);
+                    return if (sz == 1) .dup_1_b else .dup_1_s;
+                } else return .unchecked,
+                2 => {
+                    const a1 = cond_arity.args.constSlice()[1];
+                    const a2 = cond_arity.args.constSlice()[0];
+                    if (a1.size(p) != null and a2.size(p) != null) {
+                        const a1s = a1.size(p).?;
+                        const a2s = a2.size(p).?;
+                        if (a1s == 1 and a2s == 1) {
+                            return .dup_2_bb;
+                        } else if (a1s == 2 and a2s == 1) {
+                            return .dup_2_bs;
+                        } else if (a1s == 1 and a2s == 2) {
+                            return .dup_2_sb;
+                        } else if (a1s == 2 and a2s == 2) {
+                            return .dup_2_ss;
+                        } else unreachable;
+                    } else {
+                        return .unchecked;
+                    }
+                },
+                else => @panic("Loop condition can take maximum 2 args"),
+            }
+        }
+        pub fn execute(self: CondPrep, a: *analyser.BlockAnalysis) !void {
+            switch (self) {
+                // no arity, best guess
+                .unchecked => a.stack.append(a.stack.last().?) catch unreachable,
+                .none => {},
+                .dup_1_b, .dup_1_s => {
+                    a.stack.append(a.stack.last().?) catch unreachable;
+                },
+                .dup_2_bb, .dup_2_sb, .dup_2_bs, .dup_2_ss => {
+                    const a1 = a.stack.last().?;
+                    const a2 = a.stack.constSlice()[a.stack.len - 2];
+                    a.stack.append(a2) catch unreachable;
+                    a.stack.append(a1) catch unreachable;
+                },
+            }
+        }
     };
 
     pub const Decl = struct {

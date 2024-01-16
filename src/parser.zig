@@ -811,33 +811,33 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "cond")) {
                     var cond_node = ASTNode.Cond{
-                        .branches = ASTNode.Cond.Branch.List.init(self.alloc),
+                        .branches = ASTNode.Cond.Branch.AList.init(self.alloc),
                         .else_branch = null,
                     };
 
-                    var all_branches = std.ArrayList(ASTNodeList).init(self.alloc);
-                    defer all_branches.deinit();
-
-                    for (ast[1..]) |*node| {
-                        const q = try self.expectNode(.Quote, node);
-                        try all_branches.append(try self.parseStatements(q.items, p_scope));
+                    if (ast.len == 1) {
+                        @panic("Cond WHAT idiot");
+                    } else if (ast.len == 2) {
+                        @panic("Nonsensical cond statement w/ only else branch");
                     }
 
-                    // FIXME: make it an error for a cond statement with only
-                    // one argument
+                    var i: usize = 1;
+                    while (i < ast[1..].len) : (i += 2) {
+                        const ast_cond = try self.expectNode(.Quote, &ast[i + 0]);
+                        var arity: ?BlockAnalysis = null;
+                        const cond = try self.parseBlockArityPair(&arity, ast_cond.items, p_scope, false);
+                        const ast_body = try self.expectNode(.Quote, &ast[i + 1]);
+                        try cond_node.branches.append(ASTNode.Cond.Branch{
+                            .cond = cond,
+                            .cond_arity = arity,
+                            .cond_prep = .unchecked,
+                            .body = try self.parseStatements(ast_body.items, p_scope),
+                        });
+                    }
 
-                    var i: usize = 0;
-                    while (i < all_branches.items.len) : (i += 2) {
-                        if (i == all_branches.items.len - 1) {
-                            cond_node.else_branch = all_branches.items[i];
-                        } else {
-                            const cond = all_branches.items[i + 0];
-                            const body = all_branches.items[i + 1];
-                            try cond_node.branches.append(ASTNode.Cond.Branch{
-                                .cond = cond,
-                                .body = body,
-                            });
-                        }
+                    if (ast[1..].len % 2 == 1) {
+                        const q = try self.expectNode(.Quote, &ast[ast.len - 1]);
+                        cond_node.else_branch = try self.parseStatements(q.items, p_scope);
                     }
 
                     break :b ASTNode{

@@ -685,38 +685,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 nctx.loop = true;
 
                 switch (l.loop) {
-                    .While, .Until => |*u| if (u.cond_arity) |arity| {
-                        if (arity.stack.len != 1 or
-                            arity.stack.last().? != .Bool)
-                        {
-                            @panic("Loop condition must return bool, the whole bool, and nothing but the bool");
-                        }
-
-                        switch (arity.args.len) {
-                            0 => u.cond_prep = .none,
-                            1 => if (arity.args.last().?.size(program)) |sz| {
-                                assert(sz <= 2);
-                                u.cond_prep = if (sz == 1) .dup_1_b else .dup_1_s;
-                            },
-                            2 => {
-                                const a1 = arity.args.constSlice()[1];
-                                const a2 = arity.args.constSlice()[0];
-                                if (a1.size(program) != null and a2.size(program) != null) {
-                                    const a1s = a1.size(program).?;
-                                    const a2s = a2.size(program).?;
-                                    if (a1s == 1 and a2s == 1) {
-                                        u.cond_prep = .dup_2_bb;
-                                    } else if (a1s == 2 and a2s == 1) {
-                                        u.cond_prep = .dup_2_bs;
-                                    } else if (a1s == 1 and a2s == 2) {
-                                        u.cond_prep = .dup_2_sb;
-                                    } else if (a1s == 2 and a2s == 2) {
-                                        u.cond_prep = .dup_2_ss;
-                                    } else unreachable;
-                                }
-                            },
-                            else => @panic("Loop condition can take maximum 2 args"),
-                        }
+                    .While, .Until => |*u| if (u.cond_arity) |*arity| {
+                        arity.* = try arity.resolveTypeRefs(parent.scope, parent.arity, program);
+                        u.cond_prep = try ASTNode.CondPrep.fromArity(arity, program);
                     },
                 }
 
@@ -790,14 +761,39 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 info.early_return = true;
                 break;
             },
-            .Cond => {
-                @panic("TODO");
-                // Outline:
-                // - Check first branch, don't merge analysis
-                // - Check every other branch block, assert they're all the same
-                //   - Analyse else branch also
-                // - Check condition blocks, assert they're all identical
-                // - Finally, merge one condition block, and one main block
+            .Cond => |*cond| {
+                for (cond.branches.items) |*branch| {
+                    if (branch.cond_arity) |*arity| {
+                        arity.* = try arity.resolveTypeRefs(parent.scope, parent.arity, program);
+                        branch.cond_prep = try ASTNode.CondPrep.fromArity(arity, program);
+                    }
+                    if (branch.cond_arity == null)
+                        if (a.stack.last().?.bits(program)) |b| {
+                            assert(branch.cond_prep == .unchecked);
+                            branch.cond_prep = if (b == 16) .dup_1_s else .dup_1_b;
+                        };
+                }
+
+                const olda = a.*;
+                for (cond.branches.items) |*branch| {
+                    a.* = olda;
+                    const oldlen = a.stack.len;
+                    try branch.cond_prep.execute(a);
+                    _ = try analyseBlock(program, parent, branch.cond, a, ctx);
+                    assert(a.stack.last().? == .Bool);
+                    if (a.stack.len != oldlen + 1) {
+                        std.log.info("uh oh at {}", .{node.srcloc});
+                    }
+                    assert(a.stack.len == oldlen + 1);
+                    _ = a.stack.pop() catch unreachable;
+                    _ = try analyseBlock(program, parent, branch.body, a, ctx);
+                }
+                if (cond.else_branch) |else_br| {
+                    a.* = olda;
+                    _ = try analyseBlock(program, parent, else_br, a, ctx);
+                }
+
+                // TODO: do branch arity checking
             },
             .Asm => |*i| {
                 try analyseAsm(i, node.srcloc, a, ctx, program)
