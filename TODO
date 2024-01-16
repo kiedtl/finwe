@@ -28,12 +28,10 @@ x Signed numbers
   x Printing
   x Lexer/Parser
   x Abs/Neg?/Division
-- A* pathfinding
+x A* pathfinding
   x GetIndex fixes
-  - (len)
   x Enums
-  - Cond (for Direction/move)
-  - (Typeof)
+  x Cond (for Direction/move)
 x Refactoring
   x Scopes
   x Explicit main function
