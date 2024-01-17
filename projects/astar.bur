@@ -5,7 +5,7 @@
 (use burdampe)
 (use alloc)
 
-(enum Dir U8 [n 0] [s 1] [e 2] [w 3] [ne 4] [nw 5] [se 6] [sw 7])
+(enum Dir U8 n s e w nw ne sw se)
 
 #(method Dir) (word print (Dir -- ) [
 	(cond
