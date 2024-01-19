@@ -23,23 +23,18 @@ const gpa = &@import("common.zig").gpa;
 
 const CodegenError = mem.Allocator.Error || StackBufferError;
 
-// UA: Unresolved Address
-//
-// As we walk through the AST generating bytecode, we store references to
-// identifiers in a UAList and insert a dummy null value into the ROM; later on,
-// we iterate through the UAList, replacing the dummy values with the real
-// references.
-//
-// The reason for this is that although we know what each identifiers are
-// (they were extracted earlier), we don't know where they'll be in the ROM
-// until *after* the codegen process.
-//
-const UA = struct {
+pub const UA = struct {
     loc: usize,
-    ident: []const u8,
+    ident: UAIdent,
     node: *ASTNode,
 
     pub const List = std.ArrayList(UA);
+};
+
+pub const UAIdent = enum {
+    None,
+    LoopBegin,
+    LoopEnd,
 };
 
 //
@@ -65,7 +60,24 @@ fn reemitAddr16(buf: *Ins.List, ind: usize, value: usize) void {
     buf.items[ind + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
 }
 
-fn emitUA(buf: *Ins.List, ual: *UA.List, ident: []const u8, node: *ASTNode) CodegenError!void {
+fn setLabelAt(buf: *Ins.List, ident: UAIdent, node: *ASTNode, ind: usize) CodegenError!void {
+    buf.items[ind].labels.append(
+        .{ .for_ua = .{ .loc = 0xFFFF, .ident = ident, .node = node } },
+    ) catch unreachable;
+}
+
+fn setLabel(buf: *Ins.List, ident: UAIdent, node: *ASTNode) CodegenError!void {
+    try setLabelAt(buf, ident, node, buf.items.len - 1);
+}
+
+fn emitUA2(buf: *Ins.List, ident: UAIdent, node: *ASTNode) CodegenError!void {
+    try emit(buf, node, WK_STACK, false, false, .{
+        .Xtua = .{ .loc = 0xFFFF, .node = node, .ident = ident },
+    });
+    try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+}
+
+fn emitUA(buf: *Ins.List, ual: *UA.List, ident: UAIdent, node: *ASTNode) CodegenError!void {
     try emitIMM16(buf, null, 0, false, .Olit, 0);
     try ual.append(.{
         .loc = buf.items.len - 2,
@@ -158,8 +170,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emitIMM(buf, node, WK_STACK, false, .Olit, @as(u8, @intCast(s)));
                 }
             },
-            .Here => try emitUA(buf, ual, "", node),
-            .StaticsHere => try emitUA(buf, ual, "", node),
+            .Here => try emitUA(buf, ual, .None, node),
+            .StaticsHere => try emitUA(buf, ual, .None, node),
         },
         .Breakpoint => |brk| {
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0b);
@@ -235,9 +247,9 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
             try emit(buf, null, 0, false, true, .Oadd);
         },
         .VDecl => {},
-        .VRef => |v| try emitUA(buf, ual, v.name, node),
+        .VRef => |_| try emitUA(buf, ual, .None, node),
         .VDeref => |v| {
-            try emitUA(buf, ual, v.name, node);
+            try emitUA(buf, ual, .None, node);
             // LDA instruction
             // Could do this in emitUA, but then we'd have to pass program
             const t = program.statics.items[v.localptr.?.ind.?].type;
@@ -247,7 +259,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Value => |v| {
             const stk: usize = if (v.ret) RT_STACK else WK_STACK;
             if (v.val.typ == .StaticPtr) {
-                try emitUA(buf, ual, "", node);
+                try emitUA(buf, ual, .None, node);
             } else if (v.val.typ.bits(program).? == 16) {
                 try emitIMM16(buf, node, stk, false, .Olit, v.val.toU16(program));
             } else {
@@ -258,19 +270,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .RBlock => |r| try genNodeList(program, buf, r.body, ual),
-        .Quote => |q| {
-            try emitUA(buf, ual, q.def.node.Decl.name, node);
-
-            // const quote_jump_addr = buf.items.len;
-            // try emit(buf, node, WK_STACK, false, false, .{ .Oj = 0 }); // Dummy value, replaced later
-            // const quote_begin_addr = @intCast(buf.items.len);
-            // for (q.body.items) |*bodynode|
-            //     try genNode(program, buf, bodynode, ual);
-            // try emit(buf, node, RT_STACK, false, false, .{ .Oj = null });
-            // const quote_end_addr = @intCast(buf.items.len);
-            // try emitARG16(buf, node, WK_STACK, false, .Olit, quote_begin_addr);
-            // buf.items[quote_jump_addr].op.Oj = quote_end_addr; // Replace dummy value
-        },
+        .Quote => |_| try emitUA(buf, ual, .None, node),
         .Loop => |l| {
             switch (l.loop) {
                 .While => |u| {
@@ -278,6 +278,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
 
                     try genCondPrep(program, buf, node, u.cond_prep, ual);
                     try genNodeList(program, buf, u.cond, ual);
+                    try setLabelAt(buf, .LoopBegin, node, begin);
 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
@@ -285,21 +286,30 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emit(buf, node, WK_STACK, false, true, .Olit);
                     const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
                     try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                    //try emitUA2(buf, .LoopEnd, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                     try genNodeList(program, buf, l.body, ual);
                     try emitARG16(buf, node, WK_STACK, false, .Ojmp, 0x0100 + begin);
                     reemitAddr16(buf, addr_slot, buf.items.len);
+                    //try emit(buf, node, WK_STACK, false, true, .Olit);
+                    //try emitUA2(buf, .LoopBegin, node);
+                    //try emit(buf, node, WK_STACK, false, true, .Ojmp);
+                    //try setLabel(buf, .LoopEnd, node);
                 },
                 .Until => |u| {
-                    const loop_begin: u16 = @intCast(buf.items.len);
+                    const begin: u16 = @intCast(buf.items.len);
                     try genNodeList(program, buf, l.body, ual);
+                    try setLabelAt(buf, .LoopBegin, node, begin);
 
                     try genCondPrep(program, buf, node, u.cond_prep, ual);
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
-                    try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
+                    //try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
+                    try emit(buf, node, WK_STACK, false, true, .Olit);
+                    try emitUA2(buf, .LoopBegin, node);
+                    try emit(buf, node, WK_STACK, false, true, .Ojcn);
                 },
             }
         },
@@ -307,7 +317,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Call => |f| if (f.is_inline) {
             try genNodeList(program, buf, f.node.?.node.Decl.body, ual);
         } else {
-            try emitUA(buf, ual, f.name, node);
+            try emitUA(buf, ual, .None, node);
         },
         .When => |when| {
             // Structure
@@ -428,6 +438,19 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
+    for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
+        const resolved = b: for (buf.items, 0..) |otherins, i| {
+            for (otherins.labels.constSlice()) |label|
+                if (label.for_ua.node == ins.op.Xtua.node and
+                    label.for_ua.ident == ins.op.Xtua.ident)
+                {
+                    break :b i;
+                };
+        } else unreachable;
+        ins.op = .{ .Oraw = 0 };
+        reemitAddr16(&buf, addr, resolved);
+    };
+
     program.romloc_code_end = buf.items.len;
 
     for (program.statics.items) |*data| {
@@ -513,6 +536,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
 pub fn emitBytecode(writer: anytype, program: []const Ins) !void {
     for (program) |ins| {
+        assert(ins.op != .Xtua);
         if (ins.op == .Oraw) {
             try writer.writeByte(ins.op.Oraw);
         } else {

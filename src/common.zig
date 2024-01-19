@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 
 const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
+const codegen = @import("codegen.zig");
 const analyser = @import("analyser.zig");
 const common = @This();
 
@@ -1752,7 +1753,8 @@ pub const UserType = struct {
 };
 
 pub const OpTag = enum(u8) {
-    Oraw = 0xff,
+    Xtua = 0xff,
+    Oraw = 0xfd,
     Obrk = 0x00,
     Oinc = 0x01,
     Opop = 0x02,
@@ -1786,6 +1788,7 @@ pub const OpTag = enum(u8) {
 };
 
 pub const Op = union(OpTag) {
+    Xtua: codegen.UA,
     Oraw: u8,
     Obrk,
     Oinc,
@@ -1821,7 +1824,7 @@ pub const Op = union(OpTag) {
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
-            .Oraw => error.NeedsArg,
+            .Xtua, .Oraw => error.NeedsArg,
             .Olit => .Olit,
             .Ojmp => .Ojmp,
             .Ojsr => .Ojsr,
@@ -1865,7 +1868,14 @@ pub const Ins = struct {
     // Will be lowered once analyser is done on calling function
     generic: bool = false,
 
+    // Used for codegen
+    labels: StackBuffer(Label, 2) = StackBuffer(Label, 2).init(null),
+
     pub const List = std.ArrayList(Ins);
+
+    pub const Label = struct {
+        for_ua: codegen.UA,
+    };
 
     pub fn format(
         value: @This(),
