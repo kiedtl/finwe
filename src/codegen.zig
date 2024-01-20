@@ -35,6 +35,9 @@ pub const UAIdent = enum {
     None,
     LoopBegin,
     LoopEnd,
+    DeclBegin,
+    Here,
+    StaticsHere,
 };
 
 //
@@ -170,8 +173,14 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try emitIMM(buf, node, WK_STACK, false, .Olit, @as(u8, @intCast(s)));
                 }
             },
-            .Here => try emitUA(buf, ual, .None, node),
-            .StaticsHere => try emitUA(buf, ual, .None, node),
+            .Here => {
+                try emit(buf, node, WK_STACK, false, true, .Olit);
+                try emitUA2(buf, .Here, node);
+            },
+            .StaticsHere => {
+                try emit(buf, node, WK_STACK, false, true, .Olit);
+                try emitUA2(buf, .StaticsHere, node);
+            },
         },
         .Breakpoint => |brk| {
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0b);
@@ -270,7 +279,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ual),
         .RBlock => |r| try genNodeList(program, buf, r.body, ual),
-        .Quote => |_| try emitUA(buf, ual, .None, node),
+        .Quote => |q| {
+            try emit(buf, node, WK_STACK, false, true, .Olit);
+            try emitUA2(buf, .DeclBegin, q.def);
+        },
         .Loop => |l| {
             switch (l.loop) {
                 .While => |u| {
@@ -306,7 +318,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
                     try genNodeList(program, buf, u.cond, ual);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
-                    //try emitARG16(buf, node, WK_STACK, false, .Ojcn, 0x0100 + loop_begin);
                     try emit(buf, node, WK_STACK, false, true, .Olit);
                     try emitUA2(buf, .LoopBegin, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
@@ -317,7 +328,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ual: *UA.List) Cod
         .Call => |f| if (f.is_inline) {
             try genNodeList(program, buf, f.node.?.node.Decl.body, ual);
         } else {
-            try emitUA(buf, ual, .None, node);
+            //try emitUA(buf, ual, .None, node);
+            try emit(buf, node, WK_STACK, false, true, .Olit);
+            try emitUA2(buf, .DeclBegin, f.node.?);
+            try emit(buf, node, WK_STACK, false, true, .Ojsr);
         },
         .When => |when| {
             // Structure
@@ -436,9 +450,15 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         } else {
             try emit(&buf, def, RT_STACK, false, true, .Ojmp);
         }
+        try setLabelAt(&buf, .DeclBegin, def, def.romloc);
     }
 
     for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
+        if (ins.op.Xtua.ident == .Here or
+            ins.op.Xtua.ident == .StaticsHere)
+        {
+            continue;
+        }
         const resolved = b: for (buf.items, 0..) |otherins, i| {
             for (otherins.labels.constSlice()) |label|
                 if (label.for_ua.node == ins.op.Xtua.node and
@@ -486,11 +506,6 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     // }
 
     for (ual.items) |ua| switch (ua.node.node) {
-        .Builtin => |b| switch (b.type) {
-            .Here => reemitAddr16(&buf, ua.loc, here),
-            .StaticsHere => reemitAddr16(&buf, ua.loc, program.romloc_code_end + 0x100),
-            else => unreachable,
-        },
         .VRef => |v| {
             const loc = program.statics.items[v.localptr.?.ind.?].romloc;
             // std.log.info("Static @ {s}: {x}", .{ v.name, loc + 0x100 });
@@ -506,29 +521,18 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             const static = program.statics.items[v.val.typ.StaticPtr];
             reemitAddr16(&buf, ua.loc, static.romloc);
         },
-        .Quote => |q| {
-            if (q.def.romloc == 0xFFFF) {
-                std.log.err("[Bug] codegen: lambda {s}_{} not generated", .{
-                    q.def.node.Decl.name, q.def.node.Decl.variant,
-                });
-                unreachable;
-            }
-            reemitAddr16(&buf, ua.loc, q.def.romloc);
-        },
-        .Call => |c| {
-            const node = c.node.?;
-            assert(c.variant == node.node.Decl.variant);
-
-            if (node.romloc == 0xFFFF) {
-                std.log.err("[Bug] codegen: word {s} (var {}) was never generated", .{
-                    node.node.Decl.name, node.node.Decl.variant,
-                });
-                unreachable;
-            }
-
-            reemitAddr16(&buf, ua.loc, node.romloc);
-        },
         else => unreachable,
+    };
+
+    for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
+        const resolved = switch (ins.op.Xtua.ident) {
+            .Here => here,
+            // FIXME: extra +0x100? reemit already does that? bug?
+            .StaticsHere => program.romloc_code_end + 0x100,
+            else => unreachable,
+        };
+        ins.op = .{ .Oraw = 0 };
+        reemitAddr16(&buf, addr, resolved);
     };
 
     return buf;
