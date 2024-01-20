@@ -44,6 +44,7 @@ x Refactoring
   - need major refactoring?
 - Fix: inlining func w/ early return
 x Metadata
+- Error messages and context
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
