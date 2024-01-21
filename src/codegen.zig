@@ -42,7 +42,7 @@ pub const UA = struct {
     pub const List = std.ArrayList(UA);
 };
 
-pub const LabelType = enum {
+pub const LabelType = union(enum) {
     None,
     LoopBegin,
     LoopEnd,
@@ -53,6 +53,16 @@ pub const LabelType = enum {
     WhenMainBodyBegin,
     WhenEnd,
     BreakpointEnd,
+    CondEnd,
+    CondBranchEnd: usize,
+
+    pub fn eq(a: @This(), b: @This()) bool {
+        return @as(meta.Tag(@This()), a) == @as(meta.Tag(@This()), b) and
+            switch (a) {
+            .CondBranchEnd => |n| n == b.CondBranchEnd,
+            else => true,
+        };
+    }
 };
 
 //
@@ -61,15 +71,8 @@ pub const LabelType = enum {
 //
 //
 
-// "emit returning index"
-fn emitRI(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) CodegenError!usize {
-    _ = node;
+fn emit(buf: *Ins.List, _: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) CodegenError!void {
     try buf.append(Ins{ .stack = stack, .op = op, .keep = k, .short = s });
-    return buf.items.len - 1;
-}
-
-fn emit(buf: *Ins.List, node: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) CodegenError!void {
-    _ = try emitRI(buf, node, stack, k, s, op);
 }
 
 fn reemitAddr16(buf: *Ins.List, ind: usize, value: usize) void {
@@ -374,32 +377,22 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             try emitLabel(buf, .WhenEnd, node);
         },
         .Cond => |cond| {
-            if (true) unreachable;
-            var end_jumps = std.ArrayList(usize).init(gpa.allocator()); // Dummy jumps to fix
-            defer end_jumps.deinit();
-
-            for (cond.branches.items) |branch| {
+            for (cond.branches.items, 0..) |branch, i| {
                 try genCondPrep(program, buf, node, branch.cond_prep);
                 try genNodeList(program, buf, branch.cond);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                const addr_slot = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
-                try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emitUA(buf, .{ .CondBranchEnd = i }, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                 try genNodeList(program, buf, branch.body);
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                const end_jmp = try emitRI(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
-                try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
+                try emitUA(buf, .CondEnd, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojmp);
-                try end_jumps.append(end_jmp);
 
-                // TODO: overflow checks if body > 256 bytes
-                //const body_addr: u8 = @intCast(buf.items.len - addr_slot);
-                //buf.items[addr_slot].op.Oraw = body_addr;
-                reemitAddr16(buf, addr_slot, buf.items.len);
+                try emitLabel(buf, .{ .CondBranchEnd = i }, node);
             }
 
             if (cond.else_branch) |branch| {
@@ -409,9 +402,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             // TODO: remove the very last end jump if there's no else_branch,
             // since it's completely unnecessary
 
-            const cond_end_addr = buf.items.len;
-            for (end_jumps.items) |end_jump|
-                reemitAddr16(buf, end_jump, cond_end_addr);
+            try emitLabel(buf, .CondEnd, node);
         },
     }
 }
@@ -515,7 +506,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         const resolved = b: for (buf.items, 0..) |otherins, i| {
             for (otherins.labels.constSlice()) |label|
                 if (label.for_ua.label_src.eq(ins.op.Xtua.label_src) and
-                    label.for_ua.label_type == ins.op.Xtua.label_type)
+                    label.for_ua.label_type.eq(ins.op.Xtua.label_type))
                 {
                     break :b i;
                 };
