@@ -1251,6 +1251,7 @@ pub const Breakpoint = struct {
     type: Type,
     must_execute: bool = false,
     parent_test: ?*ASTNode.Decl = null,
+    breakpoint_ind: ?usize = null, // set after codegen
     romloc: usize = 0xFFFF,
     srcloc: Srcloc,
 
@@ -1754,6 +1755,7 @@ pub const UserType = struct {
 
 pub const OpTag = enum(u8) {
     Xtua = 0xff,
+    Xlbl = 0xfe,
     Oraw = 0xfd,
     Obrk = 0x00,
     Oinc = 0x01,
@@ -1789,6 +1791,7 @@ pub const OpTag = enum(u8) {
 
 pub const Op = union(OpTag) {
     Xtua: codegen.UA,
+    Xlbl: codegen.UA,
     Oraw: u8,
     Obrk,
     Oinc,
@@ -1824,7 +1827,7 @@ pub const Op = union(OpTag) {
 
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
-            .Xtua, .Oraw => error.NeedsArg,
+            .Xlbl, .Xtua, .Oraw => error.NeedsArg,
             .Olit => .Olit,
             .Ojmp => .Ojmp,
             .Ojsr => .Ojsr,
@@ -1869,7 +1872,7 @@ pub const Ins = struct {
     generic: bool = false,
 
     // Used for codegen
-    labels: StackBuffer(Label, 2) = StackBuffer(Label, 2).init(null),
+    labels: StackBuffer(Label, 4) = StackBuffer(Label, 4).init(null),
 
     pub const List = std.ArrayList(Ins);
 
