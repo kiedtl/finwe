@@ -72,4 +72,4 @@ Warnings
 
 - Sprite structs can have metadata to warn if 0-initialized (either not enough
   data or no data)
-  - #(warn zero-init)
+  - #(warn data-zero-init) #(warn data-incomplete-init)
