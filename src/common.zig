@@ -1785,6 +1785,9 @@ pub const OpTag = enum(u8) {
     Oora = 0x1d,
     Oeor = 0x1e,
     Osft = 0x1f,
+    Ojci = 0x20,
+    Ojmi = 0x40,
+    Ojsi = 0x60,
     Olit = 0x80,
     // TODO: ldz/stz/ldr/str
 };
@@ -1821,6 +1824,9 @@ pub const Op = union(OpTag) {
     Oora,
     Oeor,
     Osft,
+    Ojci,
+    Ojmi,
+    Ojsi,
     Olit,
 
     pub const Tag = meta.Tag(Op);
@@ -1828,35 +1834,11 @@ pub const Op = union(OpTag) {
     pub fn fromTag(tag: Tag) !Op {
         return switch (tag) {
             .Xlbl, .Xtua, .Oraw => error.NeedsArg,
-            .Olit => .Olit,
-            .Ojmp => .Ojmp,
-            .Ojsr => .Ojsr,
-            .Ojcn => .Ojcn,
-            .Obrk => .Obrk,
-            .Onip => .Onip,
-            .Oswp => .Oswp,
-            .Orot => .Orot,
-            .Oovr => .Oovr,
-            .Odup => .Odup,
-            .Oinc => .Oinc,
-            .Opop => .Opop,
-            .Oequ => .Oequ,
-            .Oneq => .Oneq,
-            .Olth => .Olth,
-            .Ogth => .Ogth,
-            .Oeor => .Oeor,
-            .Oand => .Oand,
-            .Oora => .Oora,
-            .Osft => .Osft,
-            .Omul => .Omul,
-            .Odiv => .Odiv,
-            .Oadd => .Oadd,
-            .Osub => .Osub,
-            .Osth => .Osth,
-            .Olda => .Olda,
-            .Osta => .Osta,
-            .Odei => .Odei,
-            .Odeo => .Odeo,
+            else => b: inline for (meta.fields(Op)) |field| {
+                if (field.type == void and @unionInit(Op, field.name, {}) == tag) {
+                    break :b @unionInit(Op, field.name, {});
+                }
+            } else unreachable,
         };
     }
 };
