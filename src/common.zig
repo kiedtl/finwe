@@ -1886,7 +1886,9 @@ pub const Ins = struct {
 
         const stk: []const u8 = if (value.stack == RT_STACK) "r" else "";
         const osz: []const u8 = if (value.short) "2" else "";
-        try fmt.format(writer, "{s}{s}{s}", .{ @tagName(value.op), osz, stk });
+        const str = @tagName(value.op);
+        for (str[1..]) |char| try writer.writeByte(std.ascii.toUpper(char));
+        try writer.print("{s}{s}", .{ osz, stk });
     }
 };
 
