@@ -47,6 +47,7 @@ pub const LabelType = union(enum) {
     LoopBegin,
     LoopEnd,
     DeclBegin,
+    DeclEnd,
     Here,
     StaticsHere,
     Static,
@@ -443,6 +444,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         } else {
             try emit(&buf, def, RT_STACK, false, true, .Ojmp);
         }
+        try emitLabel(&buf, .DeclEnd, def);
     }
 
     program.romloc_code_end = buf.items.len;
@@ -486,6 +488,10 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
+    return buf;
+}
+
+pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
     for (buf.items, 0..) |*ins, addr| for (ins.labels.constSlice()) |label| {
         switch (label.for_ua.label_type) {
             .DeclBegin => label.for_ua.label_src.Node.romloc = addr,
@@ -515,7 +521,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             unreachable;
         };
         ins.op = .{ .Oraw = 0 };
-        reemitAddr16(&buf, addr, resolved);
+        reemitAddr16(buf, addr, resolved);
     };
 
     const here = buf.items.len;
@@ -535,10 +541,55 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             else => unreachable,
         };
         ins.op = .{ .Oraw = 0 };
-        reemitAddr16(&buf, addr, resolved);
+        reemitAddr16(buf, addr, resolved);
     };
+}
 
-    return buf;
+pub fn printAsmFor(program: *Program, buf: *Ins.List, func: []const u8) CodegenError!void {
+    const declnode = program.global_scope.findDeclAny(program, func) orelse {
+        std.log.err("Cannot find \x1b[1m{s}\x1b[m in global scope.", .{func});
+        return;
+    };
+    const stdout = std.io.getStdOut().writer();
+    var printed_anything = declnode.node.Decl.calls > 0;
+
+    if (declnode.node.Decl.calls > 0)
+        try _printAsmForDeclNode(program, stdout, buf, func, declnode);
+
+    for (declnode.node.Decl.variations.items) |vari|
+        if (vari.node.Decl.calls > 0) {
+            try _printAsmForDeclNode(program, stdout, buf, func, vari);
+            printed_anything = true;
+        };
+
+    if (!printed_anything) {
+        std.log.err("Function \x1b[1m{s}\x1b[m wasn't generated (optimized out).", .{func});
+    }
+}
+
+fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []const u8, declnode: *ASTNode) CodegenError!void {
+    stdout.print("\x1b[1m{s}\x1b[m:\n", .{func}) catch unreachable;
+    const begin = search: for (buf.items, 0..) |ins, ind| {
+        for (ins.labels.constSlice()) |label|
+            if (label.for_ua.label_type == .DeclBegin and
+                label.for_ua.label_src.Node == declnode)
+            {
+                break :search ind;
+            };
+    } else unreachable;
+    const end = search: for (buf.items[begin..], begin..) |ins, ind| {
+        for (ins.labels.constSlice()) |label|
+            if (label.for_ua.label_type == .DeclEnd) {
+                assert(label.for_ua.label_src.Node == declnode);
+                break :search ind;
+            };
+    } else unreachable;
+
+    var i: usize = begin;
+    while (i < end) {
+        stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;
+        i += 1;
+    }
 }
 
 pub fn emitBytecode(writer: anytype, program: []const Ins) !void {

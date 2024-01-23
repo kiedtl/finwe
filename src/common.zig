@@ -1894,11 +1894,14 @@ pub const Ins = struct {
             @compileError("Unknown format string: '" ++ f ++ "'");
         }
 
-        const stk: []const u8 = if (value.stack == RT_STACK) "r" else " ";
-        const osz: []const u8 = if (value.short) "2" else " ";
-        try fmt.format(writer, "[{s}{s}] {s: <5} {}", .{
-            stk, osz, @tagName(value.op), value.op,
-        });
+        if (value.op == .Oraw) {
+            try fmt.format(writer, "{x:0>2}", .{value.op.Oraw});
+            return;
+        }
+
+        const stk: []const u8 = if (value.stack == RT_STACK) "r" else "";
+        const osz: []const u8 = if (value.short) "2" else "";
+        try fmt.format(writer, "{s}{s}{s}", .{ @tagName(value.op), osz, stk });
     }
 };
 

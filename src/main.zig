@@ -15,11 +15,12 @@ const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const params = comptime [_]clap.Param(clap.Help){
-        clap.parseParam("-t, --test        Run test harness.") catch unreachable,
-        clap.parseParam("-1, --debug-asm   Output ASM to stderr.") catch unreachable,
-        clap.parseParam("-2, --debug-inf   Output word analysis to stderr.") catch unreachable,
-        clap.parseParam("-x, --emit <str>  Output UXN rom to file.") catch unreachable,
-        clap.parseParam("-d, --emit-debug  Output debug info to syms file. Requires -x.") catch
+        clap.parseParam("-t, --test               Run test harness.") catch unreachable,
+        clap.parseParam("-1, --debug-asm          Output ASM to stderr.") catch unreachable,
+        clap.parseParam("-2, --debug-inf          Output word analysis to stderr.") catch unreachable,
+        clap.parseParam("-x, --emit <str>         Output UXN rom to file.") catch unreachable,
+        clap.parseParam("-x, --dump-asm <str>...  Print UXN bytecode for function.") catch unreachable,
+        clap.parseParam("-d, --emit-debug         Output debug info to syms file. Requires -x.") catch
             unreachable,
         clap.parseParam("<str>...") catch unreachable,
     };
@@ -84,7 +85,11 @@ pub fn main() anyerror!void {
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
-        const assembled = try codegen.generate(&program);
+        var assembled = try codegen.generate(&program);
+        for (args.args.@"dump-asm") |funcname|
+            try codegen.printAsmFor(&program, &assembled, funcname);
+        try codegen.resolveUAs(&program, &assembled);
+
         if (args.args.@"debug-asm" != 0)
             for (assembled.items, 0..) |asmstmt, i| {
                 std.log.info("{} -\t{}", .{ i, asmstmt });
