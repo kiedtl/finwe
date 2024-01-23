@@ -28,18 +28,20 @@ pub const UA = struct {
     label_type: LabelType,
     label_src: union(enum) {
         Node: *ASTNode,
-        StaticInd: usize,
+        Static: usize,
 
         pub fn eq(a: @This(), b: @This()) bool {
             return @as(meta.Tag(@This()), a) == @as(meta.Tag(@This()), b) and
                 switch (a) {
                 .Node => |n| n == b.Node,
-                .StaticInd => |n| n == b.StaticInd,
+                .Static => |n| n == b.Static,
             };
         }
     },
+    relative: RelativeCtl,
 
     pub const List = std.ArrayList(UA);
+    pub const RelativeCtl = enum { X, Always, Auto, Never }; // X: n/a
 };
 
 pub const LabelType = union(enum) {
@@ -84,26 +86,26 @@ fn reemitAddr16(buf: *Ins.List, ind: usize, value: usize) void {
 
 fn emitDataLabel(buf: *Ins.List, ind: usize) CodegenError!void {
     try emit(buf, null, WK_STACK, false, false, .{
-        .Xlbl = .{ .label_type = .Static, .label_src = .{ .StaticInd = ind } },
+        .Xlbl = .{ .label_type = .Static, .label_src = .{ .Static = ind }, .relative = .X },
     });
 }
 
 fn emitLabel(buf: *Ins.List, ident: LabelType, node: *ASTNode) CodegenError!void {
     try emit(buf, null, WK_STACK, false, false, .{
-        .Xlbl = .{ .label_type = ident, .label_src = .{ .Node = node } },
+        .Xlbl = .{ .label_type = ident, .label_src = .{ .Node = node }, .relative = .X },
     });
 }
 
 fn emitDataUA(buf: *Ins.List, i: usize) CodegenError!void {
     try emit(buf, null, WK_STACK, false, false, .{
-        .Xtua = .{ .label_src = .{ .StaticInd = i }, .label_type = .Static },
+        .Xtua = .{ .label_src = .{ .Static = i }, .label_type = .Static, .relative = .Auto },
     });
     try emit(buf, null, WK_STACK, false, false, .{ .Oraw = 0 });
 }
 
-fn emitUA(buf: *Ins.List, ident: LabelType, node: *ASTNode) CodegenError!void {
+fn emitUA(buf: *Ins.List, ident: LabelType, r: UA.RelativeCtl, node: *ASTNode) CodegenError!void {
     try emit(buf, node, WK_STACK, false, false, .{
-        .Xtua = .{ .label_src = .{ .Node = node }, .label_type = ident },
+        .Xtua = .{ .label_src = .{ .Node = node }, .label_type = ident, .relative = r },
     });
     try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
 }
@@ -185,11 +187,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             },
             .Here => {
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .Here, node);
+                try emitUA(buf, .Here, .Auto, node);
             },
             .StaticsHere => {
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .StaticsHere, node);
+                try emitUA(buf, .StaticsHere, .Auto, node);
             },
         },
         .Breakpoint => |*brk| {
@@ -298,7 +300,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
         .RBlock => |r| try genNodeList(program, buf, r.body),
         .Quote => |q| {
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .DeclBegin, q.def);
+            try emitUA(buf, .DeclBegin, .Never, q.def);
         },
         .Loop => |l| {
             switch (l.loop) {
@@ -311,12 +313,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopEnd, node);
+                    try emitUA(buf, .LoopEnd, .Auto, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                     try genNodeList(program, buf, l.body);
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, node);
+                    try emitUA(buf, .LoopBegin, .Auto, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojmp);
                     try emitLabel(buf, .LoopEnd, node);
                 },
@@ -329,7 +331,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, node);
+                    try emitUA(buf, .LoopBegin, .Auto, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
                 },
             }
@@ -339,7 +341,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             try genNodeList(program, buf, f.node.?.node.Decl.body);
         } else {
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .DeclBegin, f.node.?);
+            try emitUA(buf, .DeclBegin, .Never, f.node.?);
             try emit(buf, node, WK_STACK, false, true, .Ojsr);
         },
         .When => |when| {
@@ -359,7 +361,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 1.
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .WhenMainBodyBegin, node);
+            try emitUA(buf, .WhenMainBodyBegin, .Auto, node);
             try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
             // 2.
@@ -368,7 +370,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 3.
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .WhenEnd, node);
+            try emitUA(buf, .WhenEnd, .Auto, node);
             try emit(buf, node, WK_STACK, false, true, .Ojmp);
 
             // 4.
@@ -385,12 +387,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .{ .CondBranchEnd = i }, node);
+                try emitUA(buf, .{ .CondBranchEnd = i }, .Auto, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                 try genNodeList(program, buf, branch.body);
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .CondEnd, node);
+                try emitUA(buf, .CondEnd, .Auto, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojmp);
 
                 try emitLabel(buf, .{ .CondBranchEnd = i }, node);
@@ -498,7 +500,7 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
             .BreakpointEnd => program.breakpoints.items[
                 label.for_ua.label_src.Node.node.Breakpoint.breakpoint_ind.?
             ].romloc = addr,
-            .Static => program.statics.items[label.for_ua.label_src.StaticInd].romloc = addr,
+            .Static => program.statics.items[label.for_ua.label_src.Static].romloc = addr,
             else => {},
         }
     };
@@ -587,8 +589,32 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []co
 
     var i: usize = begin;
     while (i < end) {
-        stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;
-        i += 1;
+        if (buf.items[i].op == .Olit and buf.items[i + 1].op == .Oraw) {
+            if (buf.items[i].short) {
+                stdout.print("  #{}{}\n", .{ buf.items[i + 1], buf.items[i + 2] }) catch
+                    unreachable;
+                i += 3;
+            } else {
+                stdout.print("  {}\n", .{buf.items[i + 1]}) catch unreachable;
+                i += 2;
+            }
+        } else if (buf.items[i].op == .Olit and buf.items[i + 1].op == .Xtua and
+            buf.items[i + 1].op.Xtua.label_type == .DeclBegin)
+        {
+            const ua = buf.items[i + 1].op.Xtua;
+            stdout.print("  {u}", .{if (ua.relative == .Always) @as(u21, ',') else ';'}) catch
+                unreachable;
+            stdout.print("{s}", .{ua.label_src.Node.node.Decl.name}) catch unreachable;
+            if (buf.items[i + 3].op == .Ojsr or buf.items[i + 3].op == .Ojmp) {
+                stdout.print(" {}", .{buf.items[i + 3]}) catch unreachable;
+                i += 1;
+            }
+            stdout.print("\n", .{}) catch unreachable;
+            i += 3;
+        } else {
+            stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;
+            i += 1;
+        }
     }
 }
 
