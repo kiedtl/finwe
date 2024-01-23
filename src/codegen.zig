@@ -78,6 +78,12 @@ fn emit(buf: *Ins.List, _: ?*ASTNode, stack: usize, k: bool, s: bool, op: Op) Co
     try buf.append(Ins{ .stack = stack, .op = op, .keep = k, .short = s });
 }
 
+fn reemitRaw16(buf: *Ins.List, ind: usize, value: usize) void {
+    const addr = @as(u16, @intCast(value));
+    buf.items[ind + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
+    buf.items[ind + 1].op.Oraw = @as(u8, @intCast(addr & 0xFF));
+}
+
 fn reemitAddr16(buf: *Ins.List, ind: usize, value: usize) void {
     const addr = @as(u16, @intCast(value)) + 0x100;
     buf.items[ind + 0].op.Oraw = @as(u8, @intCast(addr >> 8));
@@ -98,7 +104,7 @@ fn emitLabel(buf: *Ins.List, ident: LabelType, node: *ASTNode) CodegenError!void
 
 fn emitDataUA(buf: *Ins.List, i: usize) CodegenError!void {
     try emit(buf, null, WK_STACK, false, false, .{
-        .Xtua = .{ .label_src = .{ .Static = i }, .label_type = .Static, .relative = .Auto },
+        .Xtua = .{ .label_src = .{ .Static = i }, .label_type = .Static, .relative = .Never },
     });
     try emit(buf, null, WK_STACK, false, false, .{ .Oraw = 0 });
 }
@@ -187,11 +193,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             },
             .Here => {
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .Here, .Auto, node);
+                try emitUA(buf, .Here, .Never, node);
             },
             .StaticsHere => {
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .StaticsHere, .Auto, node);
+                try emitUA(buf, .StaticsHere, .Never, node);
             },
         },
         .Breakpoint => |*brk| {
@@ -313,12 +319,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopEnd, .Auto, node);
+                    try emitUA(buf, .LoopEnd, .Never, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                     try genNodeList(program, buf, l.body);
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, .Auto, node);
+                    try emitUA(buf, .LoopBegin, .Never, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojmp);
                     try emitLabel(buf, .LoopEnd, node);
                 },
@@ -331,7 +337,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
                     try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, .Auto, node);
+                    try emitUA(buf, .LoopBegin, .Never, node);
                     try emit(buf, node, WK_STACK, false, true, .Ojcn);
                 },
             }
@@ -340,9 +346,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
         .Call => |f| if (f.is_inline) {
             try genNodeList(program, buf, f.node.?.node.Decl.body);
         } else {
-            try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .DeclBegin, .Never, f.node.?);
-            try emit(buf, node, WK_STACK, false, true, .Ojsr);
+            try emit(buf, node, WK_STACK, false, false, .Ojsi);
+            try emitUA(buf, .DeclBegin, .Always, f.node.?);
         },
         .When => |when| {
             // Structure
@@ -361,7 +366,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 1.
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .WhenMainBodyBegin, .Auto, node);
+            try emitUA(buf, .WhenMainBodyBegin, .Never, node);
             try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
             // 2.
@@ -370,7 +375,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 3.
             try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .WhenEnd, .Auto, node);
+            try emitUA(buf, .WhenEnd, .Never, node);
             try emit(buf, node, WK_STACK, false, true, .Ojmp);
 
             // 4.
@@ -387,12 +392,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .{ .CondBranchEnd = i }, .Auto, node);
+                try emitUA(buf, .{ .CondBranchEnd = i }, .Never, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojcn);
 
                 try genNodeList(program, buf, branch.body);
                 try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .CondEnd, .Auto, node);
+                try emitUA(buf, .CondEnd, .Never, node);
                 try emit(buf, node, WK_STACK, false, true, .Ojmp);
 
                 try emitLabel(buf, .{ .CondBranchEnd = i }, node);
@@ -522,18 +527,21 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
             std.log.err("codegen: BUG: UA cannot be resolved: {}", .{ins.op.Xtua});
             unreachable;
         };
-        ins.op = .{ .Oraw = 0 };
-        reemitAddr16(buf, addr, resolved);
+        if (ins.op.Xtua.relative != .Never) {
+            const resolved_rel: u16 = @bitCast(@as(
+                i16,
+                @intCast(@as(isize, @intCast(resolved)) -
+                    @as(isize, @intCast(addr + 2))),
+            ));
+            ins.op = .{ .Oraw = 0 };
+            reemitRaw16(buf, addr, resolved_rel);
+        } else {
+            ins.op = .{ .Oraw = 0 };
+            reemitAddr16(buf, addr, resolved);
+        }
     };
 
     const here = buf.items.len;
-
-    // std.log.info("here: {x}", .{buf.items.len + 0x100});
-    // for (program.statics.items) |*data| {
-    //     std.log.info("Static: {s} {x}...{x}", .{
-    //         @tagName(data.default), data.romloc + 0x100, data.romloc + (data.type.size(program).? * data.count) + 0x100,
-    //     });
-    // }
 
     for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
         const resolved = switch (ins.op.Xtua.label_type) {
