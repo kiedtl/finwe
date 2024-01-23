@@ -343,7 +343,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             }
         },
         .Asm => |a| try emit(buf, node, a.stack, a.keep, a.short, a.op),
-        .Call => |f| if (f.is_inline) {
+        .Call => |f| if (f.is_inline_override or
+            f.node.?.node.Decl.is_inline == .AutoYes or
+            f.node.?.node.Decl.is_inline == .Always)
+        {
             try genNodeList(program, buf, f.node.?.node.Decl.body);
         } else {
             try emit(buf, node, WK_STACK, false, false, .Ojsi);
@@ -424,10 +427,13 @@ pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList) Codege
 pub fn generate(program: *Program) CodegenError!Ins.List {
     var buf = Ins.List.init(gpa.allocator());
 
+    // Main call if it's there
+    // Nothing else will get generated (decls are ignored unless passed directly)
+    try genNodeList(program, &buf, program.ast);
+
     for (program.defs.items) |def| {
         const d = def.node.Decl;
-        try genNodeList(program, &buf, program.ast);
-        if (d.calls == 0) {
+        if (d.calls == 0 or d.is_inline == .Always or d.is_inline == .AutoYes) {
             // std.log.info("skipping {s}_{}", .{ d.name, d.variant });
             continue;
         }
@@ -439,11 +445,11 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
             unreachable;
         }
 
-        // const a = d.arity orelse analyser.BlockAnalysis{};
-        // std.log.info("codegen: {s: >12}_{}\t{x}\t{s}", .{
-        //     d.name,             d.variant,
-        //     def.romloc + 0x100, analyser.AnalysisFmt.from(&a, program),
-        // });
+        //const a = d.arity orelse analyser.BlockAnalysis{};
+        //std.log.info("codegen: {s: >12}_{}\t{}\t{}\t{s}", .{
+        //d.name, d.variant, d.calls,
+        //d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
+        //});
         try emitLabel(&buf, .DeclBegin, def);
         try genNodeList(program, &buf, d.body);
         if (d.is_test) {
@@ -457,6 +463,8 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     program.romloc_code_end = buf.items.len;
 
     for (program.statics.items, 0..) |*data, data_i| {
+        if (!data.used)
+            continue;
         try emitDataLabel(&buf, data_i);
         const typsz = data.type.size(program).?;
         const totalsz = typsz * data.count;
@@ -590,8 +598,11 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []co
     const end = search: for (buf.items[begin..], begin..) |ins, ind| {
         for (ins.labels.constSlice()) |label|
             if (label.for_ua.label_type == .DeclEnd) {
-                assert(label.for_ua.label_src.Node == declnode);
-                break :search ind;
+                if (label.for_ua.label_src.Node == declnode) {
+                    break :search ind;
+                } else {
+                    assert(ind == begin);
+                }
             };
     } else unreachable;
 
@@ -603,21 +614,14 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []co
                     unreachable;
                 i += 3;
             } else {
-                stdout.print("  {}\n", .{buf.items[i + 1]}) catch unreachable;
+                stdout.print("  #{}\n", .{buf.items[i + 1]}) catch unreachable;
                 i += 2;
             }
-        } else if (buf.items[i].op == .Olit and buf.items[i + 1].op == .Xtua and
+        } else if (buf.items[i].op == .Ojsi and buf.items[i + 1].op == .Xtua and
             buf.items[i + 1].op.Xtua.label_type == .DeclBegin)
         {
             const ua = buf.items[i + 1].op.Xtua;
-            stdout.print("  {u}", .{if (ua.relative == .Always) @as(u21, ',') else ';'}) catch
-                unreachable;
-            stdout.print("{s}", .{ua.label_src.Node.node.Decl.name}) catch unreachable;
-            if (buf.items[i + 3].op == .Ojsr or buf.items[i + 3].op == .Ojmp) {
-                stdout.print(" {}", .{buf.items[i + 3]}) catch unreachable;
-                i += 1;
-            }
-            stdout.print("\n", .{}) catch unreachable;
+            stdout.print("  {s}\n", .{ua.label_src.Node.node.Decl.name}) catch unreachable;
             i += 3;
         } else {
             stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;

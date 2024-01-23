@@ -1015,7 +1015,7 @@ pub const ASTNode = struct {
         node: ?*ASTNode = null,
         goto: bool = false,
         is_method: bool = false,
-        is_inline: bool = false,
+        is_inline_override: bool = false,
     };
 
     pub const When = struct {
@@ -1142,7 +1142,9 @@ pub const ASTNode = struct {
         is_inline: Inline = .Auto,
         is_targ_burdampe: bool = false,
 
-        pub const Inline = enum { Auto, Always, Never };
+        bytecode_size: usize = 0,
+
+        pub const Inline = enum { Auto, AutoYes, AutoNo, Always, Never };
     };
 
     pub const Quote = struct {
@@ -1337,6 +1339,7 @@ pub const Static = struct {
     default: Default,
     romloc: usize = 0xFFFF,
     srcloc: Srcloc,
+    used: bool = false,
 
     pub const Default = union(enum) {
         String: String,

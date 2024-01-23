@@ -4,6 +4,7 @@ const meta = std.meta;
 const assert = std.debug.assert;
 
 const common = @import("common.zig");
+const codegen = @import("codegen.zig");
 
 const Program = common.Program;
 const ASTNode = common.ASTNode;
@@ -594,7 +595,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 const cdecl = &d.node.Decl;
 
                 c.node = d;
-                c.is_inline = cdecl.is_inline == .Always or ctx.r_blk;
+                c.is_inline_override = cdecl.is_inline == .Always or ctx.r_blk;
 
                 if (cdecl.arity) |d_arity| {
                     var type_args = @TypeOf(c.args).init(null);
@@ -609,13 +610,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     } else null;
 
                     c.variant = (var_ind orelse cdecl.variations.items.len) + 1;
-                    if (var_ind) |ind|
-                        c.node = cdecl.variations.items[ind];
 
-                    if (var_ind == null) {
+                    if (var_ind) |ind| {
+                        c.node = cdecl.variations.items[ind];
+                    } else {
                         const newdef = d.deepcloneDecl(&program.ast, false, program);
                         newdef.node.Decl.arity = ungenericified;
-                        newdef.node.Decl.calls += 1;
                         c.node = newdef;
 
                         // const newdef_ = d.deepclone(null, program);
@@ -640,9 +640,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                         _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
                         newdef.node.Decl.is_analysed = true;
-                    } else {
-                        cdecl.variations.items[var_ind.?].node.Decl.calls += 1;
                     }
+
+                    c.node.?.node.Decl.calls += 1;
 
                     // Need to remove special arg types from arity before merging
                     for (c.args.constSlice()) |_| {
@@ -806,10 +806,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     // .StaticPtr => |ind| a.stack.append(
                     //     program.statics.items[ind].type.ptrize16(program),
                     // ) catch unreachable,
-                    .StaticPtr => |ind| stk.append((TypeInfo{ .Array = .{
-                        .typ = program.btype(program.statics.items[ind].type),
-                        .count = @intCast(program.statics.items[ind].count),
-                    } }).ptrize16(program)) catch unreachable,
+                    .StaticPtr => |ind| {
+                        stk.append((TypeInfo{ .Array = .{
+                            .typ = program.btype(program.statics.items[ind].type),
+                            .count = @intCast(program.statics.items[ind].count),
+                        } }).ptrize16(program)) catch unreachable;
+                        program.statics.items[ind].used = true;
+                    },
                     else => stk.append(v.val.typ) catch unreachable,
                 }
             },
@@ -1127,7 +1130,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
     return info;
 }
 
-pub fn postProcess(self: *Program) Error!void {
+pub fn postProcess(self: *Program) ErrorSet!void {
     const _S = struct {
         pub fn walkNodes(program: *Program, parent: ?*ASTNode, nodes: ASTNodeList) Error!void {
             var iter = nodes.iterator();
@@ -1171,6 +1174,7 @@ pub fn postProcess(self: *Program) Error!void {
                     .count = 1,
                     .default = local.default,
                     .srcloc = local.declnode.srcloc,
+                    .used = true,
                 }) catch unreachable;
                 local.ind = program.statics.items.len - 1;
             };
@@ -1195,6 +1199,23 @@ pub fn postProcess(self: *Program) Error!void {
                 } },
                 .srcloc = def.srcloc,
             }) catch unreachable;
+
+    // Determine whether to inline stuff
+    var buf = common.Ins.List.init(common.gpa.allocator());
+
+    for (self.defs.items) |def| {
+        const d = &def.node.Decl;
+        if (d.calls == 0) continue;
+        assert(d.is_analysed);
+        codegen.genNodeList(self, &buf, d.body) catch unreachable;
+        d.bytecode_size = buf.items.len;
+        if (d.is_inline == .Auto)
+            d.is_inline = switch (d.bytecode_size) {
+                0...6 => .AutoYes,
+                else => .AutoNo,
+            };
+        buf.shrinkRetainingCapacity(0);
+    }
 }
 
 pub fn analyse(program: *Program, tests: bool) ErrorSet!void {

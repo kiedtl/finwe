@@ -308,6 +308,7 @@ pub const Parser = struct {
                     .body = body,
                     .scope = scope,
                     .in_scope = scope,
+                    .is_inline = .Never,
                 } }, .srcloc = node.location };
                 break :b ASTNode{
                     .node = .{ .Quote = .{ .def = dnode } },
