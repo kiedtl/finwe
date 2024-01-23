@@ -5,7 +5,18 @@
 (use burdampe)
 (use alloc)
 
-(enum Dir U8 n s e w nw ne sw se)
+(enum Dir U8 [n 0] [s 1] [e 2] [w 3] [nw 4] [ne 5] [sw 6] [se 7])
+
+#(method Dir) (word diag? (Dir -- Bool) [
+	(as U8) 4 >=
+])
+
+(test Dir/diag? [
+	.Dir/s  ;diag? (should eq nil) .Dir/n  ;diag? (should eq nil)
+	.Dir/e  ;diag? (should eq nil) .Dir/w  ;diag? (should eq nil)
+	.Dir/se ;diag? (should eq t)   .Dir/ne ;diag? (should eq t)
+	.Dir/sw ;diag? (should eq t)   .Dir/nw ;diag? (should eq t)
+])
 
 #(method Dir) (word print (Dir -- ) [
 	(cond
@@ -53,7 +64,7 @@
 
 #(method Coord) (word eq? (Coord Coord -- Bool) [ (as U16 U16) = ])
 
-#(method Coord) (word at (@[[Any 20] 21] Coord -- @(Child (Child $1))) [
+#(method Coord) (word at (@[[Any 50] 30] Coord -- @(Child (Child $1))) [
 	(split U8 U8) rot-sbb : :
 ])
 
@@ -78,10 +89,10 @@
 
 // ( accumulate-func start end -- path )
 (word astar (@(Fn (Coord -- )) Coord Coord -- Bool) [
-	(let nodes [[Node 20] 21])
-	(let g-score [[U16 20] 21])
+	(let nodes [[Node 50] 30])
+	(let g-score [[U16 50] 30])
 	(let open-list (Of vec/Vector Coord))
-	(let f-score [[U16 20] 21])
+	(let f-score [[U16 50] 30])
 	(let goal Coord)
 
 	(word get-current ( -- Coord ) [
@@ -120,17 +131,18 @@
 
 	// ( current neighbor -- )
 	(word check-neighbor ( Coord Dir -- ) [
-		move dup (r move) ;move
-		dup (split U8 U8) 21 >= swap 20 >= or (when [2drop return])
-		@nodes over ;at :unvisited -> not (when [2drop return])
-		@MAP over ;at -> '. <> (when [2drop return])
+		move dup (r copy) ;move
+		dup (split U8 U8) 30 >= swap 50 >= or (when [2drop (r drop) return])
+		@nodes over ;at :unvisited -> not (when [2drop (r drop) return])
+		@MAP over ;at -> '. <> (when [2drop (r drop) return])
 
-		// tenative_gscore = gscore[current] + dist(current, neighbor)
-		over @g-score swap ;at -> move
-		2dup ;distance (r move) +         // ( current neighbor newg )
-		over @g-score swap ;at -> tuck> < // ( current neighbor newg newg<oldg? )
+		// tenative_gscore = gscore[current] + cost
+		over @g-score swap ;at ->
+		(r move) ;diag? (when [2s] [1s]) + // ( current neighbor newg )
+		over @g-score swap ;at -> tuck> <  // ( current neighbor newg newg<oldg? )
 
 		(when [
+			over @g-score swap ;at tuck> <-
 			// ( current neighbor g )
 			// fscore = gscore + distance(goal, neighbor)
 			over $goal ;distance +
@@ -141,9 +153,9 @@
 		] [ 3drop ])
 	])
 
-	0xFF (sizeof [[Node 20] 21]) @nodes std/memset8
-	0xFF (sizeof [[U16 20] 21]) @g-score std/memset8
-	0xFF (sizeof [[U16 20] 21]) @f-score std/memset8
+	0xFF (sizeof [[Node 50] 30]) @nodes std/memset8
+	0xFF (sizeof [[U16  50] 30]) @g-score std/memset8
+	0xFF (sizeof [[U16  50] 30]) @f-score std/memset8
 
 	over @g-score swap ;at 0s -<
 	2dup ;distance over @f-score swap ;at <-
@@ -217,10 +229,10 @@
 	0s dup @anchorx <- .Screen/x deo
 	0s dup @anchory <- .Screen/y deo
 
-	0 (until [ 21 = ] [
+	0 (until [ 30 = ] [
 		0s dup @anchorx <- .Screen/x deo
 
-		0 (until [ 20 = ] [
+		0 (until [ 50 = ] [
 			2dup swap @MAP : : -> draw-char
 
 			$anchorx 8s + dup @anchorx <- .Screen/x deo
@@ -301,8 +313,8 @@
 	0xf0e0s .System/g deo
 	0xf0c0s .System/b deo
 
-	20s 8s * .Screen/width deo
-	21s 8s * .Screen/height deo
+	50s 8s * .Screen/width deo
+	30s 8s * .Screen/height deo
 ])
 
 // Taken from left
@@ -362,26 +374,35 @@
 	0x0000s 0x60f2s 0x9e0cs 0x0000s 0x3c42s 0x9985s 0x8599s 0x423cs
 ])
 
-(let MAP [[U8 20] 21] [
-	"#.................##"
-	"..######...........#"
-	"..#....#............"
-	"..#....#.....#......"
-	"..######.....#......"
-	".............#......"
-	".............#......"
-	"......########......"
-	"...................."
-	".....#......####...."
-	".....#......#..#...."
-	".....#......#..#...."
-	".....#......#..#...."
-	".....#......####...."
-	".....#.............."
-	".....#...#######...."
-	"........###...###..."
-	"........#.......#..."
-	"........##.....##..."
-	"#........###.###...."
-	"##.................#"
+(let MAP [[U8 50] 30] [
+	"#...............................................##"
+	"..######.........................................#"
+	"..#....#........#####............................."
+	"..#....#............##.#####################......"
+	"..#....#.....#......#......................#......"
+	"..######.....#......#......................#......"
+	".............#......#......................#......"
+	".............#......#......................#......"
+	"......########......#......................#......"
+	"....................#......................#......"
+	"....................############...........#......"
+	"....................#..........#...........#......"
+	"....................#..........#...........#......"
+	".....#......####....#..........#...........#......"
+	".....#......#..#....#..........#....#......#......"
+	".....#......#..#....#..........#...###.....#......"
+	".....#......#..#....#..........#..##.##....#......"
+	".....#......####....#..........#.##...##...#......"
+	"....................#..........#..##.##....#......"
+	"....................#..........#...#.#.....#......"
+	"................#####..........#...........#......"
+	"...............................#...........#......"
+	".....#.........................#############......"
+	".....#...#######..............................#.#."
+	"........###...###..........................#..#.#."
+	"........#.......#................######....#..###."
+	"........#.......#................#....#....#..#.#."
+	"........##.....##................#....#....#..#.#."
+	"#........###.###.................######..........."
+	"##...............................................#"
 ])
