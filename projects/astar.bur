@@ -58,6 +58,17 @@
 
 (struct Coord [x U8] [y U8])
 
+// #0000 b1 b2 00 00
+// SWP2  00 00 b1 b2
+// ROT   00 b1 b2 00
+// SWP   00 b2 00 b1
+#(method Coord) (word into-shorts ( Coord -- U16 U16 ) [
+	(split U8 U8) 0 0
+	(wild (--) [(asm "s" .Op/Oswp)])
+	(wild (--) [(asm "" .Op/Orot)])
+	(wild (--) [(asm "" .Op/Oswp)])
+])
+
 #(method Coord) (word print ( Coord -- ) [
 	(split U8 U8) swap "(" print-string print-dec ", " print-string print-dec ")" print-string
 ])
@@ -208,9 +219,9 @@
 ])
 
 (word highlight-coord (Coord -- ) [
-	(split U8 U8) 2dup
-	(as U16) 8s * .Screen/y deo
-	(as U16) 8s * .Screen/x deo
+	;into-shorts 2dup
+	8s * .Screen/y deo
+	8s * .Screen/x deo
 	@MAP : : -> draw-char-inverse
 ])
 
