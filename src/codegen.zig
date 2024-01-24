@@ -462,7 +462,20 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 
     program.romloc_code_end = buf.items.len;
 
-    for (program.statics.items, 0..) |*data, data_i| {
+    // Sort static data, so that empty ones are last
+    var statics = std.ArrayList(usize).init(gpa.allocator());
+    defer statics.deinit();
+    for (0..program.statics.items.len) |i| statics.append(i) catch unreachable;
+    std.sort.insertion(usize, statics.items, program, struct {
+        pub fn lessThan(p: *Program, lhs: usize, rhs: usize) bool {
+            const is_a_nil = p.statics.items[lhs].default == .None;
+            const is_b_nil = p.statics.items[rhs].default == .None;
+            return !is_a_nil and is_b_nil;
+        }
+    }.lessThan);
+
+    for (statics.items) |data_i| {
+        const data = &program.statics.items[data_i];
         if (!data.used)
             continue;
         try emitDataLabel(&buf, data_i);
@@ -631,7 +644,13 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []co
 }
 
 pub fn emitBytecode(writer: anytype, program: []const Ins) !void {
-    for (program) |ins| {
+    var last_non_null: usize = 0;
+    for (program, 0..) |ins, i|
+        if (ins.op != .Oraw or ins.op.Oraw != 0) {
+            last_non_null = i;
+        };
+
+    for (program[0 .. last_non_null + 1]) |ins| {
         assert(ins.op != .Xtua);
         assert(ins.op != .Xlbl);
         if (ins.op == .Oraw) {
