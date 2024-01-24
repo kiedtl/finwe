@@ -200,14 +200,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                 try emitUA(buf, .StaticsHere, .Never, node);
             },
         },
-        .Breakpoint => |*brk| {
-            brk.breakpoint_ind = program.breakpoints.items.len;
+        .Breakpoint => {
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0b);
             try emitIMM(buf, node, WK_STACK, false, .Olit, 0x0e);
             try emit(buf, node, WK_STACK, false, false, .Odeo);
-            program.breakpoints.append(brk.*) catch unreachable;
             try emitLabel(buf, .BreakpointEnd, node);
-            //program.breakpoints.items[program.breakpoints.items.len - 1].romloc = buf.items.len;
             program.breakpoints.items[program.breakpoints.items.len - 1].srcloc = node.srcloc;
         },
         .Cast => |c| {
@@ -318,14 +315,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
 
-                    try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopEnd, .Never, node);
-                    try emit(buf, node, WK_STACK, false, true, .Ojcn);
+                    try emit(buf, node, WK_STACK, false, false, .Ojci);
+                    try emitUA(buf, .LoopEnd, .Always, node);
 
                     try genNodeList(program, buf, l.body);
-                    try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, .Never, node);
-                    try emit(buf, node, WK_STACK, false, true, .Ojmp);
+                    try emit(buf, node, WK_STACK, false, false, .Ojmi);
+                    try emitUA(buf, .LoopBegin, .Always, node);
                     try emitLabel(buf, .LoopEnd, node);
                 },
                 .Until => |u| {
@@ -336,9 +331,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try genNodeList(program, buf, u.cond);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
-                    try emit(buf, node, WK_STACK, false, true, .Olit);
-                    try emitUA(buf, .LoopBegin, .Never, node);
-                    try emit(buf, node, WK_STACK, false, true, .Ojcn);
+                    try emit(buf, node, WK_STACK, false, true, .Ojci);
+                    try emitUA(buf, .LoopBegin, .Always, node);
                 },
             }
         },
@@ -368,9 +362,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             //   5. <end>
 
             // 1.
-            try emit(buf, node, WK_STACK, false, true, .Olit);
-            try emitUA(buf, .WhenMainBodyBegin, .Never, node);
-            try emit(buf, node, WK_STACK, false, true, .Ojcn);
+            try emit(buf, node, WK_STACK, false, false, .Ojci);
+            try emitUA(buf, .WhenMainBodyBegin, .Always, node);
 
             // 2.
             if (when.nah) |nah|
@@ -394,14 +387,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
-                try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .{ .CondBranchEnd = i }, .Never, node);
-                try emit(buf, node, WK_STACK, false, true, .Ojcn);
+                try emit(buf, node, WK_STACK, false, false, .Ojci);
+                try emitUA(buf, .{ .CondBranchEnd = i }, .Always, node);
 
                 try genNodeList(program, buf, branch.body);
-                try emit(buf, node, WK_STACK, false, true, .Olit);
-                try emitUA(buf, .CondEnd, .Never, node);
-                try emit(buf, node, WK_STACK, false, true, .Ojmp);
+                try emit(buf, node, WK_STACK, false, false, .Ojmi);
+                try emitUA(buf, .CondEnd, .Always, node);
 
                 try emitLabel(buf, .{ .CondBranchEnd = i }, node);
             }
@@ -434,7 +425,6 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
     for (program.defs.items) |def| {
         const d = def.node.Decl;
         if (d.calls == 0 or d.is_inline == .Always or d.is_inline == .AutoYes) {
-            // std.log.info("skipping {s}_{}", .{ d.name, d.variant });
             continue;
         }
 
@@ -446,10 +436,10 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
 
         //const a = d.arity orelse analyser.BlockAnalysis{};
-        //std.log.info("codegen: {s: >12}_{}\t{}\t{}\t{s}", .{
-        //d.name, d.variant, d.calls,
-        //d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
-        //});
+        // std.log.info("codegen: {s: >12}_{}\t{}\t{}\t{s}", .{
+        //     d.name, d.variant, d.calls,
+        //     d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
+        // });
         try emitLabel(&buf, .DeclBegin, def);
         try genNodeList(program, &buf, d.body);
         if (d.is_test) {
@@ -522,14 +512,16 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
 pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
     for (buf.items, 0..) |*ins, addr| for (ins.labels.constSlice()) |label| {
         switch (label.for_ua.label_type) {
-            .DeclBegin => label.for_ua.label_src.Node.romloc = addr,
-            .BreakpointEnd => program.breakpoints.items[
-                label.for_ua.label_src.Node.node.Breakpoint.breakpoint_ind.?
-            ].romloc = addr,
+            .BreakpointEnd, .DeclBegin => label.for_ua.label_src.Node.romloc = addr,
             .Static => program.statics.items[label.for_ua.label_src.Static].romloc = addr,
             else => {},
         }
     };
+
+    for (program.breakpoints.items, 0..) |brk, i| {
+        if (brk.romloc == 0xFFFF)
+            std.log.info("{} missed", .{i});
+    }
 
     for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
         if (ins.op.Xtua.label_type == .Here or

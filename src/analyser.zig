@@ -998,6 +998,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             .Breakpoint => |*brk| {
                 brk.must_execute = !ctx.loop and !ctx.conditional;
                 brk.parent_test = parent;
+                program.breakpoints.append(node) catch unreachable;
 
                 switch (brk.type) {
                     .RCheckpoint => unreachable, // added by analyser only
@@ -1189,16 +1190,17 @@ pub fn postProcess(self: *Program) ErrorSet!void {
     try _S.registerLocals(self.global_scope, self);
 
     for (self.defs.items) |def|
-        if (def.node.Decl.is_test)
+        if (def.node.Decl.is_test) {
             def.node.Decl.body.append(.{
                 .node = .{ .Breakpoint = .{
                     .type = .RCheckpoint,
                     .parent_test = &def.node.Decl,
                     .must_execute = true,
-                    .srcloc = def.srcloc,
                 } },
                 .srcloc = def.srcloc,
             }) catch unreachable;
+            self.breakpoints.append(def.node.Decl.body.last().?) catch unreachable;
+        };
 
     // Determine whether to inline stuff
     var buf = common.Ins.List.init(common.gpa.allocator());

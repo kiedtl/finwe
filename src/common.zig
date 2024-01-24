@@ -1253,9 +1253,6 @@ pub const Breakpoint = struct {
     type: Type,
     must_execute: bool = false,
     parent_test: ?*ASTNode.Decl = null,
-    breakpoint_ind: ?usize = null, // set after codegen
-    romloc: usize = 0xFFFF,
-    srcloc: Srcloc,
 
     // context for test runner
     // FIXME: don't modify the breakpoint data directly
@@ -1554,7 +1551,7 @@ pub const Program = struct {
     types: UserType.AList,
     builtin_types: std.ArrayList(TypeInfo),
     rng: std.rand.DefaultPrng,
-    breakpoints: common.Breakpoint.AList,
+    breakpoints: ASTNodePtrList,
     romloc_code_end: usize = 0,
     errors: Error.AList,
     global_scope: *Scope,
@@ -1578,7 +1575,7 @@ pub const Program = struct {
             .builtin_types = std.ArrayList(TypeInfo).init(alloc),
             .errors = common.Error.AList.init(alloc),
             .rng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp())),
-            .breakpoints = common.Breakpoint.AList.init(alloc),
+            .breakpoints = ASTNodePtrList.init(alloc),
             .global_scope = Scope.create(null),
             .imports = ASTNodePtrList.init(alloc),
         };

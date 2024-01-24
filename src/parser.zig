@@ -759,14 +759,7 @@ pub const Parser = struct {
                     }
 
                     break :b ASTNode{
-                        .node = .{
-                            .Breakpoint = .{
-                                .type = b,
-                                // later replaced by analyser, probably needlessly
-                                // TODO investigate
-                                .srcloc = ast[0].location,
-                            },
-                        },
+                        .node = .{ .Breakpoint = .{ .type = b } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "debug")) {

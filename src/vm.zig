@@ -205,9 +205,12 @@ pub const VM = struct {
         const sosb = (wst - @as(u8, 2)).*;
         const soss = @as(u16, @intCast((wst - @as(u8, 3)).*)) << 8 | sosb;
 
-        const breakpoint = for (program.breakpoints.items) |*brk| {
-            if (brk.romloc + 0x100 == pc) break brk;
-        } else return; // TODO: warn about unknown breakpoints
+        const breakpoint_node = for (program.breakpoints.items) |node| {
+            if (node.romloc + 0x100 == pc) break node;
+        } else unreachable; // TODO: warn about unknown breakpoints
+        const romloc = breakpoint_node.romloc;
+        const srcloc = breakpoint_node.srcloc;
+        const breakpoint = &breakpoint_node.node.Breakpoint;
         const btyp = breakpoint.type;
 
         breakpoint.is_executed = true;
@@ -228,14 +231,14 @@ pub const VM = struct {
                     if (v.toU16(program) != toss) {
                         try _failTest(stderr, "Expected 0x{x:0>4}, got 0x{x:0>4}", .{
                             v.toU16(program), toss,
-                        }, breakpoint.romloc, breakpoint.srcloc);
+                        }, romloc, srcloc);
                     }
                     self.uxn.wst.ptr -= 2;
                 } else if (v.typ.bits(program).? == 8) {
                     if (v.toU8(program) != tosb) {
                         try _failTest(stderr, "Expected 0x{x:0>2}, got 0x{x:0>2}", .{
                             v.toU8(program), tosb,
-                        }, breakpoint.romloc, breakpoint.srcloc);
+                        }, romloc, srcloc);
                     }
                     self.uxn.wst.ptr -= 1;
                 } else unreachable;
@@ -254,14 +257,14 @@ pub const VM = struct {
                     if (v.toU16(program) == toss) {
                         try _failTest(stderr, "Unexpected 0x{x:0>4} == 0x{x:0>4}", .{
                             toss, soss,
-                        }, breakpoint.romloc, breakpoint.srcloc);
+                        }, romloc, srcloc);
                     }
                     self.uxn.wst.ptr -= 2;
                 } else if (v.typ.bits(program).? == 8) {
                     if (v.toU8(program) == tosb) {
                         try _failTest(stderr, "Unexpected 0x{x:0>2} == 0x{x:0>2}", .{
                             tosb, sosb,
-                        }, breakpoint.romloc, breakpoint.srcloc);
+                        }, romloc, srcloc);
                     }
                     self.uxn.wst.ptr -= 1;
                 } else unreachable;
@@ -271,9 +274,9 @@ pub const VM = struct {
                 if (self.captured_stdout.items.len != v.items.len)
                     try _failTest(stderr, "Unexpected stdout output (len: {} vs {})", .{
                         v.items.len, self.captured_stdout.items.len,
-                    }, breakpoint.romloc, breakpoint.srcloc);
+                    }, romloc, srcloc);
                 if (!mem.eql(u8, self.captured_stdout.items, v.items))
-                    try _failTest(stderr, "Unexpected stdout output", .{}, breakpoint.romloc, breakpoint.srcloc);
+                    try _failTest(stderr, "Unexpected stdout output", .{}, romloc, srcloc);
             },
         }
     }
@@ -282,13 +285,15 @@ pub const VM = struct {
         if (!self.is_test_done)
             try _failTest(stderr, "Test never returned!", .{}, cur_test.romloc, cur_test.srcloc);
 
-        for (program.breakpoints.items) |brk| {
+        for (program.breakpoints.items) |node| {
+            const brk = &node.node.Breakpoint;
+            assert(node.romloc != 0xFFFF);
             if (brk.parent_test.? == &cur_test.node.Decl)
                 if (brk.must_execute and !brk.is_executed)
                     if (brk.type == .RCheckpoint)
-                        try _failTest(stderr, "Test never returned (test harness bug, should've caught earlier)!", .{}, brk.romloc, brk.srcloc)
+                        try _failTest(stderr, "Test never returned (test harness bug, should've caught earlier)!", .{}, node.romloc, node.srcloc)
                     else
-                        try _failTest(stderr, "Assertion never checked (early return?)", .{}, brk.romloc, brk.srcloc);
+                        try _failTest(stderr, "Assertion never checked (early return?)", .{}, node.romloc, node.srcloc);
         }
 
         self.is_test_done = false;
@@ -315,8 +320,8 @@ pub const VM = struct {
             @memset(self.ram[0..], 0);
             self.load();
 
+            assert(decl_node.romloc != 0xFFFF);
             var pc: c_ushort = @as(c_ushort, @intCast(decl_node.romloc)) + 0x100;
-            assert(pc != 0xFFFF);
 
             while (true) {
                 self._checkInstruction(pc, stderr);
