@@ -9,6 +9,7 @@ const codegen = @import("codegen.zig");
 const common = @import("common.zig");
 const lexerm = @import("lexer.zig");
 const parserm = @import("parser.zig");
+const optimizer = @import("optimizer.zig");
 const vmm = @import("vm.zig");
 
 const gpa = &@import("common.zig").gpa;
@@ -85,10 +86,13 @@ pub fn main() anyerror!void {
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
-        var assembled = try codegen.generate(&program);
+        var assembled = common.Ins.List.init(gpa.allocator());
+        try codegen.generate(&program, &assembled);
+        try optimizer.optimize(&program, &assembled, false);
         for (args.args.@"dump-asm") |funcname|
             try codegen.printAsmFor(&program, &assembled, funcname);
         try codegen.resolveUAs(&program, &assembled);
+        try optimizer.optimize(&program, &assembled, true);
 
         if (args.args.@"debug-asm" != 0)
             for (assembled.items, 0..) |asmstmt, i| {

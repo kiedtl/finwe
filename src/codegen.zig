@@ -45,7 +45,6 @@ pub const UA = struct {
 };
 
 pub const LabelType = union(enum) {
-    None,
     LoopBegin,
     LoopEnd,
     DeclBegin,
@@ -415,12 +414,10 @@ pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList) Codege
         try genNode(program, buf, node);
 }
 
-pub fn generate(program: *Program) CodegenError!Ins.List {
-    var buf = Ins.List.init(gpa.allocator());
-
+pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     // Main call if it's there
     // Nothing else will get generated (decls are ignored unless passed directly)
-    try genNodeList(program, &buf, program.ast);
+    try genNodeList(program, buf, program.ast);
 
     for (program.defs.items) |def| {
         const d = def.node.Decl;
@@ -440,14 +437,14 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         //     d.name, d.variant, d.calls,
         //     d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
         // });
-        try emitLabel(&buf, .DeclBegin, def);
-        try genNodeList(program, &buf, d.body);
+        try emitLabel(buf, .DeclBegin, def);
+        try genNodeList(program, buf, d.body);
         if (d.is_test) {
-            try emit(&buf, def, WK_STACK, false, false, .Obrk);
+            try emit(buf, def, WK_STACK, false, false, .Obrk);
         } else {
-            try emit(&buf, def, RT_STACK, false, true, .Ojmp);
+            try emit(buf, def, RT_STACK, false, true, .Ojmp);
         }
-        try emitLabel(&buf, .DeclEnd, def);
+        try emitLabel(buf, .DeclEnd, def);
     }
 
     program.romloc_code_end = buf.items.len;
@@ -468,7 +465,7 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         const data = &program.statics.items[data_i];
         if (!data.used)
             continue;
-        try emitDataLabel(&buf, data_i);
+        try emitDataLabel(buf, data_i);
         const typsz = data.type.size(program).?;
         const totalsz = typsz * data.count;
         assert(totalsz > 0);
@@ -479,16 +476,22 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
                 const emitnullbyte = data.default == .String;
                 assert((s.items.len + if (emitnullbyte) @as(usize, 1) else 0) <= totalsz);
 
-                for (s.items) |b| try emit(&buf, null, 0, false, false, .{ .Oraw = b });
-                if (emitnullbyte) try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+                for (s.items) |b| try emit(buf, null, 0, false, false, .{ .Oraw = b });
+                if (emitnullbyte) try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
                 done += s.items.len + if (emitnullbyte) @as(usize, 1) else 0;
             },
             .None => {},
         }
 
         for (0..(totalsz - done)) |_|
-            try emit(&buf, null, 0, false, false, .{ .Oraw = 0 });
+            try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
     }
+}
+
+pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
+    // Emit a null byte just in case there are labels without an ins after it
+    // (It'll be removed later on when emitting anyway)
+    try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
 
     {
         var i: usize = 0;
@@ -506,10 +509,6 @@ pub fn generate(program: *Program) CodegenError!Ins.List {
         }
     }
 
-    return buf;
-}
-
-pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
     for (buf.items, 0..) |*ins, addr| for (ins.labels.constSlice()) |label| {
         switch (label.for_ua.label_type) {
             .BreakpointEnd, .DeclBegin => label.for_ua.label_src.Node.romloc = addr,
@@ -517,11 +516,6 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
             else => {},
         }
     };
-
-    for (program.breakpoints.items, 0..) |brk, i| {
-        if (brk.romloc == 0xFFFF)
-            std.log.info("{} missed", .{i});
-    }
 
     for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
         if (ins.op.Xtua.label_type == .Here or
@@ -568,7 +562,7 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
     };
 }
 
-pub fn printAsmFor(program: *Program, buf: *Ins.List, func: []const u8) CodegenError!void {
+pub fn printAsmFor(program: *Program, buf: *const Ins.List, func: []const u8) CodegenError!void {
     const declnode = program.global_scope.findDeclAny(program, func) orelse {
         std.log.err("Cannot find \x1b[1m{s}\x1b[m in global scope.", .{func});
         return;
@@ -590,24 +584,22 @@ pub fn printAsmFor(program: *Program, buf: *Ins.List, func: []const u8) CodegenE
     }
 }
 
-fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *Ins.List, func: []const u8, declnode: *ASTNode) CodegenError!void {
+fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func: []const u8, declnode: *ASTNode) CodegenError!void {
     stdout.print("\x1b[1m{s}\x1b[m:\n", .{func}) catch unreachable;
     const begin = search: for (buf.items, 0..) |ins, ind| {
-        for (ins.labels.constSlice()) |label|
-            if (label.for_ua.label_type == .DeclBegin and
-                label.for_ua.label_src.Node == declnode)
+        if (ins.op == .Xlbl)
+            if (ins.op.Xlbl.label_type == .DeclBegin and
+                ins.op.Xlbl.label_src.Node == declnode)
             {
-                break :search ind;
+                break :search ind + 1;
             };
     } else unreachable;
     const end = search: for (buf.items[begin..], begin..) |ins, ind| {
-        for (ins.labels.constSlice()) |label|
-            if (label.for_ua.label_type == .DeclEnd) {
-                if (label.for_ua.label_src.Node == declnode) {
-                    break :search ind;
-                } else {
-                    assert(ind == begin);
-                }
+        if (ins.op == .Xlbl)
+            if (ins.op.Xlbl.label_type == .DeclEnd and
+                ins.op.Xlbl.label_src.Node == declnode)
+            {
+                break :search ind;
             };
     } else unreachable;
 
