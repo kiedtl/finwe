@@ -47,6 +47,20 @@ pub const SETS = [_]PatRepSet{
     s(.{ Os(.Olit), R(), R(), O(.Omul),           rO(.Olit), rMathRR(1, 2, '*') }),
     s(.{ Os(.Olit), R(), R(), O(.Odiv),           rO(.Olit), rMathRR(1, 2, '/') }),
 
+    // TODO
+    // - mul -> shift
+    // - div -> shift
+    // - ovr ovr -> dup2
+    // - neq 00 eq -> eq
+    // - eq 00 eq -> eq
+    // - #0001 add -> inc
+    // - #0002 add -> inc inc
+    // - #ff neq neq -> inc (??)
+    // - #0000 neq2 j*i -> ora
+    // - #0000 gth2 j*i -> ora
+    // - redundance
+    //
+
     // zig fmt: on
 };
 
