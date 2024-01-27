@@ -33,7 +33,15 @@ pub const UA = struct {
         pub fn eq(a: @This(), b: @This()) bool {
             return @as(meta.Tag(@This()), a) == @as(meta.Tag(@This()), b) and
                 switch (a) {
-                .Node => |n| n == b.Node,
+                .Node => |n| if (n == b.Node)
+                    true
+                else if (n.node == .Decl and b.Node.node == .Decl)
+                    if (b.Node.node.Decl.folded_into) |folded_into|
+                        folded_into == n
+                    else
+                        false
+                else
+                    false,
                 .Static => |n| n == b.Static,
             };
         }
@@ -419,9 +427,9 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     // Nothing else will get generated (decls are ignored unless passed directly)
     try genNodeList(program, buf, program.ast);
 
-    for (program.defs.items) |def| {
-        const d = def.node.Decl;
-        if (d.calls == 0 or d.is_inline == .Always or d.is_inline == .AutoYes) {
+    for (program.defs.items, 0..) |def, i| {
+        const d = &def.node.Decl;
+        if (d.skipGen()) {
             continue;
         }
 
@@ -437,6 +445,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
         //     d.name, d.variant, d.calls,
         //     d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
         // });
+        def.romloc = buf.items.len;
         try emitLabel(buf, .DeclBegin, def);
         try genNodeList(program, buf, d.body);
         if (d.is_test) {
@@ -445,7 +454,63 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             try emit(buf, def, RT_STACK, false, true, .Ojmp);
         }
         try emitLabel(buf, .DeclEnd, def);
+
+        const fold_into = for (program.defs.items[0..i]) |prevdef| {
+            if (prevdef.node.Decl.skipGen() or prevdef.node.Decl.folded_into != null)
+                continue;
+            if (prevdef.node.Decl.is_test)
+                continue;
+            if (prevdef.node.Decl.variant_of != d.variant_of)
+                continue;
+            const begin = prevdef.romloc;
+            const end = for (buf.items[prevdef.romloc..], 0..) |ins, j| {
+                if (ins.op == .Xlbl and ins.op.Xlbl.label_type == .DeclEnd and
+                    ins.op.Xlbl.label_src.Node == prevdef)
+                {
+                    break prevdef.romloc + j;
+                }
+            } else unreachable;
+            if (end - begin != buf.items.len - 1 - def.romloc)
+                continue;
+            //if (d.scope.locals.head != null or prevdef.node.Decl.scope.locals.head != null)
+            //continue;
+            const same = for (buf.items[begin..end], 0..) |previns, previ| {
+                const curins = buf.items[def.romloc + previ];
+                if (@as(OpTag, previns.op) != curins.op)
+                    break false;
+                switch (previns.op) {
+                    .Oraw => |r| if (r != curins.op.Oraw) break false,
+                    .Xlbl, .Xtua => |l| {
+                        const c = if (previns.op == .Xtua) curins.op.Xtua else curins.op.Xlbl;
+                        if (!l.label_type.eq(c.label_type))
+                            break false;
+                        if (l.label_type == .Static and c.label_type == .Static)
+                            if (!l.label_src.eq(c.label_src))
+                                break false;
+                    },
+                    else => {},
+                }
+                if (previns.short != curins.short or
+                    previns.keep != curins.keep or
+                    previns.stack != curins.stack)
+                {
+                    break false;
+                }
+            } else true;
+
+            if (same) break prevdef;
+        } else null;
+
+        if (fold_into) |prevdef| {
+            assert(!d.is_test);
+            buf.shrinkRetainingCapacity(def.romloc);
+            d.folded_into = prevdef;
+            def.romloc = 0xFFFF;
+        }
     }
+
+    for (program.defs.items) |def|
+        def.romloc = 0xFFFF;
 
     program.romloc_code_end = buf.items.len;
 
@@ -516,6 +581,11 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
             else => {},
         }
     };
+
+    for (program.defs.items) |def| {
+        if (def.node.Decl.folded_into) |folded_into|
+            def.romloc = folded_into.romloc;
+    }
 
     for (buf.items, 0..) |*ins, addr| if (ins.op == .Xtua) {
         if (ins.op.Xtua.label_type == .Here or

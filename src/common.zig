@@ -1125,10 +1125,11 @@ pub const ASTNode = struct {
         arity: ?analyser.BlockAnalysis = null,
         analysis: analyser.BlockAnalysis = analyser.BlockAnalysis{},
         variations: ASTNodePtrList,
-        body: ASTNodeList,
         variant: usize = 0,
+        variant_of: ?*ASTNode = null,
         calls: usize = 0,
         scope: *Scope,
+        body: ASTNodeList,
 
         // What scope is it found in? not necessarily same as scope.parent
         // e.g. if method, then will be type's scope
@@ -1143,8 +1144,13 @@ pub const ASTNode = struct {
         is_targ_burdampe: bool = false,
 
         bytecode_size: usize = 0,
+        folded_into: ?*ASTNode = null,
 
         pub const Inline = enum { Auto, AutoYes, AutoNo, Always, Never };
+
+        pub fn skipGen(self: @This()) bool {
+            return self.calls == 0 or self.is_inline == .Always or self.is_inline == .AutoYes;
+        }
     };
 
     pub const Quote = struct {
@@ -1177,6 +1183,7 @@ pub const ASTNode = struct {
         const nptr = astlst.appendAndReturn(new) catch unreachable;
         self.node.Decl.variations.append(nptr) catch unreachable;
         nptr.node.Decl.variant = self.node.Decl.variations.items.len;
+        nptr.node.Decl.variant_of = self;
         if (add_to_scope)
             nptr.node.Decl.in_scope.defs.append(nptr) catch unreachable;
         program.defs.append(nptr) catch unreachable;

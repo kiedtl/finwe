@@ -75,13 +75,13 @@
 (word print-dec (Any --) [ 10 print-base ])
 
 (word print-base (AnySigned U8 --) [
-	(asm "" .Op/Osth)
+	move
 	dup sign 0<> (when [
 		"-" print-string
 		abs
 	])
 	(as (USz $1))
-	(asm "r" .Op/Osth)
+	(r move)
 	print-base
 ])
 
