@@ -507,13 +507,13 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             buf.shrinkRetainingCapacity(def.romloc);
             d.folded_into = prevdef;
             def.romloc = 0xFFFF;
-        } else {
-            const a = d.arity orelse analyser.BlockAnalysis{};
-            const stdout = std.io.getStdOut().writer();
-            stdout.print("{}\t{s}_{}\t\t{s}\n", .{
-                d.bytecode_size, d.name,
-                d.bytecode_size, analyser.AnalysisFmt.from(&a, program),
-            }) catch unreachable;
+            // } else {
+            //     const a = d.arity orelse analyser.BlockAnalysis{};
+            //     const stdout = std.io.getStdOut().writer();
+            //     stdout.print("{}\t{s}_{}\t\t{s}\n", .{
+            //         d.bytecode_size, d.name,
+            //         d.bytecode_size, analyser.AnalysisFmt.from(&a, program),
+            //     }) catch unreachable;
         }
     }
 
