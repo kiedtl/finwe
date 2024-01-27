@@ -422,6 +422,13 @@ pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList) Codege
         try genNode(program, buf, node);
 }
 
+fn _staticTotalSize(program: *Program, ind: usize) usize {
+    const data = program.statics.items[ind];
+    const typsz = data.type.size(program).?;
+    assert(data.count > 0);
+    return typsz * data.count;
+}
+
 pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     // Main call if it's there
     // Nothing else will get generated (decls are ignored unless passed directly)
@@ -440,11 +447,6 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             unreachable;
         }
 
-        //const a = d.arity orelse analyser.BlockAnalysis{};
-        // std.log.info("codegen: {s: >12}_{}\t{}\t{}\t{s}", .{
-        //     d.name, d.variant, d.calls,
-        //     d.bytecode_size, "x", //analyser.AnalysisFmt.from(&a, program),
-        // });
         def.romloc = buf.items.len;
         try emitLabel(buf, .DeclBegin, def);
         try genNodeList(program, buf, d.body);
@@ -472,8 +474,6 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             } else unreachable;
             if (end - begin != buf.items.len - 1 - def.romloc)
                 continue;
-            //if (d.scope.locals.head != null or prevdef.node.Decl.scope.locals.head != null)
-            //continue;
             const same = for (buf.items[begin..end], 0..) |previns, previ| {
                 const curins = buf.items[def.romloc + previ];
                 if (@as(OpTag, previns.op) != curins.op)
@@ -485,7 +485,8 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
                         if (!l.label_type.eq(c.label_type))
                             break false;
                         if (l.label_type == .Static and c.label_type == .Static)
-                            if (!l.label_src.eq(c.label_src))
+                            if (_staticTotalSize(program, l.label_src.Static) !=
+                                _staticTotalSize(program, c.label_src.Static))
                                 break false;
                     },
                     else => {},
@@ -506,6 +507,13 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             buf.shrinkRetainingCapacity(def.romloc);
             d.folded_into = prevdef;
             def.romloc = 0xFFFF;
+        } else {
+            const a = d.arity orelse analyser.BlockAnalysis{};
+            const stdout = std.io.getStdOut().writer();
+            stdout.print("{}\t{s}_{}\t\t{s}\n", .{
+                d.bytecode_size, d.name,
+                d.bytecode_size, analyser.AnalysisFmt.from(&a, program),
+            }) catch unreachable;
         }
     }
 
@@ -531,9 +539,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
         if (!data.used)
             continue;
         try emitDataLabel(buf, data_i);
-        const typsz = data.type.size(program).?;
-        const totalsz = typsz * data.count;
-        assert(totalsz > 0);
+        const totalsz = _staticTotalSize(program, data_i);
         var done: usize = 0;
 
         switch (data.default) {
