@@ -639,24 +639,30 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
 }
 
 pub fn printAsmFor(program: *Program, buf: *const Ins.List, func: []const u8) CodegenError!void {
-    const declnode = program.global_scope.findDeclAny(program, func) orelse {
-        std.log.err("Cannot find \x1b[1m{s}\x1b[m in global scope.", .{func});
-        return;
-    };
     const stdout = std.io.getStdOut().writer();
-    var printed_anything = declnode.node.Decl.calls > 0;
 
-    if (declnode.node.Decl.calls > 0)
-        try _printAsmForDeclNode(program, stdout, buf, func, declnode);
+    for (program.defs.items) |def| {
+        if (!mem.eql(u8, def.node.Decl.name, func))
+            continue;
 
-    for (declnode.node.Decl.variations.items) |vari|
-        if (vari.node.Decl.calls > 0) {
-            try _printAsmForDeclNode(program, stdout, buf, func, vari);
-            printed_anything = true;
-        };
+        if (def.node.Decl.skipGen()) {
+            if (def.node.Decl.variant > 0)
+                std.log.warn("Function \x1b[1m{s}\x1b[m wasn't generated (optimized out).", .{func});
+            continue;
+        }
 
-    if (!printed_anything) {
-        std.log.err("Function \x1b[1m{s}\x1b[m wasn't generated (optimized out).", .{func});
+        if (def.node.Decl.folded_into != null) {
+            std.log.warn("Instance of \x1b[1m{s}\x1b[m not generated (folded).", .{func});
+            continue;
+        }
+
+        if (def.node.Decl.calls > 0)
+            try _printAsmForDeclNode(program, stdout, buf, func, def);
+
+        for (def.node.Decl.variations.items) |vari|
+            if (vari.node.Decl.calls > 0) {
+                try _printAsmForDeclNode(program, stdout, buf, func, vari);
+            };
     }
 }
 
@@ -701,6 +707,7 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
             i += 1;
         }
     }
+    stdout.print("Total: {} bytes\n", .{end - begin}) catch unreachable;
 }
 
 pub fn emitBytecode(writer: anytype, program: []const Ins) !void {

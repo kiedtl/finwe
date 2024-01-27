@@ -135,8 +135,12 @@
 	 121i -121i < (should eq nil)
 ])
 
+(word abs ( I16 -- U16 ) [
+	dup dup 0x1f bsft * -
+])
+
 // TODO: optimize (xor by sign bit? idk)
-(word abs ( AnySigned -- (USz $0) ) [
+(word abs ( I8 -- (USz $0) ) [
 	dup sign 0= (when [return])
 	(as (USz $0)) bnot 1+
 ])
@@ -151,6 +155,7 @@
 	-22891is abs (should eq 22891s)
 	    -1is abs (should eq 1s)
 	 22891is abs (should eq 22891s)
+	   125is abs (should eq 125s)
 ])
 
 // TODO: this is stupid... needs to be optimized

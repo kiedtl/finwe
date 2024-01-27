@@ -1452,6 +1452,14 @@ pub const Scope = struct {
         return if (buf.items.len == 0) null else buf.items[0];
     }
 
+    pub fn findDeclAll(self: *Scope, program: *Program, name: []const u8) ASTNodePtrList {
+        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        defer searched_import_buf.deinit();
+        var buf = ASTNodePtrList.init(gpa.allocator());
+        self._findDecl(name, &buf, &searched_import_buf, true, program);
+        return buf;
+    }
+
     fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, searched_imports: *ASTNodePtrList, allow_private: bool, program: *Program) void {
         for (self.imports.items) |import| {
             const already_searched = for (searched_imports.items) |prev_import| {
