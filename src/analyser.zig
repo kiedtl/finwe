@@ -1041,7 +1041,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Builtin => |*builtin| switch (builtin.type) {
                 .SplitCast => |*c| {
-                    assert(!ctx.r_blk);
+                    const srcstk = if (ctx.r_blk) &a.rstack else &a.stack;
 
                     c.resolved1 = try c.original1.resolveTypeRef(parent.scope, parent.arity, program);
                     c.resolved2 = try c.original2.resolveTypeRef(parent.scope, parent.arity, program);
@@ -1052,15 +1052,18 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (c.resolved1.bits(program)) |b| if (b != 8)
                         return program.aerr(error.CannotSplitIntoShort, node.srcloc);
 
-                    const into = a.stack.last() orelse @panic("nah");
+                    const into = srcstk.last() orelse @panic("nah");
 
                     if (into.bits(program)) |b| if (b != 16)
                         return program.aerr(error.CannotSplitByte, node.srcloc);
 
                     var casta = BlockAnalysis{};
-                    casta.args.append(into) catch unreachable;
-                    casta.stack.append(c.resolved1) catch unreachable;
-                    casta.stack.append(c.resolved2) catch unreachable;
+                    const dststk = if (ctx.r_blk) &casta.rstack else &casta.stack;
+                    const dstarg = if (ctx.r_blk) &casta.rargs else &casta.args;
+
+                    dstarg.append(into) catch unreachable;
+                    dststk.append(c.resolved1) catch unreachable;
+                    dststk.append(c.resolved2) catch unreachable;
                     try casta.mergeInto(a, program, node.srcloc);
 
                     if (!into.isGeneric(program)) c.of = into;
