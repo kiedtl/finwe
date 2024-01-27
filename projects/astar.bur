@@ -80,10 +80,10 @@
 ])
 
 #(method Coord) (word distance (Coord Coord -- U16) [
-	(split U8 U8) move
-	swap-sb (split U8 U8) move
-	- (as I8) abs (as U16)
-	(r [ - move ]) (as I8) abs (as U16)
+	(wild ( Coord Coord -- U8 U8 U8 U8 ) [])   // x y x y
+	rot                                        // x x y y
+	- (as I8) abs (as U16) move                // x x | abs(y-y)
+	- (as I8) abs (as U16) (r move)            // abs(x-x) abs(y-y)
 	+
 ])
 
