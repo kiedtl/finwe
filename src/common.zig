@@ -1856,6 +1856,31 @@ pub const Op = union(OpTag) {
             } else unreachable,
         };
     }
+
+    pub fn argCount(self: @This()) usize {
+        return switch (self) {
+            .Xtua,
+            .Xlbl,
+            .Oraw,
+            .Olit,
+            .Obrk,
+            .Ojmi,
+            .Ojsi,
+            => 0,
+            .Ojci,
+            .Ojmp,
+            .Ojsr,
+            .Osth,
+            .Oinc,
+            .Olda,
+            .Odei,
+            .Odup,
+            .Opop,
+            => 1,
+            .Orot => 3,
+            else => 2,
+        };
+    }
 };
 
 pub const Ins = struct {
@@ -1898,9 +1923,10 @@ pub const Ins = struct {
 
         const stk: []const u8 = if (value.stack == RT_STACK) "r" else "";
         const osz: []const u8 = if (value.short) "2" else "";
+        const dup: []const u8 = if (value.keep) "k" else "";
         const str = @tagName(value.op);
         for (str[1..]) |char| try writer.writeByte(std.ascii.toUpper(char));
-        try writer.print("{s}{s}", .{ osz, stk });
+        try writer.print("{s}{s}{s}", .{ osz, dup, stk });
     }
 };
 
