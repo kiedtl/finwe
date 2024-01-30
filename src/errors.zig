@@ -7,9 +7,10 @@ const common = @import("common.zig");
 const Program = common.Program;
 const Error = common.Error;
 const Srcloc = common.Srcloc;
+const TypeFmt = common.TypeFmt;
 const gpa = &common.gpa;
 
-pub fn printError(e: Error, lines: []const []const u8) void {
+pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
     var stderr = std.io.getStdErr().writer();
 
     for (e.l.line -| 3..e.l.line) |line|
@@ -17,7 +18,57 @@ pub fn printError(e: Error, lines: []const []const u8) void {
     for (0..e.l.column + 4 + 2) |_|
         stderr.print(" ", .{}) catch unreachable;
     stderr.print("\x1b[91;1m^\x1b[m\n", .{}) catch unreachable;
-    stderr.print("\x1b[91m{}:\x1b[37;1m {}\x1b[m\n", .{ e.e, e.e }) catch unreachable;
+    stderr.print("\x1b[91m{s}:\x1b[37;1m ", .{@errorName(e.e)}) catch unreachable;
+    switch (e.e) {
+        error.ExpectedItems => stderr.print("Not enough arguments (min {}, got {})", .{
+            e.ctx.usize1.?, e.ctx.usize2.?,
+        }) catch unreachable,
+        error.UnexpectedItems => stderr.print("Too many arguments (max {}, got {})", .{
+            e.ctx.usize1.?, e.ctx.usize2.?,
+        }) catch unreachable,
+        error.ExpectedNode => stderr.print("Expected {}, got {}", .{
+            e.ctx.lexnodetype1.?, e.ctx.lexnodetype2.?,
+        }) catch unreachable,
+        error.ExpectedValue => stderr.print("Expected value, got {}", .{
+            e.ctx.lexnodetype1.?,
+        }) catch unreachable,
+        error.ExpectedNum => stderr.print("Expected number value, got {}", .{
+            e.ctx.lexnodetype1.?,
+        }) catch unreachable,
+        error.InvalidType => if (e.ctx.string1) |str| {
+            stderr.print("\"{s}\" is not a valid type", .{str}) catch unreachable;
+        } else {
+            stderr.print("Expression cannot be parsed into type", .{}) catch unreachable;
+        },
+        error.InvalidMetadata => if (e.ctx.string1) |str| {
+            stderr.print("\"{s}\" is not a recognized metadata", .{str}) catch unreachable;
+        } else {
+            stderr.print("Expression is not valid metadata", .{}) catch unreachable;
+        },
+        error.InvalidKeyword => stderr.print("Invalid keyword \"{s}\"", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
+        error.InvalidEnumField => stderr.print("No such field \"{s}\" in {s}", .{
+            e.ctx.string1.?, e.ctx.string2.?,
+        }) catch unreachable,
+        error.NoSuchType => stderr.print("No such type \"{s}\"", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
+        error.InvalidFieldType => stderr.print("Type {} cannot be in container field", .{
+            TypeFmt.from(e.ctx.burtype1.?, program),
+        }) catch unreachable,
+        error.UnknownLocal => stderr.print("No such variable \"{s}\" in scope", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
+        error.UnknownIdent => stderr.print("No such function \"{s}\" in scope", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
+        // error.Template => stderr.print("ohno {} {}", .{
+        //     e.ctx.usize1.?, e.ctx.usize2.?,
+        // }) catch unreachable,
+        else => stderr.print("TODO: error message", .{}) catch unreachable,
+    }
+    stderr.print("\x1b[m\n", .{}) catch unreachable;
     stderr.print("      \x1b[36mat \x1b[m{s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m\n", .{
         e.l.file, e.l.line, e.l.column,
     }) catch unreachable;
@@ -66,5 +117,5 @@ pub fn printErrors(program: *Program, filename: []const u8) void {
     _ = Buf.addOrGet(&bufs, filename);
 
     for (program.errors.items) |err|
-        printError(err, Buf.addOrGet(&bufs, err.l.file));
+        printError(program, err, Buf.addOrGet(&bufs, err.l.file));
 }

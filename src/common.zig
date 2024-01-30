@@ -1294,8 +1294,51 @@ pub const Srcloc = struct {
 };
 
 pub const Error = struct {
+    ctx: Context = .{},
     e: Set,
     l: Srcloc,
+
+    pub const Context = struct {
+        usize1: ?usize = null,
+        usize2: ?usize = null,
+        lexnodetype1: ?meta.Tag(lexer.Node.NodeType) = null,
+        lexnodetype2: ?meta.Tag(lexer.Node.NodeType) = null,
+        string1: ?[]const u8 = null,
+        string2: ?[]const u8 = null,
+        burtype1: ?TypeInfo = null,
+        burtype2: ?TypeInfo = null,
+
+        pub fn from(tuple: anytype) Context {
+            var new = Context{};
+            const listinfo = @typeInfo(@TypeOf(tuple));
+            comptime var typelist: [16]type = undefined;
+            comptime var typelistlen = 0;
+            inline for (listinfo.Struct.fields) |fieldinfo| {
+                typelist[typelistlen] = fieldinfo.type;
+                typelistlen += 1;
+                comptime var n = 0;
+                comptime for (typelist[0..typelistlen]) |t|
+                    if (t == fieldinfo.type) {
+                        n += 1;
+                    };
+                const nstr = switch (n) {
+                    1 => "1",
+                    2 => "2",
+                    3 => "3",
+                    4 => "4",
+                    else => unreachable,
+                };
+                const typename = switch (fieldinfo.type) {
+                    []const u8 => "string",
+                    meta.Tag(lexer.Node.NodeType) => "lexnodetype",
+                    TypeInfo => "burtype",
+                    else => @typeName(fieldinfo.type),
+                };
+                @field(new, typename ++ nstr) = @field(tuple, fieldinfo.name);
+            }
+            return new;
+        }
+    };
 
     pub const Set = error{
         _Continue, // Internal control flow for walkNodes, should never be raised
@@ -1675,9 +1718,9 @@ pub const Program = struct {
         };
     }
 
-    pub fn perr(self: *Program, e: parser.Parser.ParserError, srcloc: common.Srcloc) parser.Parser.ParserError {
+    pub fn perr(self: *Program, e: parser.Parser.ParserError, srcloc: common.Srcloc, args: anytype) parser.Parser.ParserError {
         if (!self.forget_errors)
-            self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
+            self.errors.append(.{ .e = e, .l = srcloc, .ctx = Error.Context.from(args) }) catch unreachable;
         return e;
     }
 

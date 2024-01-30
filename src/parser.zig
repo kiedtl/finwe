@@ -32,35 +32,29 @@ pub const Parser = struct {
     stuff_to_import: bool = false,
 
     pub const ParserError = error{
-        StrayToken,
         EmptyList,
         ExpectedNum,
-        ExpectedKeyword,
         ExpectedEnumLit,
-        ExpectedOptionalNumber,
         ExpectedString,
         ExpectedItems,
         ExpectedNode,
-        UnexpectedItems,
         ExpectedValue,
-        ExpectedStatement,
-        UnknownKeyword,
+        UnexpectedItems,
         UnknownLocal,
-        UnexpectedLabelDefinition,
+        UnknownIdent,
+        MissingEnumType,
+        NotAnEnumOrDevice,
+        NoSuchType,
+        NakedStatements,
+        NoMainFunction,
+        InvalidEnumField,
+        InvalidImport,
+        InvalidMetadata,
         InvalidAsmOp,
         InvalidAsmFlag,
         InvalidType,
         InvalidFieldType,
-        MissingEnumType,
-        NotAnEnumOrDevice,
-        InvalidEnumField,
-        NoSuchType,
-        UnknownIdent,
-        NakedStatements,
-        NoMainFunction,
-        InvalidCall,
-        InvalidImport,
-        InvalidMetadata,
+        InvalidKeyword,
     } || mem.Allocator.Error || std.fs.File.GetSeekPosError || std.fs.File.ReadError;
 
     pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
@@ -74,16 +68,24 @@ pub const Parser = struct {
 
     fn validateListLength(self: *Parser, ast: []const lexer.Node, require: usize) ParserError!void {
         if (ast.len < require)
-            return self.program.perr(error.ExpectedItems, ast[0].location);
+            return self.program.perr(error.ExpectedItems, ast[0].location, .{ require, ast.len });
         if (ast.len > require)
-            return self.program.perr(error.UnexpectedItems, ast[0].location);
+            return self.program.perr(error.UnexpectedItems, ast[0].location, .{ require, ast.len });
     }
 
-    fn expectNode(self: *Parser, comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) b: {
-        break :b ParserError!@TypeOf(@field(node.node, @tagName(nodetype)));
-    } {
+    fn validateListLengthMinMax(self: *Parser, ast: []const lexer.Node, min: usize, max: usize) ParserError!void {
+        if (ast.len < min)
+            return self.program.perr(error.ExpectedItems, ast[0].location, .{ min, ast.len });
+        if (ast.len > max)
+            return self.program.perr(error.UnexpectedItems, ast[0].location, .{ max, ast.len });
+    }
+
+    fn expectNode(self: *Parser, comptime nodetype: meta.Tag(lexer.Node.NodeType), node: *const lexer.Node) ParserError!@TypeOf(@field(node.node, @tagName(nodetype))) {
         if (node.node != nodetype) {
-            return self.program.perr(error.ExpectedNode, node.location);
+            return self.program.perr(error.ExpectedNode, node.location, .{
+                nodetype,
+                @as(@TypeOf(nodetype), node.node),
+            });
         }
         return @field(node.node, @tagName(nodetype));
     }
@@ -111,7 +113,7 @@ pub const Parser = struct {
                 };
             },
             .EnumLit => |e| .{ .typ = .AmbigEnumLit, .val = .{ .AmbigEnumLit = e } },
-            else => self.program.perr(error.ExpectedValue, node.location),
+            else => self.program.perr(error.ExpectedValue, node.location, .{@as(meta.Tag(@TypeOf(node.node)), node.node)}),
         };
     }
 
@@ -157,7 +159,7 @@ pub const Parser = struct {
                     if (r) |ret| {
                         break :b ret;
                     } else {
-                        return self.program.perr(error.InvalidType, node.location);
+                        return self.program.perr(error.InvalidType, node.location, .{item});
                     }
                 } else {
                     break :b TypeInfo{ .Unresolved = .{
@@ -171,10 +173,7 @@ pub const Parser = struct {
                 if (lst.items.len == 0)
                     return error.EmptyList;
 
-                if (lst.items[0].node != .Keyword)
-                    return self.program.perr(error.ExpectedKeyword, node.location);
-
-                const k = lst.items[0].node.Keyword;
+                const k = try self.expectNode(.Keyword, &lst.items[0]);
                 var r: ?TypeInfo = null;
                 inline for (meta.fields(TypeInfo.Expr)) |field|
                     if (mem.eql(u8, field.name, k))
@@ -221,13 +220,10 @@ pub const Parser = struct {
                             const arg = self.program.btype(try self.parseType(&lst.items[1]));
                             r = .{ .Expr = @unionInit(TypeInfo.Expr, field.name, arg) };
                         };
-                return r orelse self.program.perr(error.InvalidType, node.location);
+                return r orelse self.program.perr(error.InvalidType, node.location, .{});
             },
             .Quote => |lst| {
-                if (lst.items.len == 0)
-                    return self.program.perr(error.ExpectedItems, node.location);
-                if (lst.items.len > 2)
-                    return self.program.perr(error.UnexpectedItems, node.location);
+                try self.validateListLengthMinMax(lst.items, 1, 2);
 
                 const t = try self.parseType(&lst.items[0]);
                 var count: ?u16 = null;
@@ -236,7 +232,7 @@ pub const Parser = struct {
                     count = switch (lst.items[1].node) {
                         .U8 => |u| u,
                         .U16 => |u| u,
-                        else => return self.program.perr(error.ExpectedNum, lst.items[1].location),
+                        else => return self.program.perr(error.ExpectedNum, lst.items[1].location, .{@as(lexer.Node.Tag, lst.items[1].node)}),
                     };
                 return .{ .Expr = .{ .Array = .{
                     .typ = self.program.btype(t),
@@ -246,7 +242,7 @@ pub const Parser = struct {
             .At => |subnode| {
                 return .{ .Expr = .{ .Ptr16 = self.program.btype(try self.parseType(subnode)) } };
             },
-            else => return self.program.perr(error.ExpectedNode, node.location),
+            else => return self.program.perr(error.InvalidType, node.location, .{}),
         };
     }
 
@@ -409,6 +405,7 @@ pub const Parser = struct {
     fn parseTypeDecl(self: *Parser, ast: []const lexer.Node, metadata: []const lexer.Node) ParserError!ASTNode {
         assert(ast[0].node == .Keyword);
         const k = ast[0].node.Keyword;
+        try self.validateListLengthMinMax(ast, 3, 777);
 
         var parsed: ASTNode = undefined;
 
@@ -454,7 +451,10 @@ pub const Parser = struct {
                     fields.append(.{ .name = kwd, .value = null, .srcloc = node.location }) catch
                         unreachable;
                 },
-                else => return self.program.perr(error.ExpectedNode, node.location),
+                else => return self.program.perr(error.ExpectedNode, node.location, .{
+                    @as(lexer.Node.Tag, .Keyword),
+                    @as(lexer.Node.Tag, node.node),
+                }),
             };
             parsed = ASTNode{
                 .node = .{ .TypeDef = .{
@@ -482,11 +482,11 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, kwd, "burdampe")) {
                     parsed.node.TypeDef.is_targ_burdampe = true;
                 } else {
-                    return self.program.perr(error.InvalidMetadata, item.location);
+                    return self.program.perr(error.InvalidMetadata, item.location, .{kwd});
                 }
             },
             else => {
-                return self.program.perr(error.InvalidMetadata, item.location);
+                return self.program.perr(error.InvalidMetadata, item.location, .{});
             },
         };
 
@@ -500,6 +500,7 @@ pub const Parser = struct {
         return switch (ast[0].node) {
             .Keyword => |k| b: {
                 if (mem.eql(u8, k, "word")) {
+                    try self.validateListLengthMinMax(ast, 3, 4);
                     const name = try self.expectNode(.Keyword, &ast[1]);
 
                     var is_noreturn: bool = false;
@@ -518,7 +519,7 @@ pub const Parser = struct {
                                     .srcloc = lst.body.items[1].location,
                                 } };
                             } else {
-                                return self.program.perr(error.InvalidMetadata, lst.body.items[0].location);
+                                return self.program.perr(error.InvalidMetadata, lst.body.items[0].location, .{mt});
                             }
                         },
                         .Keyword => |kwd| {
@@ -533,11 +534,11 @@ pub const Parser = struct {
                             } else if (mem.eql(u8, kwd, "no-inline")) {
                                 is_inline = .Never;
                             } else {
-                                return self.program.perr(error.InvalidMetadata, item.location);
+                                return self.program.perr(error.InvalidMetadata, item.location, .{kwd});
                             }
                         },
                         else => {
-                            return self.program.perr(error.InvalidMetadata, item.location);
+                            return self.program.perr(error.InvalidMetadata, item.location, .{});
                         },
                     };
 
@@ -568,6 +569,7 @@ pub const Parser = struct {
                         .is_inline = is_inline,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
+                    try self.validateListLength(ast, 3);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
                     const body = try self.parseStatements(ast_body.items, p_scope);
@@ -588,6 +590,8 @@ pub const Parser = struct {
                         .in_scope = scope,
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "let")) {
+                    try self.validateListLengthMinMax(ast, 3, 4);
+
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);
 
@@ -617,7 +621,10 @@ pub const Parser = struct {
                             };
                             break :bz common.Static.Default{ .Mixed = mixed };
                         },
-                        else => return self.program.perr(error.ExpectedNode, ast[3].location),
+                        else => return self.program.perr(error.ExpectedNode, ast[3].location, .{
+                            @as(lexer.Node.Tag, .Quote),
+                            @as(lexer.Node.Tag, ast[3].node),
+                        }),
                     };
 
                     break :b ASTNode{
@@ -654,6 +661,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "split")) {
+                    try self.validateListLength(ast, 3);
                     break :b ASTNode{
                         .node = .{ .Builtin = .{ .type = .{ .SplitCast = .{
                             .original1 = try self.parseType(&ast[1]),
@@ -662,6 +670,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "as")) {
+                    try self.validateListLengthMinMax(ast, 2, 777);
                     const from = StackBuffer(TypeInfo, 3).new();
                     const orig = StackBuffer(TypeInfo, 3).new();
                     const resv = StackBuffer(TypeInfo, 3).new();
@@ -697,16 +706,19 @@ pub const Parser = struct {
                     try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Return, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "here")) {
+                    try self.validateListLength(ast, 1);
                     break :b ASTNode{
                         .node = .{ .Builtin = .{ .type = .Here } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "here-statics")) {
+                    try self.validateListLength(ast, 1);
                     break :b ASTNode{
                         .node = .{ .Builtin = .{ .type = .StaticsHere } },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "of")) {
+                    try self.validateListLengthMinMax(ast, 3, 777);
                     if (ast[1].node == .MethodCall)
                         @panic("TODO: of() w/ method calls");
                     const name = try self.expectNode(.Keyword, &ast[1]);
@@ -733,6 +745,7 @@ pub const Parser = struct {
                         .resolved = .Any,
                     } } } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "should")) {
+                    try self.validateListLengthMinMax(ast, 2, 777);
                     const t = try self.expectNode(.Keyword, &ast[1]);
                     var b: common.Breakpoint.Type = undefined;
 
@@ -763,6 +776,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "debug")) {
+                    try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {
                     try self.validateListLength(ast, 3);
@@ -793,6 +807,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "when")) {
+                    try self.validateListLengthMinMax(ast, 2, 3);
                     const yup_n = try self.expectNode(.Quote, &ast[1]);
                     const yup = try self.parseStatements(yup_n.items, p_scope);
                     const nah = if (ast.len > 2) ifb: {
@@ -804,6 +819,7 @@ pub const Parser = struct {
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "cond")) {
+                    try self.validateListLengthMinMax(ast, 2, 777);
                     var cond_node = ASTNode.Cond{
                         .branches = ASTNode.Cond.Branch.AList.init(self.alloc),
                         .else_branch = null,
@@ -893,7 +909,7 @@ pub const Parser = struct {
                 {
                     break :b try self.parseTypeDecl(ast, metadata);
                 } else {
-                    break :b self.program.perr(error.UnknownKeyword, ast[0].location);
+                    break :b self.program.perr(error.InvalidKeyword, ast[0].location, .{k});
                 }
             },
             .List => |l| try self.parseList(l.body.items, l.metadata.items, p_scope),
@@ -972,7 +988,7 @@ pub const Parser = struct {
                             } } };
                         }
                     }
-                    return self.program.perr(error.InvalidEnumField, srcloc);
+                    return self.program.perr(error.InvalidEnumField, srcloc, .{ lit.v, lit.of.? });
                 },
                 .Device => |ddef| {
                     for (ddef.fields.items, 0..) |field, field_i| {
@@ -984,12 +1000,12 @@ pub const Parser = struct {
                             } } } };
                         }
                     }
-                    return self.program.perr(error.InvalidEnumField, srcloc);
+                    return self.program.perr(error.InvalidEnumField, srcloc, .{ lit.v, lit.of.? });
                 },
                 else => return error.NotAnEnumOrDevice,
             };
         }
-        return self.program.perr(error.NoSuchType, srcloc);
+        return self.program.perr(error.NoSuchType, srcloc, .{lit.of.?});
     }
 
     pub fn extractTypes(parser_: *Parser) ErrorSet!void {
@@ -1093,7 +1109,7 @@ pub const Parser = struct {
                                     if (f == .Array and f.Array.count == null and
                                         i == strdef.fields.items.len - 1)
                                         break :b @as(u16, 0); // Last field, no issues
-                                    return self.perr(error.InvalidFieldType, field.srcloc);
+                                    return self.perr(error.InvalidFieldType, field.srcloc, .{field.type});
                                 };
 
                                 common.UserType.checkStructField(f, i == strdef.fields.items.len - 1);
@@ -1116,7 +1132,7 @@ pub const Parser = struct {
                         for (devdef.fields.items) |field| {
                             const f = try field.type.resolveTypeRef(scope, null, self);
                             if (f.bits(self) == null)
-                                return self.perr(error.InvalidFieldType, node.srcloc);
+                                return self.perr(error.InvalidFieldType, node.srcloc, .{field.type});
                             fields.append(.{ .name = field.name, .type = f }) catch unreachable;
                         }
                         self.types.append(UserType{
@@ -1171,11 +1187,11 @@ pub const Parser = struct {
                     },
                     .VRef => |*v| {
                         v.localptr = scope.findLocal(v.name, self, false) orelse
-                            return self.perr(error.UnknownLocal, node.srcloc);
+                            return self.perr(error.UnknownLocal, node.srcloc, .{v.name});
                     },
                     .VDeref => |*v| {
                         v.localptr = scope.findLocal(v.name, self, false) orelse
-                            return self.perr(error.UnknownLocal, node.srcloc);
+                            return self.perr(error.UnknownLocal, node.srcloc, .{v.name});
                     },
                     else => {},
                 };

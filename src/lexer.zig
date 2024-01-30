@@ -36,6 +36,8 @@ pub const Node = struct {
         Nil,
     };
 
+    pub const Tag = std.meta.Tag(NodeType);
+
     pub const List = struct {
         metadata: NodeList,
         body: NodeList,

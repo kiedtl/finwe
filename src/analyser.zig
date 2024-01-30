@@ -586,8 +586,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         c.variant = 0;
                         c.node = found;
                     } else {
-                        std.log.info("Unknown ident {s}", .{c.name});
-                        return program.perr(error.UnknownIdent, node.srcloc);
+                        return program.perr(error.UnknownIdent, node.srcloc, .{c.name});
                     }
                 }
 
