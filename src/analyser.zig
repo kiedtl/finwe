@@ -1017,7 +1017,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (c.resolved1.bits(program)) |b| if (b != 8)
                         return program.aerr(error.CannotSplitIntoShort, node.srcloc, .{});
 
-                    if (c.resolved1.bits(program)) |b| if (b != 8)
+                    if (c.resolved2.bits(program)) |b| if (b != 8)
                         return program.aerr(error.CannotSplitIntoShort, node.srcloc, .{});
 
                     const into = srcstk.last() orelse @panic("nah");
