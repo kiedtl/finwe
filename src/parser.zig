@@ -946,6 +946,7 @@ pub const Parser = struct {
                                 return self.aerr(
                                     error.NoSuchType,
                                     method_type.Unresolved.srcloc,
+                                    .{method_type.Unresolved.ident},
                                 )
                         else
                             null;

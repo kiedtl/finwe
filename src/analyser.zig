@@ -162,11 +162,7 @@ pub const BlockAnalysis = struct {
                         if (dry_run) {
                             return error.GenericNotMatching;
                         } else {
-                            std.log.err("Generic {} does not encompass {}", .{
-                                TypeFmt.from(r, p),
-                                TypeFmt.from(argtyp, p),
-                            });
-                            return p.aerr(error.GenericNotMatching, caller.?.srcloc);
+                            return p.aerr(error.GenericNotMatching, caller.?.srcloc, .{ r, argtyp });
                         }
                     }
                 } else {
@@ -219,11 +215,7 @@ pub const BlockAnalysis = struct {
             if (dry_run) {
                 return error.TypeNotMatching;
             } else {
-                std.log.err("Type {} does not encompass {}", .{
-                    TypeFmt.from(resolved, p),
-                    TypeFmt.from(calleritem, p),
-                });
-                return p.aerr(error.TypeNotMatching, call_node.?.srcloc);
+                return p.aerr(error.TypeNotMatching, call_node.?.srcloc, .{});
             }
         }
 
@@ -327,10 +319,7 @@ pub const BlockAnalysis = struct {
             for (b.stack.slice()[b.stack.len - self.args.len ..], 0..) |stkitem, i| {
                 const arg = self.args.constSlice()[i];
                 if (!arg.doesInclude(stkitem, p)) {
-                    std.log.err("Type {} does not match {}", .{
-                        TypeFmt.from(arg, p), TypeFmt.from(stkitem, p),
-                    });
-                    return p.aerr(error.TypeNotMatching, srcloc);
+                    return p.aerr(error.TypeNotMatching, srcloc, .{ stkitem, arg });
                 }
             };
         b.stack.resizeTo(b.stack.len -| self.args.len);
@@ -345,8 +334,7 @@ pub const BlockAnalysis = struct {
             for (b.rstack.slice()[b.rstack.len - self.rargs.len ..], 0..) |stkitem, i| {
                 const arg = self.rargs.constSlice()[i];
                 if (!arg.doesInclude(stkitem, p)) {
-                    std.log.err("[RT] Type {} does not match {}", .{ arg, stkitem });
-                    return p.aerr(error.TypeNotMatching, srcloc);
+                    return p.aerr(error.TypeNotMatching, srcloc, .{ stkitem, arg });
                 }
             };
         b.rstack.resizeTo(b.rstack.len -| self.rargs.len);
@@ -576,9 +564,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         .Ptr16, .Ptr8 => |p| switch (program.ztype(p.typ)) {
                             .Struct => |n| program.types.items[n].scope,
                             .EnumLit => |n| program.types.items[n].scope,
-                            else => return program.aerr(error.CannotCallMethod, node.srcloc),
+                            else => return program.aerr(error.CannotCallMethod, node.srcloc, .{program.ztype(p.typ)}),
                         },
-                        else => return program.aerr(error.CannotCallMethod, node.srcloc),
+                        else => |t| return program.aerr(error.CannotCallMethod, node.srcloc, .{t}),
                     };
 
                     if (try scope.findDeclForCaller(program, c.name, node, parent.arity, parent.scope, a, ctx.r_blk)) |found| {
@@ -827,15 +815,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .VRef => |*v| {
                 v.localptr = parent.scope.findLocal(v.name, program, false) orelse
-                    return program.aerr(error.UnknownLocal, node.srcloc);
+                    return program.aerr(error.UnknownLocal, node.srcloc, .{v.name});
                 a.stack.append(v.localptr.?.rtyp.ptrize16(program)) catch unreachable;
             },
             .VDeref => |*v| {
                 v.localptr = parent.scope.findLocal(v.name, program, false) orelse
-                    return program.aerr(error.UnknownLocal, node.srcloc);
+                    return program.aerr(error.UnknownLocal, node.srcloc, .{v.name});
                 const t = v.localptr.?.rtyp;
                 if (t.size(program)) |sz| if (sz > 2)
-                    return program.aerr(error.StructNotForStack, node.srcloc);
+                    return program.aerr(error.StructNotForStack, node.srcloc, .{t});
                 a.stack.append(t) catch unreachable;
             },
             .Quote => |q| {
@@ -888,7 +876,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         else => |t| t,
                     },
                     .Ptr8 => @panic("TODO"),
-                    else => return program.aerr(error.CannotGetIndex, node.srcloc),
+                    else => |t| return program.aerr(error.CannotGetIndex, node.srcloc, .{t}),
                 };
                 if (childtype.size(program)) |sz| {
                     if (sz == 0xFFFF) @panic("seriously");
@@ -900,10 +888,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         .U16 => .stk_s,
                         .U8 => .stk_b,
                         else => if (indtype.?.isGeneric(program)) .stk_unresolved else {
-                            std.log.info("{}: invalid index type, u8/u16 required", .{
-                                TypeFmt.from(indtype.?, program),
-                            });
-                            return program.aerr(error.InvalidIndexType, node.srcloc);
+                            return program.aerr(error.InvalidIndexType, node.srcloc, .{indtype.?});
                         },
                     };
                 }
@@ -916,12 +901,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     const bit = ((gind.ind.known >> 8) * (gind.multiplier >> 8)) +
                         (x >> 8) + (y >> 8);
                     if (bit != 0)
-                        return program.aerr(error.IndexWouldOverflow, node.srcloc);
+                        return program.aerr(error.IndexWouldOverflow, node.srcloc, .{ gind.ind.known, gind.multiplier });
                 }
 
                 if (gind.ind == .known and known_target_len != null) {
                     if (gind.ind.known >= known_target_len.?)
-                        return program.aerr(error.IndexTooLarge, node.srcloc);
+                        return program.aerr(error.IndexTooLarge, node.srcloc, .{ gind.ind.known, known_target_len.? });
                 }
 
                 const result = if (deref_target) childtype.ptrize16(program) else target;
@@ -934,40 +919,30 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // Error: Need to know type at this point
                 //  Hint: Try explicit cast.
                 const b = a.stack.last() orelse @panic("nuh uh");
-                const tstruct = switch (b) {
+                const t = switch (b) {
                     // TODO: Ptr8 (it's easy, just change ptrize16 to be more generic)
                     .Ptr16 => |ptr| b: {
                         switch (program.ztype(ptr.typ)) {
                             .Struct => |s| {
                                 if (ptr.ind > 1) {
-                                    return program.aerr(error.CannotGetFieldMultiPtr, node.srcloc);
+                                    return program.aerr(error.CannotGetFieldMultiPtr, node.srcloc, .{program.ztype(ptr.typ)});
                                 }
-                                break :b &program.types.items[s].def.Struct;
+                                break :b s;
                             },
-                            else => |typ| {
-                                std.log.info("cannot get child from {}", .{
-                                    TypeFmt.from(typ, program),
-                                });
-                                return program.aerr(error.CannotGetField, node.srcloc);
-                            },
+                            else => |typ| return program.aerr(error.CannotGetField, node.srcloc, .{typ}),
                         }
                     },
                     .Struct => |s| b: {
-                        const tstruct = &program.types.items[s].def.Struct;
                         if (b.size(program)) |sz| if (sz > 2)
                             @panic("/dev/sda is on fire"); // How did this happen
-                        //std.log.info("need protection (ptr)", .{});
-                        //return program.aerr(error.CannotGetField, node.srcloc);
-                        break :b tstruct;
+                        break :b s;
                     },
-                    else => {
-                        std.log.info("field from {}? wat", .{TypeFmt.from(b, program)});
-                        return program.aerr(error.CannotGetField, node.srcloc);
-                    },
+                    else => return program.aerr(error.CannotGetField, node.srcloc, .{b}),
                 };
+                const tstruct = program.types.items[t].def.Struct;
                 const i = for (tstruct.fields.items, 0..) |f, i| {
                     if (mem.eql(u8, f.name, gch.name)) break i;
-                } else return program.aerr(error.NoSuchField, node.srcloc);
+                } else return program.aerr(error.NoSuchField, node.srcloc, .{ gch.name, TypeInfo{ .Struct = t } });
                 _ = a.stack.pop() catch unreachable;
                 if (b == .Struct) {
                     if (b.isGeneric(program)) {
@@ -1012,10 +987,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!tos.doesInclude(sos, program) or
                             tos.bits(program) != sos.bits(program))
                         {
-                            std.log.err("Type error: {} (tos) != {} (sos)", .{
-                                tos, sos,
-                            });
-                            return program.aerr(error.TypeNotMatching, node.srcloc);
+                            return program.aerr(error.TypeNotMatching, node.srcloc, .{});
                         }
                         switch (brk.type) {
                             .TosShouldEqSos => |*v| v.* = tos,
@@ -1030,10 +1002,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!tos.doesInclude(v.typ, program) or
                             tos.bits(program) != v.typ.bits(program))
                         {
-                            std.log.err("Type error: {} (breakpoint) != {} (stack)", .{
-                                v.typ, tos,
-                            });
-                            return program.aerr(error.TypeNotMatching, node.srcloc);
+                            return program.aerr(error.TypeNotMatching, node.srcloc, .{});
                         }
                     },
                 }
@@ -1046,15 +1015,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     c.resolved2 = try c.original2.resolveTypeRef(parent.scope, parent.arity, program);
 
                     if (c.resolved1.bits(program)) |b| if (b != 8)
-                        return program.aerr(error.CannotSplitIntoShort, node.srcloc);
+                        return program.aerr(error.CannotSplitIntoShort, node.srcloc, .{});
 
                     if (c.resolved1.bits(program)) |b| if (b != 8)
-                        return program.aerr(error.CannotSplitIntoShort, node.srcloc);
+                        return program.aerr(error.CannotSplitIntoShort, node.srcloc, .{});
 
                     const into = srcstk.last() orelse @panic("nah");
 
                     if (into.bits(program)) |b| if (b != 16)
-                        return program.aerr(error.CannotSplitByte, node.srcloc);
+                        return program.aerr(error.CannotSplitByte, node.srcloc, .{});
 
                     var casta = BlockAnalysis{};
                     const dststk = if (ctx.r_blk) &casta.rstack else &casta.stack;
@@ -1074,7 +1043,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     var b = BlockAnalysis{};
                     if (make.resolved.size(program)) |sz| {
                         if (sz > 2) {
-                            return program.aerr(error.StructNotForStack, node.srcloc);
+                            return program.aerr(error.StructNotForStack, node.srcloc, .{make.resolved});
                         }
                     }
                     if (make.resolved != .Struct) {

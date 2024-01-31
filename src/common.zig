@@ -57,7 +57,7 @@ pub const TypeFmt = struct {
 
         switch (self.typ) {
             .TypeRef => |n| try writer.print("${}{s}", .{ n.n, if (n.r) "r" else "" }),
-            .Struct, .EnumLit => |n| try writer.print("{s}<{}>", .{ self.prog.types.items[n].name, n }),
+            .Struct, .EnumLit => |n| try writer.print("{s}", .{self.prog.types.items[n].name}),
             .AnyOf => |n| try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(n), self.prog) }),
             .AnySet => |n| {
                 try writer.print("{s}<", .{s});
@@ -581,7 +581,7 @@ pub const TypeInfo = union(enum) {
                     .Device => @panic("TODO: Devices (use Dev8/Dev16 for now?)"),
                 };
             } else {
-                return program.aerr(error.NoSuchType, k.srcloc);
+                return program.aerr(error.NoSuchType, k.srcloc, .{k.ident});
             },
             else => a,
         };
@@ -1307,6 +1307,8 @@ pub const Error = struct {
         string2: ?[]const u8 = null,
         burtype1: ?TypeInfo = null,
         burtype2: ?TypeInfo = null,
+        ushort1: ?u16 = null,
+        ushort2: ?u16 = null,
 
         pub fn from(tuple: anytype) Context {
             var new = Context{};
@@ -1329,6 +1331,7 @@ pub const Error = struct {
                     else => unreachable,
                 };
                 const typename = switch (fieldinfo.type) {
+                    u16 => "ushort",
                     []const u8 => "string",
                     meta.Tag(lexer.Node.NodeType) => "lexnodetype",
                     TypeInfo => "burtype",
@@ -1724,8 +1727,8 @@ pub const Program = struct {
         return e;
     }
 
-    pub fn aerr(self: *Program, e: analyser.Error, srcloc: common.Srcloc) analyser.Error {
-        self.errors.append(.{ .e = e, .l = srcloc }) catch unreachable;
+    pub fn aerr(self: *Program, e: analyser.Error, srcloc: common.Srcloc, args: anytype) analyser.Error {
+        self.errors.append(.{ .e = e, .l = srcloc, .ctx = Error.Context.from(args) }) catch unreachable;
         return e;
     }
 };
