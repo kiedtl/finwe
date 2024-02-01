@@ -27,17 +27,17 @@ const CodegenError = mem.Allocator.Error || StackBufferError;
 pub const UA = struct {
     label_type: LabelType,
     label_src: union(enum) {
-        Node: *ASTNode,
+        Node: struct { ptr: *ASTNode, gen_id: usize },
         Static: usize,
 
         pub fn eq(a: @This(), b: @This()) bool {
             return @as(meta.Tag(@This()), a) == @as(meta.Tag(@This()), b) and
                 switch (a) {
-                .Node => |n| if (n == b.Node)
+                .Node => |n| if (n.ptr == b.Node.ptr and n.gen_id == b.Node.gen_id)
                     true
-                else if (n.node == .Decl and b.Node.node == .Decl)
-                    if (b.Node.node.Decl.folded_into) |folded_into|
-                        folded_into == n
+                else if (n.ptr.node == .Decl and b.Node.ptr.node == .Decl)
+                    if (b.Node.ptr.node.Decl.folded_into) |folded_into|
+                        folded_into == n.ptr
                     else
                         false
                 else
@@ -132,7 +132,7 @@ fn emitDataLabel(buf: *Ins.List, ind: usize) CodegenError!void {
 
 fn emitLabel(buf: *Ins.List, ident: LabelType, node: *ASTNode) CodegenError!void {
     try emit(buf, null, WK_STACK, false, false, .{
-        .Xlbl = .{ .label_type = ident, .label_src = .{ .Node = node }, .relative = .X },
+        .Xlbl = .{ .label_type = ident, .label_src = .{ .Node = .{ .ptr = node, .gen_id = node.gen_id } }, .relative = .X },
     });
 }
 
@@ -145,7 +145,7 @@ fn emitDataUA(buf: *Ins.List, i: usize) CodegenError!void {
 
 fn emitUA(buf: *Ins.List, ident: LabelType, r: UA.RelativeCtl, node: *ASTNode) CodegenError!void {
     try emit(buf, node, WK_STACK, false, false, .{
-        .Xtua = .{ .label_src = .{ .Node = node }, .label_type = ident, .relative = r },
+        .Xtua = .{ .label_src = .{ .Node = .{ .ptr = node, .gen_id = node.gen_id } }, .label_type = ident, .relative = r },
     });
     try emit(buf, node, WK_STACK, false, false, .{ .Oraw = 0 });
 }
@@ -212,6 +212,8 @@ const Ctx = struct {
 };
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenError!void {
+    node.gen_id += 1;
+
     switch (node.node) {
         .TypeDef => {},
         .Return => if (ctx.is_parent_inline) |call_node| {
@@ -508,7 +510,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
             const begin = prevdef.romloc;
             const end = for (buf.items[prevdef.romloc..], 0..) |ins, j| {
                 if (ins.op == .Xlbl and ins.op.Xlbl.label_type == .DeclEnd and
-                    ins.op.Xlbl.label_src.Node == prevdef)
+                    ins.op.Xlbl.label_src.Node.ptr == prevdef)
                 {
                     break prevdef.romloc + j;
                 }
@@ -623,7 +625,7 @@ pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
 
     for (buf.items, 0..) |*ins, addr| for (ins.labels.constSlice()) |label| {
         switch (label.for_ua.label_type) {
-            .BreakpointEnd, .DeclBegin => label.for_ua.label_src.Node.romloc = addr,
+            .BreakpointEnd, .DeclBegin => label.for_ua.label_src.Node.ptr.romloc = addr,
             .Static => program.statics.items[label.for_ua.label_src.Static].romloc = addr,
             else => {},
         }
@@ -712,7 +714,7 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
     const begin = search: for (buf.items, 0..) |ins, ind| {
         if (ins.op == .Xlbl)
             if (ins.op.Xlbl.label_type == .DeclBegin and
-                ins.op.Xlbl.label_src.Node == declnode)
+                ins.op.Xlbl.label_src.Node.ptr == declnode)
             {
                 break :search ind + 1;
             };
@@ -720,7 +722,7 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
     const end = search: for (buf.items[begin..], begin..) |ins, ind| {
         if (ins.op == .Xlbl)
             if (ins.op.Xlbl.label_type == .DeclEnd and
-                ins.op.Xlbl.label_src.Node == declnode)
+                ins.op.Xlbl.label_src.Node.ptr == declnode)
             {
                 break :search ind;
             };
@@ -743,10 +745,10 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
             stdout.print("{u}{}", .{ u, lbl.label_type }) catch unreachable;
             switch (lbl.label_type) {
                 .DeclBegin => stdout.print("{s}", .{
-                    lbl.label_src.Node.node.Decl.name,
+                    lbl.label_src.Node.ptr.node.Decl.name,
                 }) catch unreachable,
                 .InlineDeclBegin, .InlineDeclEnd => stdout.print("_{s}", .{
-                    lbl.label_src.Node.node.Call.node.?.node.Decl.name,
+                    lbl.label_src.Node.ptr.node.Call.node.?.node.Decl.name,
                 }) catch unreachable,
                 else => {},
             }
@@ -756,7 +758,7 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
             buf.items[i + 1].op.Xtua.label_type == .DeclBegin)
         {
             const ua = buf.items[i + 1].op.Xtua;
-            stdout.print("  {s}\n", .{ua.label_src.Node.node.Decl.name}) catch unreachable;
+            stdout.print("  {s}\n", .{ua.label_src.Node.ptr.node.Decl.name}) catch unreachable;
             i += 3;
         } else {
             stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;

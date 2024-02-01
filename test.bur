@@ -89,9 +89,17 @@
 ])
 
 (test lang_inline_w_early_ret [
-	#inline (word a ( -- ) [ returnt ])
+	#inline (word a ( -- ) [ return ])
 	2 a 3 (should eq 3) (should eq 2)
 	4 a 5 (should eq 5) (should eq 4)
+])
+
+(test lang_inline_w_inlined_labels [
+	#inline (word b ( U8 -- U8 ) [ 1 = (when [9 return] [8]) ])
+	#inline (word a ( U8 -- U8 ) [ 0 = (when [3 return] [1 b]) ])
+
+	0 a (should eq 3)
+	1 a (should eq 9)
 ])
 
 (test lang_r_blk [
@@ -146,7 +154,7 @@
 	0x6cfes 0xfe7cs 0x3810s 0x0000s
 ])
 
-(word main [
+(word main1 [
 	(word draw-sprite [
 		0x20s .Screen/x deo
 		0x40s .Screen/y deo
@@ -162,4 +170,8 @@
 
 	256s .Screen/width deo
 	256s .Screen/height deo
+])
+
+(word main [
+	0s (split U8 U16)
 ])
