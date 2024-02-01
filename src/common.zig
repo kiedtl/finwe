@@ -1940,7 +1940,7 @@ pub const Ins = struct {
     generic: bool = false,
 
     // Used for codegen
-    labels: StackBuffer(Label, 4) = StackBuffer(Label, 4).init(null),
+    labels: StackBuffer(Label, 8) = StackBuffer(Label, 8).init(null),
 
     pub const List = std.ArrayList(Ins);
 

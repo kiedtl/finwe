@@ -63,10 +63,35 @@ pub const LabelType = union(enum) {
     StaticsHere,
     Static,
     WhenMainBodyBegin,
+    WhenElseBodyBegin,
     WhenEnd,
     BreakpointEnd,
     CondEnd,
     CondBranchEnd: usize,
+
+    pub fn format(self: @This(), comptime f: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (comptime !mem.eql(u8, f, "")) {
+            @compileError("Unknown format string: '" ++ f ++ "'");
+        }
+
+        return switch (self) {
+            .LoopBegin => try writer.print("loop", .{}),
+            .LoopEnd => try writer.print("done", .{}),
+            .DeclBegin => try writer.print("", .{}),
+            .DeclEnd => try writer.print("end_decl", .{}),
+            .InlineDeclBegin => try writer.print("inline", .{}),
+            .InlineDeclEnd => try writer.print("end_inline", .{}),
+            .Here => try writer.print("here", .{}),
+            .StaticsHere => try writer.print("here_statics", .{}),
+            .Static => try writer.print("", .{}),
+            .WhenMainBodyBegin => try writer.print("if_true_body", .{}),
+            .WhenElseBodyBegin => try writer.print("if_false_body", .{}),
+            .WhenEnd => try writer.print("fi", .{}),
+            .BreakpointEnd => try writer.print("end_brk", .{}),
+            .CondEnd => try writer.print("case", .{}),
+            .CondBranchEnd => |i| try writer.print("esac_{}", .{i}),
+        };
+    }
 
     pub fn eq(a: @This(), b: @This()) bool {
         return @as(meta.Tag(@This()), a) == @as(meta.Tag(@This()), b) and
@@ -388,6 +413,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             try emitUA(buf, .WhenMainBodyBegin, .Always, node);
 
             // 2.
+            try emitLabel(buf, .WhenElseBodyBegin, node);
             if (when.nah) |nah|
                 try genNodeList(program, buf, nah, ctx);
 
@@ -711,6 +737,21 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
                 stdout.print("  #{}\n", .{buf.items[i + 1]}) catch unreachable;
                 i += 2;
             }
+        } else if (buf.items[i].op == .Xlbl and buf.items[i].op.Xlbl.label_src == .Node) {
+            const lbl = buf.items[i].op.Xlbl;
+            const u: u21 = if (lbl.label_type == .DeclBegin) '@' else '&';
+            stdout.print("{u}{}", .{ u, lbl.label_type }) catch unreachable;
+            switch (lbl.label_type) {
+                .DeclBegin => stdout.print("{s}", .{
+                    lbl.label_src.Node.node.Decl.name,
+                }) catch unreachable,
+                .InlineDeclBegin, .InlineDeclEnd => stdout.print("_{s}", .{
+                    lbl.label_src.Node.node.Call.node.?.node.Decl.name,
+                }) catch unreachable,
+                else => {},
+            }
+            stdout.print("\n", .{}) catch unreachable;
+            i += 1;
         } else if (buf.items[i].op == .Ojsi and buf.items[i + 1].op == .Xtua and
             buf.items[i + 1].op.Xtua.label_type == .DeclBegin)
         {
