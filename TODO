@@ -36,15 +36,26 @@ x Refactoring
   x Scopes
   x Explicit main function
   x Decls within decls
+x Metadata
+- Error messages and context
+- Analyser: proper checks
+- Fix: inlining func w/ early return
+
+*** v0.1 release ***
+
+- Loops: break/continue
 - Fixed-point
   - Printing
 - Solve Effects issue
   - i.e. how to represent effect of quote in arity def?
   - would require being able to "expand" typeref...
   - need major refactoring?
-- Fix: inlining func w/ early return
-x Metadata
-- Error messages and context
+- Make std/alloc faster
+  - Auto-merge when freeing (only immediate next block)
+  - Remove Header/prev
+  - Remove Header/guard* when burdampe is used
+- Constant pointers, (const) builtin
+  - Constant version of devs (for readonly ports)?
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
@@ -55,14 +66,14 @@ Optimizations
 -------------
 
 - Inline locals
-- Eliminate duplicate decls (from generics)
+x Eliminate duplicate decls (from generics)
   - E.g. 0 1 swap and 0 (as ptr) 1 (as ptr) swap -> two different functions,
     which is unnecessary (only one needs to be generated)
   - Solution: after spouting out decl at codegen time, check if the generated
     output is exactly the same as another variant, and delete if that's the
     case (and set romloc to that other function's romloc)
     - Change variants field of decl to ASTNodePtrList to make this easy
-- Auto-inlining
+x Auto-inlining
   - Metadata: always/never inline
 - Tail recursion
   - (recurse) builtin
