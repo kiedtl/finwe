@@ -57,6 +57,8 @@ pub const LabelType = union(enum) {
     LoopEnd,
     DeclBegin,
     DeclEnd,
+    InlineDeclBegin,
+    InlineDeclEnd,
     Here,
     StaticsHere,
     Static,
@@ -179,10 +181,18 @@ fn genCondPrep(_: *Program, buf: *Ins.List, node: *ASTNode, cp: ASTNode.CondPrep
     }
 }
 
-fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void {
+const Ctx = struct {
+    parent_decl: *ASTNode,
+    is_parent_inline: ?*ASTNode = null,
+};
+
+fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenError!void {
     switch (node.node) {
         .TypeDef => {},
-        .Return => {
+        .Return => if (ctx.is_parent_inline) |call_node| {
+            try emit(buf, node, WK_STACK, false, false, .Ojmi);
+            try emitUA(buf, .InlineDeclEnd, .Always, call_node);
+        } else {
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
         .Debug => {},
@@ -306,8 +316,8 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
         },
         .Decl => {},
         .Import => {},
-        .Wild => |w| try genNodeList(program, buf, w.body),
-        .RBlock => |r| try genNodeList(program, buf, r.body),
+        .Wild => |w| try genNodeList(program, buf, w.body, ctx),
+        .RBlock => |r| try genNodeList(program, buf, r.body, ctx),
         .Quote => |q| {
             try emit(buf, node, WK_STACK, false, true, .Olit);
             try emitUA(buf, .DeclBegin, .Never, q.def);
@@ -317,7 +327,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                 .While => |u| {
                     try emitLabel(buf, .LoopBegin, node);
                     try genCondPrep(program, buf, node, u.cond_prep);
-                    try genNodeList(program, buf, u.cond);
+                    try genNodeList(program, buf, u.cond, ctx);
 
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
@@ -325,17 +335,17 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
                     try emit(buf, node, WK_STACK, false, false, .Ojci);
                     try emitUA(buf, .LoopEnd, .Always, node);
 
-                    try genNodeList(program, buf, l.body);
+                    try genNodeList(program, buf, l.body, ctx);
                     try emit(buf, node, WK_STACK, false, false, .Ojmi);
                     try emitUA(buf, .LoopBegin, .Always, node);
                     try emitLabel(buf, .LoopEnd, node);
                 },
                 .Until => |u| {
                     try emitLabel(buf, .LoopBegin, node);
-                    try genNodeList(program, buf, l.body);
+                    try genNodeList(program, buf, l.body, ctx);
 
                     try genCondPrep(program, buf, node, u.cond_prep);
-                    try genNodeList(program, buf, u.cond);
+                    try genNodeList(program, buf, u.cond, ctx);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
                     try emit(buf, node, WK_STACK, false, true, .Ojci);
@@ -348,7 +358,12 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             f.node.?.node.Decl.is_inline == .AutoYes or
             f.node.?.node.Decl.is_inline == .Always)
         {
-            try genNodeList(program, buf, f.node.?.node.Decl.body);
+            try emitLabel(buf, .InlineDeclBegin, node);
+            try genNodeList(program, buf, f.node.?.node.Decl.body, .{
+                .parent_decl = f.node.?,
+                .is_parent_inline = node,
+            });
+            try emitLabel(buf, .InlineDeclEnd, node);
         } else {
             try emit(buf, node, WK_STACK, false, false, .Ojsi);
             try emitUA(buf, .DeclBegin, .Always, f.node.?);
@@ -374,7 +389,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 2.
             if (when.nah) |nah|
-                try genNodeList(program, buf, nah);
+                try genNodeList(program, buf, nah, ctx);
 
             // 3.
             try emit(buf, node, WK_STACK, false, true, .Olit);
@@ -383,21 +398,21 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
 
             // 4.
             try emitLabel(buf, .WhenMainBodyBegin, node);
-            try genNodeList(program, buf, when.yup);
+            try genNodeList(program, buf, when.yup, ctx);
 
             try emitLabel(buf, .WhenEnd, node);
         },
         .Cond => |cond| {
             for (cond.branches.items, 0..) |branch, i| {
                 try genCondPrep(program, buf, node, branch.cond_prep);
-                try genNodeList(program, buf, branch.cond);
+                try genNodeList(program, buf, branch.cond, ctx);
                 try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                 try emit(buf, node, WK_STACK, false, false, .Oequ);
 
                 try emit(buf, node, WK_STACK, false, false, .Ojci);
                 try emitUA(buf, .{ .CondBranchEnd = i }, .Always, node);
 
-                try genNodeList(program, buf, branch.body);
+                try genNodeList(program, buf, branch.body, ctx);
                 try emit(buf, node, WK_STACK, false, false, .Ojmi);
                 try emitUA(buf, .CondEnd, .Always, node);
 
@@ -405,7 +420,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
             }
 
             if (cond.else_branch) |branch| {
-                try genNodeList(program, buf, branch);
+                try genNodeList(program, buf, branch, ctx);
             }
 
             // TODO: remove the very last end jump if there's no else_branch,
@@ -416,10 +431,10 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode) CodegenError!void 
     }
 }
 
-pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList) CodegenError!void {
+pub fn genNodeList(program: *Program, buf: *Ins.List, nodes: ASTNodeList, ctx: Ctx) CodegenError!void {
     var iter = nodes.iterator();
     while (iter.next()) |node|
-        try genNode(program, buf, node);
+        try genNode(program, buf, node, ctx);
 }
 
 fn _staticTotalSize(program: *Program, ind: usize) usize {
@@ -432,7 +447,7 @@ fn _staticTotalSize(program: *Program, ind: usize) usize {
 pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     // Main call if it's there
     // Nothing else will get generated (decls are ignored unless passed directly)
-    try genNodeList(program, buf, program.ast);
+    try genNodeList(program, buf, program.ast, undefined);
 
     for (program.defs.items, 0..) |def, i| {
         const d = &def.node.Decl;
@@ -449,7 +464,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
 
         def.romloc = buf.items.len;
         try emitLabel(buf, .DeclBegin, def);
-        try genNodeList(program, buf, d.body);
+        try genNodeList(program, buf, d.body, .{ .parent_decl = def });
         if (d.is_test) {
             try emit(buf, def, WK_STACK, false, false, .Obrk);
         } else {

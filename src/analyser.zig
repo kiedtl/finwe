@@ -1180,7 +1180,7 @@ pub fn postProcess(self: *Program) ErrorSet!void {
         const d = &def.node.Decl;
         if (d.calls == 0) continue;
         assert(d.is_analysed);
-        codegen.genNodeList(self, &buf, d.body) catch unreachable;
+        codegen.genNodeList(self, &buf, d.body, .{ .parent_decl = def }) catch unreachable;
         d.bytecode_size = buf.items.len;
         if (d.is_inline == .Auto)
             d.is_inline = switch (d.bytecode_size) {

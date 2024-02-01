@@ -88,6 +88,12 @@
 		//(should eq 2s) (should eq 1s)
 ])
 
+(test lang_inline_w_early_ret [
+	#inline (word a ( -- ) [ returnt ])
+	2 a 3 (should eq 3) (should eq 2)
+	4 a 5 (should eq 5) (should eq 4)
+])
+
 (test lang_r_blk [
 	(word a (         -- U8 U8 U8           ) [ 1 2 3             ])
 	(word b (U8 U8 U8 -- U8       |    -- U8) [ move + (r copy) * ])
