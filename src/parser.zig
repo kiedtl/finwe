@@ -570,10 +570,10 @@ pub const Parser = struct {
                     } }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "test")) {
                     try self.validateListLength(ast, 3);
+                    const scope = Scope.create(p_scope);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ast_body = try self.expectNode(.Quote, &ast[2]);
-                    const body = try self.parseStatements(ast_body.items, p_scope);
-                    const scope = Scope.create(p_scope);
+                    const body = try self.parseStatements(ast_body.items, scope);
 
                     // const new_name = try std.fmt.allocPrint(
                     //     common.gpa.allocator(),
