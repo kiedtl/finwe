@@ -36,6 +36,7 @@ pub const Error = error{
     StructNotForStack,
     CannotSplitIntoShort,
     CannotSplitByte,
+    StackMismatch,
 };
 
 pub const AnalysisFmt = struct {
@@ -281,17 +282,19 @@ pub const BlockAnalysis = struct {
         return r;
     }
 
+    fn _chkLst(_a: VTList16, _b: VTList16) bool {
+        if (_a.len != _b.len) return false;
+        return for (_a.constSlice(), 0..) |item, i| {
+            if (!item.eq(_b.constSlice()[i])) break false;
+        } else true;
+    }
+
+    pub fn eqExactStacks(a: *const @This(), b: *const @This()) bool {
+        return _chkLst(a.stack, b.stack) and _chkLst(a.rstack, b.rstack);
+    }
+
     pub fn eqExact(a: *const @This(), b: *const @This()) bool {
-        const S = struct {
-            pub fn f(_a: VTList16, _b: VTList16) bool {
-                if (_a.len != _b.len) return false;
-                return for (_a.constSlice(), 0..) |item, i| {
-                    if (!item.eq(_b.constSlice()[i])) break false;
-                } else true;
-            }
-        };
-        return S.f(a.args, b.args) and S.f(a.rargs, b.rargs) and
-            S.f(a.stack, b.stack) and S.f(a.rstack, b.rstack);
+        return _chkLst(a.args, b.args) and _chkLst(a.rargs, b.rargs) and eqExactStacks(a, b);
     }
 
     pub fn isGeneric(self: @This(), program: *Program) bool {
@@ -400,15 +403,15 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
             a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a2 orelse any) catch unreachable;
-            a.stack.append(a3 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
+            a.stack.append(a3 orelse any) catch unreachable;
         },
         .Oovr => {
             a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
-            a.stack.append(a1 orelse any) catch unreachable;
             a.stack.append(a2 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
+            a.stack.append(a2 orelse any) catch unreachable;
         },
         .Oswp => {
             a.args.append(a2 orelse any) catch unreachable;
@@ -439,7 +442,12 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
             a.stack.append(a1 orelse any) catch unreachable;
         },
         .Opop => a.args.append(a1 orelse any) catch unreachable,
-        .Osft, .Oand, .Oora, .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
+        .Osft => {
+            a.args.append(a2 orelse any) catch unreachable;
+            a.args.append(.U8) catch unreachable;
+            a.stack.append(if (i.short) .U16 else .U8) catch unreachable;
+        },
+        .Oand, .Oora, .Oeor, .Omul, .Oadd, .Osub, .Odiv => {
             a.args.append(a2 orelse any) catch unreachable;
             a.args.append(a1 orelse any) catch unreachable;
             a.stack.append(a1 orelse any) catch unreachable;
@@ -455,9 +463,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
         },
         .Olda => {
             a.args.append(a1 orelse .AnyPtr16) catch unreachable;
-            a.stack.append(
-                if (a1) |t| prog.builtin_types.items[t.Ptr16.typ] else .Any,
-            ) catch unreachable;
+            a.stack.append(if (a1) |t| t.deptrize(prog) else .Any) catch unreachable;
         },
         .Osta => {
             a.args.append(a2 orelse .AnyPtr16) catch unreachable;
@@ -627,6 +633,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                         _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
                         newdef.node.Decl.is_analysed = true;
+
+                        try checkEndState(&ab, &ungenericified, .FuncEnd, newdef.srcloc, false, program);
                     }
 
                     c.node.?.node.Decl.calls += 1;
@@ -745,6 +753,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Return => {
+                try checkEndState(a, &parent.arity.?, .FuncEnd, node.srcloc, false, program);
                 info.early_return = true;
                 break;
             },
@@ -1086,20 +1095,33 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
 
                 try casta.mergeInto(a, program, node.srcloc);
-
-                // std.log.info("{s}_{}: casting {} -> {} (ref: {?}) {s}", .{
-                //     parent.name,
-                //     parent.variant,
-                //     TypeFmt.from(c.of, program),
-                //     TypeFmt.from(c.to, program),
-                //     c.ref,
-                //     AnalysisFmt.from(&parent.arity.?, program),
-                // });
             },
         }
     }
 
     return info;
+}
+
+// Ensure stack state matches what's expected at the end
+fn checkEndState(
+    a: *const BlockAnalysis,
+    expect: *const BlockAnalysis,
+    chktype: enum { FuncEnd },
+    srcloc: Srcloc,
+    dry_run: bool,
+    program: *Program,
+) !void {
+    if (!expect.eqExactStacks(a)) {
+        if (dry_run) {
+            return switch (chktype) {
+                .FuncEnd => error.StackMismatch,
+            };
+        } else {
+            return switch (chktype) {
+                .FuncEnd => program.aerr(error.StackMismatch, srcloc, .{ a.*, expect.* }),
+            };
+        }
+    }
 }
 
 pub fn postProcess(self: *Program) ErrorSet!void {
@@ -1228,4 +1250,31 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
     }
 
     try postProcess(program);
+}
+
+const testing = std.testing;
+
+test "error on stack imbalance when returning" {
+    // TODO: use testing allocator once mem leaks are fixed
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const talloc = gpa.allocator();
+
+    const p = "(word a (-- U8) [ 0 1 ]) (word main [ a ])";
+
+    var lexer = @import("lexer.zig").Lexer.init(p, "<stdin>", talloc);
+
+    const lexed = try lexer.lexList(.Root);
+    defer lexer.deinit();
+
+    var program = common.Program.init(talloc);
+    var parser = @import("parser.zig").Parser.init(&program, true, talloc);
+    parser.parse(&lexed) catch unreachable;
+
+    const func = &program.global_scope.findDeclAny(&program, "main").?.node.Decl;
+    func.is_analysed = true;
+    try testing.expectError(
+        error.StackMismatch,
+        analyseBlock(&program, func, func.body, &func.analysis, .{}),
+    );
+    try testing.expectEqual(program.errors.items.len, 1);
 }

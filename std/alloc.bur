@@ -55,7 +55,8 @@
 	] [
 		:next ->
 		dup 0xFFFFs = (when [
-			0s (as @Opaque) (make (Of std/Maybe0 @Opaque))
+			drop
+			0s (as (Of std/Maybe0 @Opaque))
 			return
 		])
 	])
@@ -227,7 +228,7 @@
 	(until [ 0xFFFFs = ] [
 		dup print-chunk
 		:next ->
-	])
+	]) drop
 
 	nl
 ])

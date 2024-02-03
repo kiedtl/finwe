@@ -50,6 +50,7 @@
 #(method Vector)
 (word last-ptr ( @(AnyOf Vector) -- @(Child (FieldType (Child $0) items)) ) [
 	dup :items -> swap :len -> 1- :
+	(as @(Child (FieldType (Child $0) items)))
 ])
 
 #(method Vector)

@@ -9,6 +9,7 @@ const Error = common.Error;
 const Srcloc = common.Srcloc;
 const TypeFmt = common.TypeFmt;
 const gpa = &common.gpa;
+const AnalysisFmt = @import("analyser.zig").AnalysisFmt;
 
 pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
     var stderr = std.io.getStdErr().writer();
@@ -98,6 +99,10 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         }) catch unreachable,
         error.CannotSplitIntoShort => stderr.print("Split() targets must be byte-sized", .{}) catch unreachable,
         error.CannotSplitByte => stderr.print("Split() argument must be short-sized", .{}) catch unreachable,
+        error.StackMismatch => stderr.print("Stack doesn't match arity: ({s} vs {s})", .{
+            AnalysisFmt.from(&e.ctx.analysis1.?, program),
+            AnalysisFmt.from(&e.ctx.analysis2.?, program),
+        }) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,
         // }) catch unreachable,

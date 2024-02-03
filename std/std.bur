@@ -66,9 +66,9 @@
 //
 (word strequ ( @[Char8] @[Char8] -- Bool ) [
 	2dup -> swap-sb ->
-	2dup 0= swap 0= and (when [ t return ])   // precheck for empty strs
+	2dup 0= swap 0= and (when [ 2drop 2drop t return ])   // precheck for empty strs
 	(until [ drop 2dup 0= swap 0= and ] [
-		<> (when [ nil return ])
+		<> (when [ 2drop nil return ])
 		1+ dup -> move           // ( a* b*+ | b-> )
 		swap 1+ dup -> (r move)  // ( b*+ a*+ a-> b-> )
 	])
@@ -126,7 +126,7 @@
 	(r drop)
 	drop drop
 
-	(r move)
+	(r move) (as $0)
 ])
 (test memcpy [
 	(let foo [Char8 11])
@@ -168,5 +168,6 @@
 	])
 	"Aborting.\n" print-string
 	0x01 .System/state deo
+	drop
 	(asm "" .Op/Obrk)
 ])

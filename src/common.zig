@@ -475,8 +475,23 @@ pub const TypeInfo = union(enum) {
                         }
                     }
                     new.def.Struct.args = null;
-                    program.types.append(new) catch unreachable;
-                    break :b .{ .Struct = program.types.items.len - 1 };
+                    const ind = s: for (program.types.items, 0..) |usertype, i| {
+                        if (usertype.def != .Struct)
+                            continue;
+                        if (!mem.eql(u8, usertype.name, new.name))
+                            continue;
+                        for (usertype.def.Struct.fields.items, 0..) |field, fi| {
+                            if (field.offset != new.def.Struct.fields.items[fi].offset)
+                                continue :s;
+                            if (!field.type.eq(new.def.Struct.fields.items[fi].type))
+                                continue :s;
+                        }
+                        break i;
+                    } else br: {
+                        program.types.append(new) catch unreachable;
+                        break :br program.types.items.len - 1;
+                    };
+                    break :b .{ .Struct = ind };
                 },
                 // TODO: Childish (for only one level of Childification)
                 .Child => |s| b: {
@@ -1314,6 +1329,8 @@ pub const Error = struct {
         burtype2: ?TypeInfo = null,
         ushort1: ?u16 = null,
         ushort2: ?u16 = null,
+        analysis1: ?analyser.BlockAnalysis = null,
+        analysis2: ?analyser.BlockAnalysis = null,
 
         pub fn from(tuple: anytype) Context {
             var new = Context{};
@@ -1340,6 +1357,7 @@ pub const Error = struct {
                     []const u8 => "string",
                     meta.Tag(lexer.Node.NodeType) => "lexnodetype",
                     TypeInfo => "burtype",
+                    analyser.BlockAnalysis => "analysis",
                     else => @typeName(fieldinfo.type),
                 };
                 @field(new, typename ++ nstr) = @field(tuple, fieldinfo.name);

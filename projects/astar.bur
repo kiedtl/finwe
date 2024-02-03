@@ -67,6 +67,7 @@
 	(wild (--) [(asm "s" .Op/Oswp)])
 	(wild (--) [(asm "" .Op/Orot)])
 	(wild (--) [(asm "" .Op/Oswp)])
+	(wild (U8 U8 U8 U8 -- U16 U16) [])
 ])
 
 #(method Coord) (word print ( Coord -- ) [
@@ -76,7 +77,7 @@
 #(method Coord) (word eq? (Coord Coord -- Bool) [ (as U16 U16) = ])
 
 #(method Coord) (word at (@[[Any 50] 30] Coord -- @(Child (Child $1))) [
-	(split U8 U8) rot-sbb : :
+	(split U8 U8) rot-sbb : : (as @(Child (Child $1)))
 ])
 
 #(method Coord) (word distance (Coord Coord -- U16) [

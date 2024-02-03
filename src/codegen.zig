@@ -212,17 +212,20 @@ const Ctx = struct {
 };
 
 fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenError!void {
+    switch (node.node) {
+        .Debug, .TypeDef, .None, .Decl, .VDecl, .Import => return,
+        else => {},
+    }
+
     node.gen_id += 1;
 
     switch (node.node) {
-        .TypeDef => {},
         .Return => if (ctx.is_parent_inline) |call_node| {
             try emit(buf, node, WK_STACK, false, false, .Ojmi);
             try emitUA(buf, .InlineDeclEnd, .Always, call_node);
         } else {
             try emit(buf, node, RT_STACK, false, true, .Ojmp);
         },
-        .Debug => {},
         .Builtin => |builtin| switch (builtin.type) {
             .SplitCast => {},
             .Make => {},
@@ -252,9 +255,9 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             program.breakpoints.items[program.breakpoints.items.len - 1].srcloc = node.srcloc;
         },
         .Cast => |c| {
-            //std.log.info("codegen: {},{}: casting {} -> {}", .{ node.srcloc.line, node.srcloc.column, c.of, c.to });
             for (c.resolved.constSlice(), 0..) |to, i| {
                 const from = c.from.constSlice()[i];
+                // std.log.info("codegen: {}: casting {} -> {}", .{ node.srcloc, from, to });
                 const from_bits = from.bits(program).?;
                 const to_bits = to.bits(program).?;
 
@@ -270,7 +273,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
                 }
             }
         },
-        .None => {},
         .GetChild => |gch| switch (gch.kind) {
             .unresolved => unreachable,
             .stk_one_s => {},
@@ -316,7 +318,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             }
             try emit(buf, null, 0, false, true, .Oadd);
         },
-        .VDecl => {},
         .VRef => |v| {
             try emit(buf, node, WK_STACK, false, true, .Olit);
             try emitDataUA(buf, v.localptr.?.ind.?);
@@ -341,8 +342,6 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
                 try emitIMM(buf, node, stk, false, .Olit, v.val.toU8(program));
             }
         },
-        .Decl => {},
-        .Import => {},
         .Wild => |w| try genNodeList(program, buf, w.body, ctx),
         .RBlock => |r| try genNodeList(program, buf, r.body, ctx),
         .Quote => |q| {
@@ -456,6 +455,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
 
             try emitLabel(buf, .CondEnd, node);
         },
+        else => unreachable,
     }
 }
 
@@ -493,6 +493,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
         def.romloc = buf.items.len;
         try emitLabel(buf, .DeclBegin, def);
         try genNodeList(program, buf, d.body, .{ .parent_decl = def });
+        assert(def.gen_id == 0);
         if (d.is_test) {
             try emit(buf, def, WK_STACK, false, false, .Obrk);
         } else {

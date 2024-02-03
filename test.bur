@@ -142,7 +142,7 @@
 			[ 2 = ] [ "2" print-string nl ]
 			[ 3 = ] [ "3" print-string nl ]
 			[ 4 = ] [ "4" print-string nl ]
-			[ "???" print-string nl ]
+			[ drop "???" print-string nl ]
 		)
 	])
 	0 dostuff 1 dostuff 2 dostuff 3 dostuff 4 dostuff 5 dostuff

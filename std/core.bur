@@ -30,7 +30,7 @@
 
 #inline (word halt (        --              ) [ (asm "" .Op/Obrk)            ])
 
-(word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda)           ])
+(word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda) (as (Child $0)) ])
 (word ldak (       AnyPtr16 -- $0 (Child $0)) [ (asm "kg" .Op/Olda)          ])
 (word sta  (   Any AnyPtr16 --              ) [ (asm "g" .Op/Osta)           ])
 (word stak (   Any AnyPtr16 -- $1 $0        ) [ (asm "kg" .Op/Osta)          ])
@@ -87,7 +87,7 @@
 (word band  ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oand)           ])
 (word bor   ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oora)           ])
 (word beor  ((AnySz $0) Any -- $0           ) [ (asm "g" .Op/Oeor)           ])
-(word bsft  (       Any  U8 -- $1           ) [ (asm "g" .Op/Osft)           ])
+(word bsft  (       Any  U8 -- (USz $1)     ) [ (asm "g" .Op/Osft)           ])
 // TODO: warn if bshr/bshl arg is higher than 7
 // #(warn arg-gt $0 7)
 (word bshr  (       Any  U8 -- $1           ) [ bsft                         ])
@@ -141,7 +141,7 @@
 
 // TODO: optimize (xor by sign bit? idk)
 (word abs ( I8 -- (USz $0) ) [
-	dup sign 0= (when [return])
+	dup sign 0= (when [(as (USz $0)) return])
 	(as (USz $0)) bnot 1+
 ])
 
@@ -179,7 +179,7 @@
 ])
 
 (word rot-sbb (Any16 Any8 Any8 -- $1 $0 $2) [
-	(wild (--) [ (asm "s" .Op/Oswp)  ])
+	(wild ($2 $1 $0 -- $1 $0 $2) [ (asm "s" .Op/Oswp)  ])
 ])
 
 (word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
@@ -189,6 +189,7 @@
 	(wild (--) [ (asm "" .Op/Orot)   ]) // bt sa0 sa1 | sb0 sb1
 	(wild (--) [ (asm "rs" .Op/Osth) ]) // bt sb0 sb1 sa0 sa1 
 	(wild (--) [ (asm "s" .Op/Oswp)  ]) // bt sa0 sa1 sb0 sb1 
+	(wild ($2 $1 $0 -- $1 $0 $2) [])
 ])
 
 (word rot-bss (Any8 Any16 Any16 -- $1 $0 $2) [
@@ -197,6 +198,7 @@
 	(wild (--) [ (asm "" .Op/Orot)   ]) // sa0 sa1 bt | sb0 sb1
 	(wild (--) [ (asm "rs" .Op/Osth) ]) // sa0 sa1 bt sb0 sb1
 	(wild (--) [ (asm "" .Op/Orot)   ]) // sa0 sa1 sb0 sb1 bt
+	(wild ($2 $1 $0 -- $1 $0 $2) [])
 ])
 
 (word rot-bss> (Any8 Any16 Any16 -- $0 $2 $1) [
@@ -205,22 +207,25 @@
 	(wild (--) [ (asm "s" .Op/Osth)  ]) // bt sb0 sb1 | sa0 sa1
 	(wild (--) [ (asm "" .Op/Orot)   ]) // sb0 sb1 bt | sa0 sa1
 	(wild (--) [ (asm "rs" .Op/Osth) ]) // sb0 sb1 bt sa0 sa1
+	(wild ($2 $1 $0 -- $0 $2 $1) [])
 ])
 
 (word over-sb (Any16 Any8 -- $1 $0 $1) [
-	0
+	(wild (--) [ 0 ])
 	(wild (--) [ (asm "s" .Op/Oovr) ])
 	(wild (--) [ (asm "" .Op/Orot)  ])
 	(wild (--) [ (asm "" .Op/Opop) ])
+	(wild ($1 $0 -- $1 $0 $1) [])
 ])
 
 (word swap-sb (Any16 Any8 -- $0 $1) [
 	(wild (--) [ (asm "" .Op/Orot) ])
 	(wild (--) [ (asm "" .Op/Orot) ])
+	(wild ($1 $0 -- $0 $1) [])
 ])
 
 (word swap-bs (Any8 Any16 -- $0 $1) [
-	(wild (--) [ (asm "" .Op/Orot) ])
+	(wild ($1 $0 -- $0 $1) [ (asm "" .Op/Orot) ])
 ])
 
 (test rot-sbb  [ 2s 1 0  rot-sbb  (should eq 2s) (should eq 0)  (should eq 1)   ])
