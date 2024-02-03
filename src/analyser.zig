@@ -1304,9 +1304,6 @@ fn _testExpectErr(p: []const u8, e: Error) !void {
     parser.parse(&lexed) catch unreachable;
 
     try testing.expectError(e, analyse(&program, false));
-    for (program.errors.items) |ej| {
-        std.log.err("{}", .{ej.l});
-    }
     try testing.expectEqual(program.errors.items.len, 1);
 }
 
