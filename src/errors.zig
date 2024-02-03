@@ -30,9 +30,11 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidEscapeSeq => stderr.print("Invalid escape sequence", .{}) catch unreachable,
         error.UnterminatedString => stderr.print("Missing end quote", .{}) catch unreachable,
         error.InvalidToken => stderr.print("Invalid token", .{}) catch unreachable,
+        // HINT: arrays are not ringbuffers, idiot
         error.InvalidSignedIndex => stderr.print("Signed type cannot be index", .{}) catch unreachable,
         error.LoneSigil => stderr.print("Lone @ or # not allowed", .{}) catch unreachable,
         error.NestedMetadata => stderr.print("Multiple # tokens not allowed", .{}) catch unreachable,
+        // HINT: GitHub issue ####
         error.QuotedMetadata => stderr.print("#[] syntax not implemented", .{}) catch unreachable,
         error.UnexpectedClosingParen => stderr.print("Expected {s}", .{
             e.ctx.parentype1.?.toString(),
@@ -70,9 +72,11 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidEnumField => stderr.print("No such field \"{s}\" in {s}", .{
             e.ctx.string1.?, e.ctx.string2.?,
         }) catch unreachable,
+        // HINT (if str == u8,u16,i8,i16,etc): Did you mean <capitalized>?
         error.NoSuchType => stderr.print("No such type \"{s}\"", .{
             e.ctx.string1.?,
         }) catch unreachable,
+        // HINT: type does not have a defined size
         error.InvalidFieldType => stderr.print("Type {} cannot be in container field", .{
             TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
@@ -103,6 +107,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidIndexType => stderr.print("{} cannot be used as index, only u8/u16", .{
             TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
+        // HINT: amazing you managed to get this error
         error.IndexWouldOverflow => stderr.print("Index of {} would overflow (type size is {})", .{
             e.ctx.ushort1.?, e.ctx.ushort2.?,
         }) catch unreachable,
@@ -115,7 +120,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.CannotGetField => stderr.print("Cannot get field of {}", .{
             TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
-        error.NoSuchField => stderr.print("No such field \"{s}\" in {}", .{
+        error.NoSuchField => stderr.print("No \"{s}\" in {}", .{
             e.ctx.string1.?, TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
         error.CannotSplitIntoShort => stderr.print("Split() targets must be byte-sized", .{}) catch unreachable,
