@@ -40,6 +40,7 @@ pub const Error = error{
     StackNotEmpty,
     StackBranching1,
     StackBranching2,
+    StackImbalanceLoop,
 };
 
 pub const AnalysisFmt = struct {
@@ -514,8 +515,7 @@ const AnalyserInfo = struct {
 
 const Ctx = struct {
     r_blk: bool = false,
-
-    // wild_blk: bool = false,
+    w_blk: bool = false,
 
     conditional: bool = false,
     loop: bool = false,
@@ -560,8 +560,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 _ = try analyseBlock(program, parent, r.body, a, nctx);
             },
             .Wild => |w| {
+                var nctx = ctx;
+                nctx.w_blk = true;
                 var wa = a.*;
-                _ = try analyseBlock(program, parent, w.body, &wa, ctx);
+                _ = try analyseBlock(program, parent, w.body, &wa, nctx);
                 try (try w.arity.resolveTypeRefs(parent.scope, parent.arity, program))
                     .mergeInto(a, program, node.srcloc);
             },
@@ -691,7 +693,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 switch (l.loop) {
                     .Until => |*u| {
+                        const olda = a.*;
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
+
+                        if (!ctx.w_blk) {
+                            try checkEndState(a, &olda, .LoopBody, node.srcloc, false, program);
+                        }
 
                         const t = a.stack.last();
                         try u.cond_prep.execute(a);
@@ -723,7 +730,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                                 u.cond_prep = if (b == 16) .dup_1_s else .dup_1_b;
                             };
 
+                        const olda = a.*;
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
+
+                        if (!ctx.w_blk) {
+                            try checkEndState(a, &olda, .LoopBody, node.srcloc, false, program);
+                        }
                     },
                 }
             },
@@ -1126,7 +1138,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 fn checkEndState(
     a: *const BlockAnalysis,
     expect: *const BlockAnalysis,
-    chktype: enum { FuncEnd, EntryEnd, WhenElseBranch, WhenBranch },
+    chktype: enum { FuncEnd, EntryEnd, WhenElseBranch, WhenBranch, LoopBody },
     srcloc: Srcloc,
     dry_run: bool,
     program: *Program,
@@ -1138,6 +1150,7 @@ fn checkEndState(
                 .EntryEnd => error.StackNotEmpty,
                 .WhenElseBranch => error.StackBranching1,
                 .WhenBranch => error.StackBranching2,
+                .LoopBody => error.StackImbalanceLoop,
             };
         } else {
             return switch (chktype) {
@@ -1145,6 +1158,7 @@ fn checkEndState(
                 .EntryEnd => program.aerr(error.StackNotEmpty, srcloc, .{}),
                 .WhenElseBranch => program.aerr(error.StackBranching1, srcloc, .{ a.*, expect.* }),
                 .WhenBranch => program.aerr(error.StackBranching2, srcloc, .{ a.*, expect.* }),
+                .LoopBody => program.aerr(error.StackImbalanceLoop, srcloc, .{ a.*, expect.* }),
             };
         }
     }
@@ -1286,6 +1300,8 @@ const testing = std.testing;
 const core =
     \\
     \\ (word drop  (Any --) [ (asm "g" .Op/Opop) ])
+    \\ (word =  ((AnySz $0) Any -- Bool) [ (asm "g" .Op/Oequ) ])
+    \\ (word 0= (Any -- Bool) [ 0 (as $0) = ])
     \\
 ;
 
@@ -1321,4 +1337,15 @@ test "error on when clause having different stack effects" {
     try _testExpectErr("(word main [ t (when [ 0 ] [ 0s ]) ])", error.StackBranching1);
     try _testExpectErr("(word main [ t (when [ 0s ] [ 0 ]) ])", error.StackBranching1);
     try _testExpectErr("(word main [ t (when [ ] [ 0 ]) ])", error.StackBranching1);
+}
+
+test "error on loop body stack effects" {
+    inline for (&[_][]const u8{
+        "(word main [ 0 (until [ 0= ] [ drop ]) ])",
+        "(word main [ 0 (while [ 0= ] [ drop ]) ])",
+        "(word main [ 0 (until [ 0= ] [ 0 ]) ])",
+        "(word main [ 0 (while [ 0= ] [ 0 ]) ])",
+    }) |s| {
+        try _testExpectErr(core ++ s, error.StackImbalanceLoop);
+    }
 }

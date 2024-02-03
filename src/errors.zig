@@ -108,6 +108,10 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             AnalysisFmt.from(&e.ctx.analysis2.?, program),
             AnalysisFmt.from(&e.ctx.analysis1.?, program),
         }) catch unreachable,
+        error.StackImbalanceLoop => stderr.print("Stack changes in loop body (loop: {s}; previous: {s})", .{
+            AnalysisFmt.from(&e.ctx.analysis1.?, program),
+            AnalysisFmt.from(&e.ctx.analysis2.?, program),
+        }) catch unreachable,
         // HINT: add else branch
         error.StackBranching2 => stderr.print("Stack at end of when clause must not change (when: {s}; previous: {s})", .{
             AnalysisFmt.from(&e.ctx.analysis1.?, program),
