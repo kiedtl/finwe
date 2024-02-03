@@ -38,11 +38,30 @@ x Refactoring
   x Decls within decls
 x Metadata
 - Error messages and context
+  - Existing
+    - Lexer
+    x Parser
+    x Analyser
+  - Remove panics (except typeref stuff)
+    x Lexer
+    - Parser
+    - Analyser
 - Analyser: proper checks
-- Fix: inlining func w/ early return
+  x End of func
+  x Loop body
+  x When branches
+  - Cond branches
+x Fix: inlining func w/ early return
+x Fix: inlining func w/ whens/conds/loops
 
 *** v0.1 release ***
 
+- Errors: hints (grep HINT src/errors.zig)
+- Errors: additional lines for long messages/context (e.g. error.StackBranching*)
+- Fix: proper error reporting on type expr evaluation error
+- Fix: memory leaks
+- #[] syntax
+- Allow wild w/o block
 - Loops: break/continue
 - Fixed-point
   - Printing
