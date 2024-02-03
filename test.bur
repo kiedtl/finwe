@@ -96,8 +96,8 @@
 ])
 
 (test lang_inline_w_inlined_labels [
-	#inline (word b ( U8 -- U8 ) [ 1 = (when [9 return] [8]) ])
-	#inline (word a ( U8 -- U8 ) [ 0 = (when [3 return] [1 b]) ])
+	#inline (word b ( U8 -- U8 ) [ 1 = (when [9 return] [8 return]) ])
+	#inline (word a ( U8 -- U8 ) [ 0 = (when [3 return] [1 b return]) ])
 
 	0 a (should eq 3)
 	1 a (should eq 9)

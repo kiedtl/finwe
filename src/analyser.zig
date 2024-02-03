@@ -38,6 +38,8 @@ pub const Error = error{
     CannotSplitByte,
     StackMismatch,
     StackNotEmpty,
+    StackBranching1,
+    StackBranching2,
 };
 
 pub const AnalysisFmt = struct {
@@ -743,6 +745,22 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         na_r = true;
                     };
 
+                if (w.nah != null and !na_r and !ya_r) {
+                    // (when [ foo ] [ bar ])
+                    try checkEndState(&na, &ya, .WhenElseBranch, node.srcloc, false, program);
+                } else if (w.nah == null and !ya_r) {
+                    // (when [ foo ])
+                    try checkEndState(&ya, a, .WhenBranch, node.srcloc, false, program);
+                } else if (w.nah == null and ya_r) {
+                    // (when [ return ])
+                    // no checks, single branch returns
+                } else if (w.nah != null and ya_r and na_r) {
+                    // (when [ return ] [ return ])
+                    // no checks, both branches returns
+                } else if (w.nah != null and ya_r and !na_r) {
+                    try checkEndState(&na, a, .WhenBranch, node.srcloc, false, program);
+                }
+
                 if (ya_r and na_r) {
                     a.* = ya;
                 } else if (ya_r) {
@@ -754,7 +772,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Return => {
-                try checkEndState(a, &parent.arity.?, .FuncEnd, node.srcloc, false, program);
+                if (parent.arity) |*ar|
+                    try checkEndState(a, ar, .FuncEnd, node.srcloc, false, program);
                 info.early_return = true;
                 break;
             },
@@ -1107,7 +1126,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 fn checkEndState(
     a: *const BlockAnalysis,
     expect: *const BlockAnalysis,
-    chktype: enum { FuncEnd, EntryEnd },
+    chktype: enum { FuncEnd, EntryEnd, WhenElseBranch, WhenBranch },
     srcloc: Srcloc,
     dry_run: bool,
     program: *Program,
@@ -1117,11 +1136,15 @@ fn checkEndState(
             return switch (chktype) {
                 .FuncEnd => error.StackMismatch,
                 .EntryEnd => error.StackNotEmpty,
+                .WhenElseBranch => error.StackBranching1,
+                .WhenBranch => error.StackBranching2,
             };
         } else {
             return switch (chktype) {
                 .FuncEnd => program.aerr(error.StackMismatch, srcloc, .{ a.*, expect.* }),
                 .EntryEnd => program.aerr(error.StackNotEmpty, srcloc, .{}),
+                .WhenElseBranch => program.aerr(error.StackBranching1, srcloc, .{ a.*, expect.* }),
+                .WhenBranch => program.aerr(error.StackBranching2, srcloc, .{ a.*, expect.* }),
             };
         }
     }
@@ -1260,6 +1283,12 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
 
 const testing = std.testing;
 
+const core =
+    \\
+    \\ (word drop  (Any --) [ (asm "g" .Op/Opop) ])
+    \\
+;
+
 fn _testExpectErr(p: []const u8, e: Error) !void {
     // TODO: use testing allocator once mem leaks are fixed
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -1275,6 +1304,9 @@ fn _testExpectErr(p: []const u8, e: Error) !void {
     parser.parse(&lexed) catch unreachable;
 
     try testing.expectError(e, analyse(&program, false));
+    for (program.errors.items) |ej| {
+        std.log.err("{}", .{ej.l});
+    }
     try testing.expectEqual(program.errors.items.len, 1);
 }
 
@@ -1285,4 +1317,11 @@ test "error on stack imbalance when returning" {
 test "error on non-empty stack when returning from main/tests" {
     try _testExpectErr("(word main [ 0 ])", error.StackNotEmpty);
     try _testExpectErr("(word main [ 0s ])", error.StackNotEmpty);
+}
+
+test "error on when clause having different stack effects" {
+    try _testExpectErr("(word main [ t (when [ 0 ] []) ])", error.StackBranching1);
+    try _testExpectErr("(word main [ t (when [ 0 ] [ 0s ]) ])", error.StackBranching1);
+    try _testExpectErr("(word main [ t (when [ 0s ] [ 0 ]) ])", error.StackBranching1);
+    try _testExpectErr("(word main [ t (when [ ] [ 0 ]) ])", error.StackBranching1);
 }

@@ -69,7 +69,7 @@
 (word spc   (                  --              ) [ 0x20 emit                ])
 
 (word print-string (@U8 -- ) [ ldak (while [ 0<> ] [ emit 1+ ldak ]) drop drop ])
-(word print-bool (Bool -- ) [ (when [ "T" ] [ "nil" ]) print-string ])
+(word print-bool (Bool -- ) [ (when [ "T" (as @U8) ] [ "nil" (as @U8) ]) print-string ])
 
 (word print (Any --) [ 16 print-base ])
 (word print-dec (Any --) [ 10 print-base ])
@@ -79,8 +79,7 @@
 	dup sign 0<> (when [
 		"-" print-string
 		abs
-	])
-	(as (USz $1))
+	] [ (as (USz $1)) ])
 	(r move)
 	print-base
 ])
