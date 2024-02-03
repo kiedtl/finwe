@@ -1310,12 +1310,12 @@ fn _testExpectErr(p: []const u8, e: Error) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const talloc = gpa.allocator();
 
-    var lexer = @import("lexer.zig").Lexer.init(p, "<stdin>", talloc);
+    var program = common.Program.init(talloc);
 
+    var lexer = @import("lexer.zig").Lexer.init(&program, p, "<stdin>", talloc);
     const lexed = try lexer.lexList(.Root);
     defer lexer.deinit();
 
-    var program = common.Program.init(talloc);
     var parser = @import("parser.zig").Parser.init(&program, true, talloc);
     parser.parse(&lexed) catch unreachable;
 

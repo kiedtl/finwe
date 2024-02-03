@@ -21,6 +21,24 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
     stderr.print("\x1b[91;1m^\x1b[m\n", .{}) catch unreachable;
     stderr.print("\x1b[91m{s}:\x1b[37;1m ", .{@errorName(e.e)}) catch unreachable;
     switch (e.e) {
+        // Lexer stuff
+        error.InvalidEnumLiteral => stderr.print("Invalid enum literal", .{}) catch unreachable,
+        // HINT: must be UTF-8
+        error.InvalidCharLiteral => stderr.print("Invalid character literal", .{}) catch unreachable,
+        error.InvalidUtf8 => stderr.print("Invalid UTF-8 sequence", .{}) catch unreachable,
+        error.IncompleteEscapeSeq => stderr.print("Incomplete escape sequence", .{}) catch unreachable,
+        error.InvalidEscapeSeq => stderr.print("Invalid escape sequence", .{}) catch unreachable,
+        error.UnterminatedString => stderr.print("Missing end quote", .{}) catch unreachable,
+        error.InvalidToken => stderr.print("Invalid token", .{}) catch unreachable,
+        error.InvalidSignedIndex => stderr.print("Signed type cannot be index", .{}) catch unreachable,
+        error.LoneSigil => stderr.print("Lone @ or # not allowed", .{}) catch unreachable,
+        error.NestedMetadata => stderr.print("Multiple # tokens not allowed", .{}) catch unreachable,
+        error.QuotedMetadata => stderr.print("#[] syntax not implemented", .{}) catch unreachable,
+        error.UnexpectedClosingParen => stderr.print("Expected {s}", .{
+            e.ctx.parentype1.?.toString(),
+        }) catch unreachable,
+
+        // Parser stuff
         error.ExpectedItems => stderr.print("Not enough arguments (min {}, got {})", .{
             e.ctx.usize1.?, e.ctx.usize2.?,
         }) catch unreachable,
@@ -58,12 +76,15 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidFieldType => stderr.print("Type {} cannot be in container field", .{
             TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
+        // Parser + analyser
         error.UnknownLocal => stderr.print("No such variable \"{s}\" in scope", .{
             e.ctx.string1.?,
         }) catch unreachable,
         error.UnknownIdent => stderr.print("No such function \"{s}\" in scope", .{
             e.ctx.string1.?,
         }) catch unreachable,
+
+        // Analyser
         error.GenericNotMatching => stderr.print("Arg {} not included by parameter {}", .{
             TypeFmt.from(e.ctx.burtype1.?, program), TypeFmt.from(e.ctx.burtype2.?, program),
         }) catch unreachable,

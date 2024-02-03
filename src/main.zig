@@ -50,18 +50,19 @@ pub fn main() anyerror!void {
         defer alloc.free(buf);
         _ = try file.readAll(buf);
 
-        var lexer = lexerm.Lexer.init(buf, filename, alloc);
-        const lexed = try lexer.lexList(.Root);
+        var program = common.Program.init(alloc);
+
+        var lexer = lexerm.Lexer.init(&program, buf, filename, alloc);
+        const lexed = lexer.lexList(.Root) catch {
+            assert(program.errors.items.len > 0);
+            errors.printErrors(&program, filename);
+            std.os.exit(1);
+        };
         defer lexer.deinit();
 
-        var program = common.Program.init(alloc);
         program.flag_burdampe = args.args.emit == null;
 
-        var parser = parserm.Parser.init(
-            &program,
-            args.args.@"test" > 0,
-            alloc,
-        );
+        var parser = parserm.Parser.init(&program, args.args.@"test" > 0, alloc);
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
                 errors.printErrors(&program, filename);

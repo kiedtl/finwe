@@ -1331,6 +1331,8 @@ pub const Error = struct {
         ushort2: ?u16 = null,
         analysis1: ?analyser.BlockAnalysis = null,
         analysis2: ?analyser.BlockAnalysis = null,
+        parentype1: ?lexer.Lexer.Stack.Type = null,
+        parentype2: ?lexer.Lexer.Stack.Type = null,
 
         pub fn from(tuple: anytype) Context {
             var new = Context{};
@@ -1358,6 +1360,7 @@ pub const Error = struct {
                     meta.Tag(lexer.Node.NodeType) => "lexnodetype",
                     TypeInfo => "burtype",
                     analyser.BlockAnalysis => "analysis",
+                    lexer.Lexer.Stack.Type => "parentype",
                     else => @typeName(fieldinfo.type),
                 };
                 @field(new, typename ++ nstr) = @field(tuple, fieldinfo.name);

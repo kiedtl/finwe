@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 
 const gpa = &@import("common.zig").gpa;
 const String = @import("common.zig").String;
+const Program = @import("common.zig").Program;
 const Srcloc = @import("common.zig").Srcloc;
 pub const NodeList = std.ArrayList(Node);
 
@@ -85,6 +86,7 @@ pub const Node = struct {
 };
 
 pub const Lexer = struct {
+    program: *Program,
     input: []const u8,
     alloc: mem.Allocator,
     index: usize = 0,
@@ -97,37 +99,63 @@ pub const Lexer = struct {
     pub const Stack = struct {
         type: Type,
 
-        pub const Type = enum { Root, Paren, Bracket };
+        pub const Type = enum {
+            Root,
+            Paren,
+            Bracket,
 
+            pub fn toString(self: Type) []const u8 {
+                return switch (self) {
+                    .Root => "EOF",
+                    .Paren => ")",
+                    .Bracket => "]",
+                };
+            }
+        };
         pub const List = std.ArrayList(Stack);
     };
 
     const Self = @This();
 
     pub const LexerError = error{
-        InvalidMetadata,
-        NoMatchingParen,
         UnexpectedClosingParen,
         InvalidEnumLiteral,
         InvalidCharLiteral,
         InvalidUtf8,
-        BadString,
+        IncompleteEscapeSeq,
+        InvalidEscapeSeq,
         InvalidToken,
-        InvalidIndexType,
+        InvalidSignedIndex,
+        UnterminatedString,
+        LoneSigil,
+        NestedMetadata,
+        QuotedMetadata,
     } || std.fmt.ParseIntError || std.mem.Allocator.Error;
 
-    pub fn init(input: []const u8, filename: []const u8, alloc: mem.Allocator) Self {
+    pub fn init(p: *Program, input: []const u8, filename: []const u8, alloc: mem.Allocator) Self {
         return .{
             .file = filename,
             .input = input,
             .alloc = alloc,
             .stack = Stack.List.init(alloc),
             .metadata = NodeList.init(alloc),
+            .program = p,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.stack.deinit();
+    }
+
+    fn lerr(self: *Lexer, e: LexerError, args: anytype) LexerError {
+        const srcloc = Srcloc{
+            .file = self.file,
+            .line = self.line,
+            .column = self.column,
+        };
+        if (!self.program.forget_errors)
+            self.program.errors.append(.{ .e = e, .l = srcloc, .ctx = @import("common.zig").Error.Context.from(args) }) catch unreachable;
+        return e;
     }
 
     pub fn lexWord(self: *Self, vtype: u21, word: []const u8) LexerError!Node.NodeType {
@@ -137,12 +165,12 @@ pub const Lexer = struct {
                     break :blk switch (vtype) {
                         '$' => Node.NodeType{ .VarNum = node.U8 },
                         'k' => node,
-                        '.' => error.InvalidEnumLiteral, // Cannot be numeric
+                        '.' => self.lerr(error.InvalidEnumLiteral, .{}), // Cannot be numeric
                         ':' => Node.NodeType{
                             .ChildNum = switch (node) {
                                 .U8 => |u| u,
                                 .U16 => |u| u,
-                                .I16, .I8 => return error.InvalidIndexType,
+                                .I16, .I8 => return self.lerr(error.InvalidSignedIndex, .{}),
                                 else => unreachable,
                             },
                         },
@@ -159,7 +187,7 @@ pub const Lexer = struct {
                         const enum_clarifier = mem.indexOfScalar(u8, word, '/');
                         if (vtype == '.' and enum_clarifier != null) {
                             if (enum_clarifier.? == 0) {
-                                return error.InvalidEnumLiteral;
+                                return self.lerr(error.InvalidEnumLiteral, .{});
                             }
                             const a = try self.alloc.alloc(u8, word.len - enum_clarifier.? - 1);
                             const b = try self.alloc.alloc(u8, word.len - (word.len - enum_clarifier.?));
@@ -215,17 +243,17 @@ pub const Lexer = struct {
             '\'' => blk: {
                 const short = mem.endsWith(u8, word, "s");
 
-                var utf8 = (std.unicode.Utf8View.init(if (short) word[0 .. word.len - 1] else word) catch return error.InvalidUtf8).iterator();
-                const encoded_codepoint = utf8.nextCodepointSlice() orelse return error.InvalidCharLiteral;
-                if (utf8.nextCodepointSlice()) |_| return error.InvalidCharLiteral;
-                const codepoint = std.unicode.utf8Decode(encoded_codepoint) catch return error.InvalidUtf8;
+                var utf8 = (std.unicode.Utf8View.init(if (short) word[0 .. word.len - 1] else word) catch return self.lerr(error.InvalidUtf8, .{})).iterator();
+                const encoded_codepoint = utf8.nextCodepointSlice() orelse return self.lerr(error.InvalidCharLiteral, .{});
+                if (utf8.nextCodepointSlice()) |_| return self.lerr(error.InvalidCharLiteral, .{});
+                const codepoint = std.unicode.utf8Decode(encoded_codepoint) catch return self.lerr(error.InvalidUtf8, .{});
                 if (short) {
                     break :blk Node.NodeType{ .Char16 = @intCast(codepoint) };
                 } else {
                     break :blk Node.NodeType{ .Char8 = @intCast(codepoint % 255) };
                 }
             },
-            else => @panic("what were you trying to do anyway"),
+            else => @panic("/dev/sda is on fire"),
         };
     }
 
@@ -242,9 +270,7 @@ pub const Lexer = struct {
     }
 
     pub fn lexString(self: *Self) LexerError!Node.NodeType {
-        if (self.input[self.index] != '"') {
-            return error.BadString; // ERROR: Invalid string
-        }
+        assert(self.input[self.index] == '"');
 
         var buf = String.init(gpa.allocator());
         self.moar(); // skip beginning quote
@@ -258,7 +284,7 @@ pub const Lexer = struct {
                 '\\' => {
                     self.moar();
                     if (self.index == self.input.len) {
-                        return error.BadString; // ERROR: incomplete escape sequence
+                        return self.lerr(error.IncompleteEscapeSeq, .{});
                     }
 
                     // TODO: \xXX, \uXXXX, \UXXXXXXXX
@@ -270,7 +296,7 @@ pub const Lexer = struct {
                         'a' => '\x07',
                         '0' => '\x00',
                         't' => '\t',
-                        else => return error.BadString, // ERROR: invalid escape sequence
+                        else => return self.lerr(error.InvalidEscapeSeq, .{}),
                     };
 
                     buf.append(esc) catch unreachable;
@@ -279,7 +305,7 @@ pub const Lexer = struct {
             }
         }
 
-        return error.BadString; // ERROR: unterminated string
+        return self.lerr(error.UnterminatedString, .{});
     }
 
     pub fn lexValue(self: *Self, vtype: u21) LexerError!Node.NodeType {
@@ -301,7 +327,7 @@ pub const Lexer = struct {
         const word = self.input[oldi..word_end];
         if (word.len == 0) switch (vtype) {
             ':' => return .ChildAmbig,
-            else => return error.InvalidToken,
+            else => return self.lerr(error.InvalidToken, .{}),
         };
 
         for (oldi..word_end - 1) |_|
@@ -326,19 +352,19 @@ pub const Lexer = struct {
             '$', '.', ';', ':', '\'' => try self.lexValue(ch),
             '#', '@' => b: {
                 if (self.index == self.input.len - 1) {
-                    @panic("TODO: lexer: lone @ or #");
+                    return self.lerr(error.LoneSigil, .{});
                 }
 
                 self.moar();
                 const ptr = try self.alloc.create(Node);
                 ptr.* = Node{
-                    .node = (try self.lex()) orelse @panic("TODO: lexer: lone @ or #"),
+                    .node = (try self.lex()) orelse return self.lerr(error.LoneSigil, .{}),
                     .location = .{ .file = self.file, .line = self.line, .column = self.column },
                 };
                 if (ch == '#' and ptr.node == .Metadata)
-                    @panic("Error: nested metadata not allowed (eg ##foo)");
+                    return self.lerr(error.NestedMetadata, .{});
                 if (ch == '#' and ptr.node == .Quote)
-                    @panic("TODO: #[] syntax");
+                    return self.lerr(error.QuotedMetadata, .{}); // TODO
                 break :b if (ch == '@') .{ .At = ptr } else .{ .Metadata = ptr };
             },
             '[' => Node.NodeType{ .Quote = try self.lexList(.Bracket) },
@@ -372,11 +398,13 @@ pub const Lexer = struct {
             const ch = self.input[self.index];
             switch (ch) {
                 ']', ')' => {
-                    const expect: Stack.Type = if (ch == ']') .Bracket else .Paren;
-                    if (self.stack.items.len <= 1 or
-                        self.stack.items[self.stack.items.len - 1].type != expect)
-                    {
-                        return error.UnexpectedClosingParen;
+                    const found: Stack.Type = if (ch == ']') .Bracket else .Paren;
+                    if (self.stack.items.len <= 1) {
+                        return self.lerr(error.UnexpectedClosingParen, .{Stack.Type.Root});
+                    } else if (self.stack.items[self.stack.items.len - 1].type != found) {
+                        return self.lerr(error.UnexpectedClosingParen, .{
+                            self.stack.items[self.stack.items.len - 1].type,
+                        });
                     }
 
                     _ = self.stack.pop();
@@ -385,17 +413,17 @@ pub const Lexer = struct {
                 else => {
                     const node = (try self.lex()) orelse continue;
                     if (node == .Metadata) {
-                        self.metadata.append(Node{ .node = node, .location = .{
+                        try self.metadata.append(Node{ .node = node, .location = .{
                             .file = self.file,
                             .line = self.line,
                             .column = self.column,
-                        } }) catch return error.OutOfMemory;
+                        } });
                     } else {
-                        res.append(Node{ .node = node, .location = .{
+                        try res.append(Node{ .node = node, .location = .{
                             .file = self.file,
                             .line = self.line,
                             .column = self.column,
-                        } }) catch return error.OutOfMemory;
+                        } });
                     }
                 },
             }

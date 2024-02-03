@@ -1269,7 +1269,7 @@ pub const Parser = struct {
             defer parser_.alloc.free(buf);
             _ = try file.readAll(buf);
 
-            var lex = lexer.Lexer.init(buf, path, parser_.alloc);
+            var lex = lexer.Lexer.init(self, buf, path, parser_.alloc);
             const lexed = try lex.lexList(.Root);
             defer lex.deinit();
 
