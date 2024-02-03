@@ -59,6 +59,7 @@
 	3 4 (make C) :bar (should eq 3)
 
 	1 2 (make C) 3 4 (make C) swap :foo (should eq 2)
+	drop
 ])
 
 (test lang_monomorphic_var_static_alloc [

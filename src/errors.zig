@@ -103,6 +103,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             AnalysisFmt.from(&e.ctx.analysis1.?, program),
             AnalysisFmt.from(&e.ctx.analysis2.?, program),
         }) catch unreachable,
+        error.StackNotEmpty => stderr.print("Main and tests must end with empty stack", .{}) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,
         // }) catch unreachable,

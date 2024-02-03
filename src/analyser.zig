@@ -37,6 +37,7 @@ pub const Error = error{
     CannotSplitIntoShort,
     CannotSplitByte,
     StackMismatch,
+    StackNotEmpty,
 };
 
 pub const AnalysisFmt = struct {
@@ -1106,7 +1107,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 fn checkEndState(
     a: *const BlockAnalysis,
     expect: *const BlockAnalysis,
-    chktype: enum { FuncEnd },
+    chktype: enum { FuncEnd, EntryEnd },
     srcloc: Srcloc,
     dry_run: bool,
     program: *Program,
@@ -1115,10 +1116,12 @@ fn checkEndState(
         if (dry_run) {
             return switch (chktype) {
                 .FuncEnd => error.StackMismatch,
+                .EntryEnd => error.StackNotEmpty,
             };
         } else {
             return switch (chktype) {
                 .FuncEnd => program.aerr(error.StackMismatch, srcloc, .{ a.*, expect.* }),
+                .EntryEnd => program.aerr(error.StackNotEmpty, srcloc, .{}),
             };
         }
     }
@@ -1238,15 +1241,18 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
                 assert(!utest.is_analysed);
                 utest.is_analysed = true;
                 _ = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
+                try checkEndState(&utest.analysis, &BlockAnalysis{}, .EntryEnd, d.srcloc, false, program);
             }
         }
     } else {
-        const entrypoint = &program.global_scope.findDeclAny(program, "main").?.node.Decl;
+        const entrypoint_def = program.global_scope.findDeclAny(program, "main").?;
+        const entrypoint = &entrypoint_def.node.Decl;
         entrypoint.calls += 1;
 
         assert(!entrypoint.is_analysed);
         entrypoint.is_analysed = true;
         _ = try analyseBlock(program, entrypoint, entrypoint.body, &entrypoint.analysis, .{});
+        try checkEndState(&entrypoint.analysis, &BlockAnalysis{}, .EntryEnd, entrypoint_def.srcloc, false, program);
     }
 
     try postProcess(program);
@@ -1254,12 +1260,10 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
 
 const testing = std.testing;
 
-test "error on stack imbalance when returning" {
+fn _testExpectErr(p: []const u8, e: Error) !void {
     // TODO: use testing allocator once mem leaks are fixed
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const talloc = gpa.allocator();
-
-    const p = "(word a (-- U8) [ 0 1 ]) (word main [ a ])";
 
     var lexer = @import("lexer.zig").Lexer.init(p, "<stdin>", talloc);
 
@@ -1270,11 +1274,15 @@ test "error on stack imbalance when returning" {
     var parser = @import("parser.zig").Parser.init(&program, true, talloc);
     parser.parse(&lexed) catch unreachable;
 
-    const func = &program.global_scope.findDeclAny(&program, "main").?.node.Decl;
-    func.is_analysed = true;
-    try testing.expectError(
-        error.StackMismatch,
-        analyseBlock(&program, func, func.body, &func.analysis, .{}),
-    );
+    try testing.expectError(e, analyse(&program, false));
     try testing.expectEqual(program.errors.items.len, 1);
+}
+
+test "error on stack imbalance when returning" {
+    try _testExpectErr("(word a (-- U8) [ 0 1 ]) (word main [ a ])", error.StackMismatch);
+}
+
+test "error on non-empty stack when returning from main/tests" {
+    try _testExpectErr("(word main [ 0 ])", error.StackNotEmpty);
+    try _testExpectErr("(word main [ 0s ])", error.StackNotEmpty);
 }

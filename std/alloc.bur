@@ -107,11 +107,11 @@
 		dup 0 100s rot-sbs std/memset8
 		over @ptrs : <-
 		1-
-	])
+	]) drop
 	100s (until [ 0= ] [
 		dup @ptrs : -> de
 		1-
-	])
+	]) drop
 ])
 
 // ( bytes oldptr -- Maybe<newptr> )
@@ -140,6 +140,7 @@
 	1s swap reget ;unwrap (as @U8)
 	dup :0 -> (should eq 'F)
 	dup :1 -> (should eq 'o)
+	drop
 ])
 
 (word de (AnyPtr16 -- ) [
