@@ -43,6 +43,7 @@ pub const Parser = struct {
         UnknownLocal,
         UnknownIdent,
         MissingEnumType,
+        MissingQuoteArity,
         NotAnEnumOrDevice,
         NoSuchType,
         NakedStatements,
@@ -55,6 +56,10 @@ pub const Parser = struct {
         InvalidType,
         InvalidFieldType,
         InvalidKeyword,
+        InvalidStructArg,
+        InvalidEnumType,
+        InvalidBreakpoint,
+        StupidArraySyntax,
     } || mem.Allocator.Error || std.fs.File.GetSeekPosError || std.fs.File.ReadError;
 
     pub fn init(program: *Program, is_testing: bool, alloc: mem.Allocator) Parser {
@@ -209,7 +214,7 @@ pub const Parser = struct {
                                 .field = fld,
                             }) };
                         } else if (@field(TypeInfo.Expr.Tag, field.name) == .Array) {
-                            @panic("Must use []/@[] syntax for arrays");
+                            return self.program.perr(error.StupidArraySyntax, node.location, .{});
                         } else if (@field(TypeInfo.Expr.Tag, field.name) == .Fn) {
                             const new = self.alloc.create(BlockAnalysis) catch unreachable;
                             new.* = try self.parseArity(&lst.items[1]);
@@ -259,7 +264,7 @@ pub const Parser = struct {
                     self.program.forget_errors = false;
                     return ASTNodeList.init(self.alloc);
                 } else |_| {
-                    @panic("need arity for quotes");
+                    return self.program.perr(error.MissingQuoteArity, q[0].location, .{});
                 }
             } else {
                 out_arity.* = try self.parseArity(&q[0]);
@@ -344,12 +349,9 @@ pub const Parser = struct {
                 .node = .{ .GetIndex = .{ .ind = .stk_unresolved } },
                 .srcloc = node.location,
             },
-            .At => |atsub| switch (atsub.node) {
-                .Keyword => |s| ASTNode{
-                    .node = .{ .VRef = .{ .name = s } },
-                    .srcloc = node.location,
-                },
-                else => @panic("@ can only be used on keywords, unless in type expression"),
+            .At => |atsub| ASTNode{
+                .node = .{ .VRef = .{ .name = try self.expectNode(.Keyword, atsub) } },
+                .srcloc = node.location,
             },
             .Var => |s| ASTNode{
                 .node = .{ .VDeref = .{ .name = s } },
@@ -376,7 +378,7 @@ pub const Parser = struct {
             for (list.items) |item| {
                 const t = try self.parseType(&item);
                 if (!t.isGeneric(self.program))
-                    @panic("you put this as an arg? really?");
+                    return self.program.perr(error.InvalidStructArg, item.location, .{t});
                 buff.append(t) catch unreachable;
             }
             break :b buff;
@@ -437,7 +439,7 @@ pub const Parser = struct {
             const name = try self.expectNode(.Keyword, &ast[1]);
             const etyp = try self.parseType(&ast[2]);
             if (etyp != .U8 and etyp != .U16)
-                @panic("Enum type can only be U8 or U16");
+                return self.program.perr(error.InvalidEnumType, ast[2].location, .{});
             var fields = ASTNode.TypeDef.EnumField.AList.init(self.alloc);
             for (ast[3..]) |node| switch (node.node) {
                 .Quote => |q| {
@@ -768,7 +770,7 @@ pub const Parser = struct {
                         const str = self.program.statics.items[v.typ.StaticPtr];
                         b = .{ .StdoutShouldEq = str.default.String };
                     } else {
-                        @panic("Invalid breakpoint type");
+                        return self.program.perr(error.InvalidBreakpoint, ast[1].location, .{t});
                     }
 
                     break :b ASTNode{

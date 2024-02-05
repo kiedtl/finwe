@@ -4,12 +4,39 @@ const meta = std.meta;
 const assert = std.debug.assert;
 
 const common = @import("common.zig");
+const lexer = @import("lexer.zig");
 const Program = common.Program;
 const Error = common.Error;
 const Srcloc = common.Srcloc;
 const TypeFmt = common.TypeFmt;
 const gpa = &common.gpa;
 const AnalysisFmt = @import("analyser.zig").AnalysisFmt;
+
+pub fn lexerNodeToString(self: lexer.Node.Tag) []const u8 {
+    return switch (self) {
+        .Char8 => "char8",
+        .Char16 => "char16",
+        .U8 => "u8",
+        .U16 => "u16",
+        .I8 => "i8",
+        .I16 => "i16",
+        .String => "string",
+        .EnumLit => "enum literal",
+        .Keyword => "identifier",
+        .MethodCall => "method call",
+        .Var => "variable",
+        .VarNum => "numerical variable",
+        .Child => "child-getter",
+        .ChildNum => "indicer",
+        .ChildAmbig => "child-getter",
+        .List => "list",
+        .Quote => "quote",
+        .At => unreachable,
+        .Metadata => "metadata",
+        .T => "t",
+        .Nil => "nil",
+    };
+}
 
 pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
     var stderr = std.io.getStdErr().writer();
@@ -47,8 +74,8 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.UnexpectedItems => stderr.print("Too many arguments (max {}, got {})", .{
             e.ctx.usize1.?, e.ctx.usize2.?,
         }) catch unreachable,
-        error.ExpectedNode => stderr.print("Expected {}, got {}", .{
-            e.ctx.lexnodetype1.?, e.ctx.lexnodetype2.?,
+        error.ExpectedNode => stderr.print("Expected {s}, got {s}", .{
+            lexerNodeToString(e.ctx.lexnodetype1.?), lexerNodeToString(e.ctx.lexnodetype2.?),
         }) catch unreachable,
         error.ExpectedValue => stderr.print("Expected value, got {}", .{
             e.ctx.lexnodetype1.?,
@@ -80,6 +107,18 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidFieldType => stderr.print("Type {} cannot be in container field", .{
             TypeFmt.from(e.ctx.burtype1.?, program),
         }) catch unreachable,
+        // HINT: non-generic types cannot be used as template args
+        error.InvalidStructArg => stderr.print("{} is not generic", .{
+            TypeFmt.from(e.ctx.burtype1.?, program),
+        }) catch unreachable,
+        error.StupidArraySyntax => stderr.print("Just use normal []/@[] array syntax you doofus", .{}) catch unreachable,
+        error.MissingQuoteArity => stderr.print("Anonymous functions require explicit arity", .{}) catch unreachable,
+        // HINT: enum type can only be either U16 or U8
+        error.InvalidEnumType => stderr.print("Only U16 or U8 may be used as enum type", .{}) catch unreachable,
+        error.InvalidBreakpoint => stderr.print("Unknown breakpoint type \"{s}\"", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
+
         // Parser + analyser
         error.UnknownLocal => stderr.print("No such variable \"{s}\" in scope", .{
             e.ctx.string1.?,
