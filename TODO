@@ -38,8 +38,8 @@ x Refactoring
   x Decls within decls
 x Metadata
 - Error messages and context
-  - Existing
-    - Lexer
+  x Existing
+    x Lexer
     x Parser
     x Analyser
   - Remove panics (except typeref stuff)
@@ -53,6 +53,9 @@ x Metadata
   - Cond branches
 x Fix: inlining func w/ early return
 x Fix: inlining func w/ whens/conds/loops
+- Burdampe
+  - docs
+  - mailing list discussion + proposal
 
 *** v0.1 release ***
 
@@ -60,11 +63,13 @@ x Fix: inlining func w/ whens/conds/loops
 - Errors: additional lines for long messages/context (e.g. error.StackBranching*)
 - Fix: proper error reporting on type expr evaluation error
 - Fix: memory leaks
+- Proper scoping per block, not per decl
 - #[] syntax
 - Allow wild w/o block
 - Loops: break/continue
 - Fixed-point
-  - Printing
+  - 8:8
+  - 16:16
 - Solve Effects issue
   - i.e. how to represent effect of quote in arity def?
   - would require being able to "expand" typeref...
