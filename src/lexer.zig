@@ -436,8 +436,10 @@ pub const Lexer = struct {
 const testing = std.testing;
 
 test "basic lexing" {
+    var p = Program.init(testing.allocator);
+
     const input = "0xfe 0xf1 0xf0s fum (test :foo bar 0xAB) (12 ['ë] :0) ;fab";
-    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
+    var lexer = Lexer.init(&p, input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
@@ -497,8 +499,10 @@ test "basic lexing" {
 }
 
 test "enum literals" {
+    var p = Program.init(testing.allocator);
+
     const input = ".foo .bar/baz";
-    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
+    var lexer = Lexer.init(&p, input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
@@ -515,8 +519,10 @@ test "enum literals" {
 }
 
 test "string literals" {
+    var p = Program.init(testing.allocator);
+
     const input = "\"foo\"";
-    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
+    var lexer = Lexer.init(&p, input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);
@@ -528,8 +534,10 @@ test "string literals" {
 }
 
 test "sigils lexing" {
+    var p = Program.init(testing.allocator);
+
     const input = "bar $baz @foo @(foo) (@foo) @[@(@foo)]";
-    var lexer = Lexer.init(input, "<test>", std.testing.allocator);
+    var lexer = Lexer.init(&p, input, "<test>", std.testing.allocator);
     const result = try lexer.lexList(.Root);
     defer lexer.deinit();
     defer Node.deinitMain(result, std.testing.allocator);

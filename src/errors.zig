@@ -169,7 +169,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             AnalysisFmt.from(&e.ctx.analysis2.?, program),
         }) catch unreachable,
         error.StackNotEmpty => stderr.print("Main and tests must end with empty stack", .{}) catch unreachable,
-        error.StackBranching1 => stderr.print("Stack different across when branches (if: {s}; else: {s})", .{
+        error.StackBranching1 => stderr.print("Stack different across branches ({s} vs {s})", .{
             AnalysisFmt.from(&e.ctx.analysis2.?, program),
             AnalysisFmt.from(&e.ctx.analysis1.?, program),
         }) catch unreachable,

@@ -1046,12 +1046,15 @@ pub const ASTNode = struct {
     pub const Cond = struct {
         branches: Branch.AList,
         else_branch: ?ASTNodeList,
+        else_srcloc: ?Srcloc,
 
         pub const Branch = struct {
             cond: ASTNodeList,
+            cond_srcloc: Srcloc,
             cond_prep: CondPrep,
             cond_arity: ?analyser.BlockAnalysis = null,
             body: ASTNodeList,
+            body_srcloc: Srcloc,
 
             pub const AList = std.ArrayList(Branch);
         };

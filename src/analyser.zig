@@ -790,6 +790,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 break;
             },
             .Cond => |*cond| {
+                assert(!ctx.r_blk);
+                //const tos = a.stack.last();
+
                 for (cond.branches.items) |*branch| {
                     if (branch.cond_arity) |*arity| {
                         arity.* = try arity.resolveTypeRefs(parent.scope, parent.arity, program);
@@ -803,22 +806,37 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
 
                 const olda = a.*;
+                var firsta: ?BlockAnalysis = null;
+
                 for (cond.branches.items) |*branch| {
                     a.* = olda;
-                    const oldlen = a.stack.len;
                     try branch.cond_prep.execute(a);
                     _ = try analyseBlock(program, parent, branch.cond, a, ctx);
-                    assert(a.stack.last().? == .Bool);
-                    if (a.stack.len != oldlen + 1) {
-                        std.log.info("uh oh at {}", .{node.srcloc});
-                    }
-                    assert(a.stack.len == oldlen + 1);
+
+                    // TODO: check cond conforms to arity
+                    // (current code doesn't work)
+                    //const arity = branch.cond_arity orelse
+                    //    BlockAnalysis{
+                    //    .args = VTList16.init(&[_]TypeInfo{tos.?}),
+                    //    .stack = VTList16.init(&[_]TypeInfo{ tos.?, .Bool }),
+                    //};
+                    //try checkEndState(a, &arity, .CondCond, branch.cond_srcloc,
+                    //                  false, program);
+
                     _ = a.stack.pop() catch unreachable;
                     _ = try analyseBlock(program, parent, branch.body, a, ctx);
+
+                    if (firsta) |firsta_| {
+                        try checkEndState(a, &firsta_, .CondBody, branch.body_srcloc, false, program);
+                    } else {
+                        firsta = a.*;
+                    }
                 }
+
                 if (cond.else_branch) |else_br| {
                     a.* = olda;
                     _ = try analyseBlock(program, parent, else_br, a, ctx);
+                    try checkEndState(a, &firsta.?, .CondBody, cond.else_srcloc.?, false, program);
                 }
 
                 // TODO: do branch arity checking
@@ -1138,26 +1156,34 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 fn checkEndState(
     a: *const BlockAnalysis,
     expect: *const BlockAnalysis,
-    chktype: enum { FuncEnd, EntryEnd, WhenElseBranch, WhenBranch, LoopBody },
+    chktype: enum {
+        FuncEnd,
+        EntryEnd,
+        WhenElseBranch,
+        WhenBranch,
+        LoopBody,
+        CondCond,
+        CondBody,
+    },
     srcloc: Srcloc,
     dry_run: bool,
     program: *Program,
 ) !void {
-    if (!expect.eqExactStacks(a)) {
+    if (a.args.len != 0 or a.rargs.len != 0 or !expect.eqExactStacks(a)) {
         if (dry_run) {
             return switch (chktype) {
-                .FuncEnd => error.StackMismatch,
+                .CondCond, .FuncEnd => error.StackMismatch,
                 .EntryEnd => error.StackNotEmpty,
                 .WhenElseBranch => error.StackBranching1,
-                .WhenBranch => error.StackBranching2,
+                .CondBody, .WhenBranch => error.StackBranching2,
                 .LoopBody => error.StackImbalanceLoop,
             };
         } else {
             return switch (chktype) {
-                .FuncEnd => program.aerr(error.StackMismatch, srcloc, .{ a.*, expect.* }),
+                .CondCond, .FuncEnd => program.aerr(error.StackMismatch, srcloc, .{ a.*, expect.* }),
                 .EntryEnd => program.aerr(error.StackNotEmpty, srcloc, .{}),
                 .WhenElseBranch => program.aerr(error.StackBranching1, srcloc, .{ a.*, expect.* }),
-                .WhenBranch => program.aerr(error.StackBranching2, srcloc, .{ a.*, expect.* }),
+                .CondBody, .WhenBranch => program.aerr(error.StackBranching2, srcloc, .{ a.*, expect.* }),
                 .LoopBody => program.aerr(error.StackImbalanceLoop, srcloc, .{ a.*, expect.* }),
             };
         }
@@ -1347,5 +1373,26 @@ test "error on loop body stack effects" {
         "(word main [ 0 (while [ 0= ] [ 0 ]) ])",
     }) |s| {
         try _testExpectErr(core ++ s, error.StackImbalanceLoop);
+    }
+}
+
+// test "error on mismatched stack effects in cond cond block" {
+//     inline for (&[_][]const u8{
+//         "(word main [ 0 (cond [ ( -- Bool) 0= ] []) ])",
+//         "(word main [ 0 (cond [ ( U8 -- Bool) ] []) ])",
+//         "(word main [ 0 (cond [ ( U8 U8 -- Bool) = = ] []) ])",
+//     }) |s| {
+//         try _testExpectErr(core ++ s, error.StackImbalanceLoop);
+//     }
+// }
+
+test "error on cond bodies having differing stack effects" {
+    inline for (&[_][]const u8{
+        "(word main [ 0 (cond [ 0= ] [ 1 ] [ 1s ]) ])",
+        "(word main [ 0 (cond [ 0= ] [] [ 1 = ] [ 0 ]) ])",
+        "(word main [ 0 (cond [ 0= ] [] [ 1 = ] [] [ 2 = ] [ 0s ]) ])",
+        "(word main [ 0 (cond [ 0= ] [ 9s ] [ 1 = ] [ 0 ]) ])",
+    }) |s| {
+        try _testExpectErr(core ++ s, error.StackBranching2);
     }
 }

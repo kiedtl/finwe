@@ -825,6 +825,7 @@ pub const Parser = struct {
                     var cond_node = ASTNode.Cond{
                         .branches = ASTNode.Cond.Branch.AList.init(self.alloc),
                         .else_branch = null,
+                        .else_srcloc = null,
                     };
 
                     if (ast.len == 1) {
@@ -841,15 +842,18 @@ pub const Parser = struct {
                         const ast_body = try self.expectNode(.Quote, &ast[i + 1]);
                         try cond_node.branches.append(ASTNode.Cond.Branch{
                             .cond = cond,
+                            .cond_srcloc = ast[i].location,
                             .cond_arity = arity,
                             .cond_prep = .unchecked,
                             .body = try self.parseStatements(ast_body.items, p_scope),
+                            .body_srcloc = ast[i + 1].location,
                         });
                     }
 
                     if (ast[1..].len % 2 == 1) {
                         const q = try self.expectNode(.Quote, &ast[ast.len - 1]);
                         cond_node.else_branch = try self.parseStatements(q.items, p_scope);
+                        cond_node.else_srcloc = ast[ast.len - 1].location;
                     }
 
                     break :b ASTNode{
