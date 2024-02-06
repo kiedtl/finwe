@@ -143,8 +143,9 @@
 			[ 2 = ] [ "2" print-string nl ]
 			[ 3 = ] [ "3" print-string nl ]
 			[ 4 = ] [ "4" print-string nl ]
-			[ drop "???" print-string nl ]
+			[ "???" print-string nl ]
 		)
+		drop
 	])
 	0 dostuff 1 dostuff 2 dostuff 3 dostuff 4 dostuff 5 dostuff
 	(should stdout-eq "0\n1\n2\n3\n4\n???\n")
