@@ -36,11 +36,13 @@ pub const Error = error{
     StructNotForStack,
     CannotSplitIntoShort,
     CannotSplitByte,
+    StackUnderflow,
     StackMismatch,
     StackNotEmpty,
     StackBranching1,
     StackBranching2,
     StackImbalanceLoop,
+    ExpectedStruct,
 };
 
 pub const AnalysisFmt = struct {
@@ -186,15 +188,14 @@ pub const BlockAnalysis = struct {
         return r;
     }
 
-    fn _getArgForInd(arglist: *const BlockAnalysis, paramlen: usize, i: usize, caller: ?*ASTNode) Error!TypeInfo {
+    fn _getArgForInd(arglist: *const BlockAnalysis, paramlen: usize, i: usize, caller: ?*ASTNode, p: *Program) Error!TypeInfo {
         const j = paramlen - (i + 1);
         return if (j < arglist.stack.len)
             arglist.stack.constSlice()[arglist.stack.len - j - 1]
         else if ((j - arglist.stack.len) < arglist.args.len)
             arglist.args.constSlice()[arglist.args.len - (j - arglist.stack.len) - 1]
         else {
-            std.log.err("{}:{}", .{ caller.?.srcloc.line, caller.?.srcloc.column });
-            @panic("can't call generic func from non-arity func");
+            return p.aerr(error.StackUnderflow, caller.?.srcloc, .{i + 1});
         };
     }
 
@@ -213,7 +214,7 @@ pub const BlockAnalysis = struct {
         for (refs.constSlice()) |ref| if (ref.n < i and !ref.r)
             try _resolveFullyRecurse(r, caller, scope, call_node, p, ref.n, dry_run);
 
-        const calleritem = try _getArgForInd(caller, r.args.len, i, call_node);
+        const calleritem = try _getArgForInd(caller, r.args.len, i, call_node, p);
         const resolved = try _resolveFully(r.args.slice()[i], calleritem, scope, r.*, call_node, p, dry_run);
 
         if (!resolved.doesInclude(calleritem, p)) {
@@ -486,17 +487,11 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
             //a.rstack.append(.Ptr16) catch unreachable;
         },
         .Obrk => {},
+        .Oraw, .Olit => @panic("TODO: analyser: LIT/<raw>"),
         else => {
             std.log.info("{} not implmented", .{i});
             @panic("todo");
         },
-        // .Oraw => {}, // TODO: panic and refuse to analyse block
-        // .Olit => @panic("todo"), // TODO: panic and refuse to analyse block
-        // .Ojmp => a.args.append(.Ptr8) catch unreachable,
-        // .Ojcn => {
-        //     a.args.append(.Bool) catch unreachable;
-        //     a.args.append(.Ptr8) catch unreachable;
-        // },
     }
 
     if (i.keep) a.args.clear();
@@ -911,15 +906,20 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 if (gind.ind == .known) {
                     indtype = null;
-                    target = a.stack.pop() catch @panic("nuh uh");
+                    target = a.stack.pop() catch
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{});
                     gind.order = .moot;
                 } else if (a.stack.last().? != .U8 and a.stack.last().? != .U16) {
-                    target = a.stack.pop() catch @panic("nuh uh");
-                    indtype = a.stack.pop() catch @panic("nuh uh x2");
+                    target = a.stack.pop() catch
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{});
+                    indtype = a.stack.pop() catch
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{@as(usize, 2)});
                     gind.order = .ti;
                 } else {
-                    indtype = a.stack.pop() catch @panic("nuh uh x2");
-                    target = a.stack.pop() catch @panic("nuh uh");
+                    indtype = a.stack.pop() catch
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{});
+                    target = a.stack.pop() catch
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{@as(usize, 2)});
                     gind.order = .it;
                 }
 
@@ -977,7 +977,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 // error message: (replacing nuh uh)
                 // Error: Need to know type at this point
                 //  Hint: Try explicit cast.
-                const b = a.stack.last() orelse @panic("nuh uh");
+                const b = a.stack.last() orelse
+                    return program.aerr(error.StackUnderflow, node.srcloc, .{});
                 const t = switch (b) {
                     // TODO: Ptr8 (it's easy, just change ptrize16 to be more generic)
                     .Ptr16 => |ptr| b: {
@@ -1037,12 +1038,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     .RCheckpoint => unreachable, // added by analyser only
                     .StdoutShouldEq => {},
                     .TosShouldNeqSos, .TosShouldEqSos => {
-                        const tos = a.stack.pop() catch {
-                            @panic("Must have known stack contents before breakpoint");
-                        };
-                        const sos = a.stack.pop() catch {
-                            @panic("Must have known stack contents before breakpoint");
-                        };
+                        const tos = a.stack.pop() catch
+                            return program.aerr(error.StackUnderflow, node.srcloc, .{});
+                        const sos = a.stack.pop() catch
+                            return program.aerr(error.StackUnderflow, node.srcloc, .{@as(usize, 2)});
                         if (!tos.doesInclude(sos, program) or
                             tos.bits(program) != sos.bits(program))
                         {
@@ -1055,9 +1054,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
                     },
                     .TosShouldNeq, .TosShouldEq => |v| {
-                        const tos = a.stack.pop() catch {
-                            @panic("Must have known stack contents before breakpoint");
-                        };
+                        const tos = a.stack.pop() catch
+                            return program.aerr(error.StackUnderflow, node.srcloc, .{});
                         if (!tos.doesInclude(v.typ, program) or
                             tos.bits(program) != v.typ.bits(program))
                         {
@@ -1079,7 +1077,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (c.resolved2.bits(program)) |b| if (b != 8)
                         return program.aerr(error.CannotSplitIntoShort, node.srcloc, .{});
 
-                    const into = srcstk.last() orelse @panic("nah");
+                    const into = srcstk.last() orelse
+                        return program.aerr(error.StackUnderflow, node.srcloc, .{});
 
                     if (into.bits(program)) |b| if (b != 16)
                         return program.aerr(error.CannotSplitByte, node.srcloc, .{});
@@ -1100,13 +1099,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                     make.resolved = try make.original.resolveTypeRef(parent.scope, parent.arity, program);
                     var b = BlockAnalysis{};
+                    if (make.resolved != .Struct) {
+                        return program.aerr(error.ExpectedStruct, node.srcloc, .{make.resolved});
+                    }
                     if (make.resolved.size(program)) |sz| {
                         if (sz > 2) {
                             return program.aerr(error.StructNotForStack, node.srcloc, .{make.resolved});
                         }
-                    }
-                    if (make.resolved != .Struct) {
-                        @panic("Type must have resolved to struct at this point");
                     }
                     const s = program.types.items[make.resolved.Struct];
                     for (s.def.Struct.fields.items) |field|

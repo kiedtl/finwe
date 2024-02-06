@@ -182,6 +182,15 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             AnalysisFmt.from(&e.ctx.analysis1.?, program),
             AnalysisFmt.from(&e.ctx.analysis2.?, program),
         }) catch unreachable,
+        // HINT (if non-arity func): stack contents must be comptime-known at this point
+        error.StackUnderflow => if (e.ctx.usize1) |index| {
+            stderr.print("Stack underflow (at index {})", .{index}) catch unreachable;
+        } else {
+            stderr.print("Stack underflow", .{}) catch unreachable;
+        },
+        error.ExpectedStruct => stderr.print("Expected struct type, got {}", .{
+            TypeFmt.from(e.ctx.burtype1.?, program),
+        }) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,
         // }) catch unreachable,
