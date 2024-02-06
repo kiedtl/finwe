@@ -22,15 +22,15 @@
 )
 
 (device Console 0x10
-	[vector @(Fn ( U8 -- ))]
-	[read                U8]
-	[exec                U8]    // ? (not documented)
-	[mode                U8]    // ? (not documented)
-	[dead                U8]    // ? (not documented)
-	[exit                U8]    // ? (not documented)
-	[type       ConsoleType]
-	[write               U8]    // stdout
-	[error               U8]    // stderr
+	[vector @(Fn (U8 --))]
+	[read               U8]
+	[exec               U8]  // ? (not documented)
+	[mode               U8]  // ? (not documented)
+	[dead               U8]  // ? (not documented)
+	[exit               U8]  // ? (not documented)
+	[type      ConsoleType]
+	[write              U8]  // stdout
+	[error              U8]  // stderr
 )
 
 (device Screen 0x20
