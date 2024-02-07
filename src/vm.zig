@@ -365,6 +365,77 @@ pub const VM = struct {
         _ = emu_end(&self.uxn);
     }
 
+    fn executeExpansionCmd(self: *VM, cmdaddr: u16) void {
+        switch (self.uxn.ram[cmdaddr]) {
+            0x40 => {
+                self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+            },
+            0x41 => {
+                const begin = @as(u16, self.uxn.ram[cmdaddr + 1]) << 8 |
+                    self.uxn.ram[cmdaddr + 2];
+                const count = @as(u16, self.uxn.ram[cmdaddr + 3]) << 8 |
+                    self.uxn.ram[cmdaddr + 4];
+
+                if (self._findProtectedRangeContaining(begin)) |i| {
+                    const stderr = std.io.getStdErr().writer();
+                    const existing = self.protected.items[i];
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Range {x:0>4} already protected (in {x:0>4}..{x:0>4})\n", .{
+                        begin, existing.a, existing.b,
+                    }) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Initial protection:\n", .{}) catch unreachable;
+                    self.printBacktrace(&existing.rst, existing.rst_ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                } else {
+                    self.protected.append(.{
+                        .a = begin,
+                        .b = begin + count,
+                        .rst = self.uxn.rst.dat,
+                        .rst_ptr = self.uxn.rst.ptr,
+                    }) catch unreachable;
+                }
+            },
+            0x42 => {
+                const paddr = @as(u16, self.uxn.ram[cmdaddr + 1]) << 8 |
+                    self.uxn.ram[cmdaddr + 2];
+                if (self._findProtectedRangeStrict(paddr)) |i| {
+                    _ = self.protected.swapRemove(i);
+                } else {
+                    const stderr = std.io.getStdErr().writer();
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Bad range to unprotect {x:0>4}\n", .{paddr}) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                }
+            },
+            0x43 => {
+                self.is_privileged = true;
+            },
+            0x44 => {
+                self.is_privileged = false;
+            },
+            0x45 => {
+                const paddr = @as(u16, self.uxn.ram[cmdaddr + 1]) << 8 |
+                    self.uxn.ram[cmdaddr + 2];
+                if (self._findProtectedRangeContaining(paddr) == null) {
+                    const stderr = std.io.getStdErr().writer();
+                    _printHappyPercent(stderr);
+                    stderr.print("Protection exception\n", .{}) catch unreachable;
+                    stderr.print("Address {x:0>4} not protected\n", .{paddr}) catch unreachable;
+                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    stderr.print("Aborting.\n", .{}) catch unreachable;
+                    std.os.exit(1);
+                }
+            },
+            else => unreachable,
+        }
+    }
+
     fn _findProtectedRangeStrict(self: *VM, addr: u16) ?usize {
         return for (self.protected.items, 0..) |prange, i| {
             if (prange.a == addr) break i;
@@ -410,84 +481,16 @@ pub const VM = struct {
 pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     const self = @fieldParentPtr(VM, "uxn", u);
     switch (addr) {
+        0x03 => {
+            const cmdaddr = @as(u16, u.*.dev[0x02]) << 8 | u.*.dev[0x03];
+            switch (self.uxn.ram[cmdaddr]) {
+                0x40...0x45 => self.executeExpansionCmd(cmdaddr),
+                else => base_emu_deo(u, addr),
+            }
+        },
         0x0e => switch (u.*.dev[0x0e]) {
             0x0b => if (self.is_testing) {
                 self.is_breakpoint = true;
-            },
-            0x40 => {
-                self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
-            },
-            0x41 => {
-                //
-                // TODO: rst
-                //
-                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
-                const count = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
-                const begin = @as(u16, @intCast((wst - @as(u8, 3)).*)) << 8 | (wst - @as(u8, 2)).*;
-                self.uxn.wst.ptr -= 4;
-                if (self._findProtectedRangeContaining(begin)) |i| {
-                    const stderr = std.io.getStdErr().writer();
-                    const existing = self.protected.items[i];
-                    _printHappyPercent(stderr);
-                    stderr.print("Protection exception\n", .{}) catch unreachable;
-                    stderr.print("Range {x:0>4} already protected (in {x:0>4}..{x:0>4})\n", .{
-                        begin, existing.a, existing.b,
-                    }) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
-                    stderr.print("Initial protection:\n", .{}) catch unreachable;
-                    self.printBacktrace(&existing.rst, existing.rst_ptr);
-                    stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
-                } else {
-                    self.protected.append(.{
-                        .a = begin,
-                        .b = begin + count,
-                        .rst = self.uxn.rst.dat,
-                        .rst_ptr = self.uxn.rst.ptr,
-                    }) catch unreachable;
-                }
-            },
-            0x42 => {
-                //
-                // TODO: rst
-                //
-                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
-                const paddr = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
-                self.uxn.wst.ptr -= 2;
-                if (self._findProtectedRangeStrict(paddr)) |i| {
-                    _ = self.protected.swapRemove(i);
-                } else {
-                    const stderr = std.io.getStdErr().writer();
-                    _printHappyPercent(stderr);
-                    stderr.print("Protection exception\n", .{}) catch unreachable;
-                    stderr.print("Bad range to unprotect {x:0>4}\n", .{paddr}) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
-                    stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
-                }
-            },
-            0x43 => {
-                self.is_privileged = true;
-            },
-            0x44 => {
-                self.is_privileged = false;
-            },
-            0x45 => {
-                //
-                // TODO: rst
-                //
-                const wst: [*c]u8 = @ptrCast(&self.uxn.wst.dat[self.uxn.wst.ptr -| 1]);
-                const paddr = @as(u16, @intCast((wst - @as(u8, 1)).*)) << 8 | wst.*;
-                self.uxn.wst.ptr -= 2;
-                if (self._findProtectedRangeContaining(paddr) == null) {
-                    const stderr = std.io.getStdErr().writer();
-                    _printHappyPercent(stderr);
-                    stderr.print("Protection exception\n", .{}) catch unreachable;
-                    stderr.print("Address {x:0>4} not protected\n", .{paddr}) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
-                    stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
-                }
             },
             else => base_emu_deo(u, addr),
         },
