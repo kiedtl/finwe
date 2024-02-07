@@ -221,7 +221,7 @@ pub const BlockAnalysis = struct {
             if (dry_run) {
                 return error.TypeNotMatching;
             } else {
-                return p.aerr(error.TypeNotMatching, call_node.?.srcloc, .{});
+                return p.aerr(error.TypeNotMatching, call_node.?.srcloc, .{ calleritem, resolved });
             }
         }
 
