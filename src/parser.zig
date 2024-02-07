@@ -1181,7 +1181,7 @@ pub const Parser = struct {
 
                 // Do variables, but ONLY global scope
                 //
-                if (parent == null) switch (node.node) {
+                if (parent == null or parent.?.node == .Import) switch (node.node) {
                     .VDecl => |*vd| {
                         scope.locals.append(.{
                             .name = vd.name,
