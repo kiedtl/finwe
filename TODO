@@ -87,6 +87,7 @@ x Burdampe
   - Remove Header/guard* when burdampe is used
 - New: Constant pointers, (const) builtin
   - Constant version of devs (for readonly ports)?
+- Fix: proper precedence rules for multimethods
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
@@ -115,3 +116,5 @@ Warnings
 - Sprite structs can have metadata to warn if 0-initialized (either not enough
   data or no data)
   - #(warn data-zero-init) #(warn data-incomplete-init)
+- Certain structs should not be initialized w/ make()
+  - e.g. fxpt
