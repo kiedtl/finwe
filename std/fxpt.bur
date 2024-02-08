@@ -1,0 +1,81 @@
+// 8:8 fixed point
+
+(use* std)
+(use* varvara)
+
+(struct Fxpt
+	[int I8]
+	[frc U8]
+)
+
+(word from-single (I8 -- Fxpt) [
+	0 (wild (I8 U8 -- Fxpt) [])
+])
+
+(word from (I8 U8 -- Fxpt) [
+	(let bases [U16 3] [ 10s 100s 1000s ])
+	(as U16)
+	dup
+		dup 9s > (as U8) move
+		99s > (as U8)
+		(r move) +
+		@bases : ->
+	swap 0x100s * swap /
+	move
+	0 (wild (I8 U8 -- I16) [])
+	(r move) +
+	(as Fxpt)
+])
+
+#(method Fxpt) (word add (Fxpt Fxpt -- Fxpt) [ (as I16 I16) + (as Fxpt) ])
+#(method Fxpt) (word sub (Fxpt Fxpt -- Fxpt) [
+	//(split U8 U8) swap move move
+	//(split U8 U8) swap (r move) (r move)
+	//(wild (U8 U8 U8 U8 -- U16 U16) [])
+	(as I16 I16)
+	-
+	(as Fxpt) 
+])
+
+// p = (ai*ai)<<frac_bits + ai*bf + af*bi + (af*bf)>>frac_bits&frac_bits
+#(method Fxpt) (word mul (Fxpt Fxpt -- Fxpt) [
+	2dup (as I16 I16) signb swap signb beor move
+
+	(let int1 U16) (let frc1 U16)
+		(split I8 U8) (as U16) @frc1 <- abs (as U16) @int1 <-
+	(let int2 U16) (let frc2 U16)
+		(split I8 U8) (as U16) @frc2 <- abs (as U16) @int2 <-
+
+	$int1 $int2 * 0x80 bsft
+	$int1 $frc2 * +
+	$frc1 $int2 * +
+	$frc1 $frc2 * 0x08 bsft 0xffs band +
+
+	(r move) 0<> (when [ bnot 1+ ])
+	(as Fxpt)
+])
+
+// q = dvd * (1/dvs)
+#(method Fxpt) (word div (Fxpt Fxpt -- Fxpt) [
+	(as I16 I16) 2dup signb swap signb beor move
+	abs 0x8000s swap /
+	swap abs
+	(as Fxpt Fxpt) ;mul 0x10 bsft (as Fxpt)
+	(r move) 0<> (when [ bnot 1+ (as Fxpt) ])
+	(as Fxpt)
+])
+
+(word intdiv (Fxpt I8 -- Fxpt) [
+	sext (as I16 I16) / (as Fxpt)
+])
+
+#(method Fxpt) (word negate (Fxpt -- Fxpt) [
+	(split I8 U8) swap -1i * swap
+	(wild (I8 U8 -- Fxpt) [])
+])
+
+#(method Fxpt) (word print (Fxpt -- ) [
+	(as I16) dup neg? (when [ '- emit abs ] [ (as U16) ])
+	(split I8 U8) swap print-dec '. emit
+	(as U16) 100s * 0x100s / print-dec
+])
