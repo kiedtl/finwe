@@ -1134,11 +1134,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 var casta = BlockAnalysis{};
                 const stk = if (ctx.r_blk) &a.rstack else &a.stack;
+                const dststk = if (ctx.r_blk) &casta.rstack else &casta.stack;
+                const dstarg = if (ctx.r_blk) &casta.rargs else &casta.args;
+                c.ret = ctx.r_blk;
 
                 for (c.resolved.constSlice(), 0..) |resolved, i| {
-                    const from = stk.last() orelse .Any;
-                    casta.args.append(from) catch unreachable;
-                    casta.stack.append(resolved) catch unreachable;
+                    const find = stk.len - i - 1;
+                    const from = if (i >= stk.len) .Any else stk.slice()[find];
+                    dstarg.append(from) catch unreachable;
+                    dststk.append(resolved) catch unreachable;
                     if (!from.isGeneric(program))
                         c.from.slice()[i] = from;
                 }
