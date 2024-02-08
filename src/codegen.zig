@@ -255,6 +255,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             program.breakpoints.items[program.breakpoints.items.len - 1].srcloc = node.srcloc;
         },
         .Cast => |c| {
+            const stk: usize = if (c.ret) RT_STACK else WK_STACK;
             for (c.resolved.constSlice(), 0..) |to, i| {
                 const from = c.from.constSlice()[i];
                 // std.log.info("codegen: {}: casting {} -> {}", .{ node.srcloc, from, to });
@@ -263,11 +264,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
 
                 if (from_bits == 16 and to_bits == 8) {
                     assert(i == 0);
-                    try emit(buf, node, WK_STACK, false, false, .Onip);
+                    try emit(buf, node, stk, false, false, .Onip);
                 } else if (from_bits == 8 and to_bits == 16) {
                     assert(i == 0);
-                    try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
-                    try emit(buf, node, WK_STACK, false, false, .Oswp);
+                    try emitIMM(buf, node, stk, false, .Olit, 0);
+                    try emit(buf, node, stk, false, false, .Oswp);
                 } else {
                     // nothing
                 }
