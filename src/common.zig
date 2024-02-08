@@ -1023,9 +1023,10 @@ pub const ASTNode = struct {
     };
 
     pub const Cast = struct {
-        from: *StackBuffer(TypeInfo, 3),
-        resolved: *StackBuffer(TypeInfo, 3),
-        original: *StackBuffer(TypeInfo, 3),
+        ret: bool = false,
+        from: *StackBuffer(TypeInfo, 4),
+        resolved: *StackBuffer(TypeInfo, 4),
+        original: *StackBuffer(TypeInfo, 4),
     };
 
     pub const Call = struct {
