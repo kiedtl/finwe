@@ -128,7 +128,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         }) catch unreachable,
 
         // Analyser
-        error.GenericNotMatching => stderr.print("Arg {} not included by parameter {}", .{
+        error.GenericNotMatching => stderr.print("Arg {} not included in parameter {}", .{
             TypeFmt.from(e.ctx.burtype1.?, program), TypeFmt.from(e.ctx.burtype2.?, program),
         }) catch unreachable,
         error.TypeNotMatching => stderr.print("Arg {} doesn't match parameter {}", .{
