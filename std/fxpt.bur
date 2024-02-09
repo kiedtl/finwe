@@ -28,16 +28,13 @@
 ])
 
 #(method Fxpt) (word add (Fxpt Fxpt -- Fxpt) [ (as I16 I16) + (as Fxpt) ])
-#(method Fxpt) (word sub (Fxpt Fxpt -- Fxpt) [
-	//(split U8 U8) swap move move
-	//(split U8 U8) swap (r move) (r move)
-	//(wild (U8 U8 U8 U8 -- U16 U16) [])
-	(as I16 I16)
-	-
-	(as Fxpt) 
-])
+#(method Fxpt) (word sub (Fxpt Fxpt -- Fxpt) [ (as I16 I16) - (as Fxpt) ])
 
+// Multiply by parts in order to not overflow
+// Now if only uxn has 32-bit mul/div...
+//
 // p = (ai*ai)<<frac_bits + ai*bf + af*bi + (af*bf)>>frac_bits&frac_bits
+//
 #(method Fxpt) (word mul (Fxpt Fxpt -- Fxpt) [
 	2dup (as I16 I16) signb swap signb beor move
 
@@ -55,7 +52,12 @@
 	(as Fxpt)
 ])
 
+// Divide by multiplying by reciprocal. Does introduce precision loss...
+// Also to prevent overflow -- if we want to divide directly we need to
+// shift << 8, which would overflow
+//
 // q = dvd * (1/dvs)
+//
 #(method Fxpt) (word div (Fxpt Fxpt -- Fxpt) [
 	(as I16 I16) 2dup signb swap signb beor move
 	abs 0x8000s swap /
@@ -65,15 +67,23 @@
 	(as Fxpt)
 ])
 
+// Wanna divide by int? Just do it directly, not shifting or reciprocal nonsense
+// needed
+// (Because the divisor isn't shifted left, the dividend doesn't need to be)
+//
 (word intdiv (Fxpt I8 -- Fxpt) [
 	sext (as I16 I16) / (as Fxpt)
 ])
 
+// Basically * -1
+// Could also subtract from zero I think
 #(method Fxpt) (word negate (Fxpt -- Fxpt) [
 	(split I8 U8) swap -1i * swap
 	(wild (I8 U8 -- Fxpt) [])
 ])
 
+// Get abs, print int portion, multiply/divide fraction (frac * 100 / 0x100),
+// and then print that
 #(method Fxpt) (word print (Fxpt -- ) [
 	(as I16) dup neg? (when [ '- emit abs ] [ (as U16) ])
 	(split I8 U8) swap print-dec '. emit
