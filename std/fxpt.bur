@@ -13,14 +13,16 @@
 ])
 
 (word from (I8 U8 -- Fxpt) [
-	(let bases [U16 3] [ 10s 100s 1000s ])
+	//(let bases [U16 3] [ 10s 100s 1000s ])
+	(let bases [U16 3] [ 9s 099s 0999s ])
 	(as U16)
 	dup
 		dup 9s > (as U8) move
 		99s > (as U8)
 		(r move) +
 		@bases : ->
-	swap 0x100s * swap /
+	swap 0x0ffs * swap /
+	//0x100s * 10s /
 	move
 	0 (wild (I8 U8 -- I16) [])
 	(r move) +
@@ -88,4 +90,45 @@
 	(as I16) dup neg? (when [ '- emit abs ] [ (as U16) ])
 	(split I8 U8) swap print-dec '. emit
 	(as U16) 100s * 0x100s / print-dec
+])
+
+//
+//              x^3     x^5     x^7
+// sin x = x - ----- + ----- - ----- ...
+//              !3      !5      !7
+//
+(word sin (Fxpt -- Fxpt) [
+	(word pow2  (Fxpt -- Fxpt) [ dup ;mul ])
+	(word pow3  (Fxpt -- Fxpt) [ dup over ;mul ;mul ])
+	(word pow4  (Fxpt -- Fxpt) [ dup over ;mul over ;mul ;mul ])
+
+	// x
+	copy
+	//dup ;print nl
+
+	// - x^3/3!
+	(r copy) pow3 0x0600s (as Fxpt) ;div - // / - (as Fxpt)
+	//dup ;print nl
+
+	// + x^5/5! (x^4/5! * x)
+	(r copy) pow4
+		0x7800s (as Fxpt) ;div
+	//(r copy) pow2 0x002As (as Fxpt) ;mul
+	//(r copy) pow2 0x0600s (as Fxpt) ;div //dup ;print 0x20 emit
+		//(r copy) pow2 0x1400s (as Fxpt) ;div //dup ;print 0x20 emit ;mul
+		(r copy) ;mul //dup ;print 0x20 emit
+		+
+	//dup ;print nl
+
+	// - x^7/7! (x^4/5! * x^3/42)
+	(r copy) pow4 0x7800s (as Fxpt) ;div
+		(r copy) pow3 0x2A00s (as Fxpt) ;div ;mul - // / (as Fxpt) ;mul -
+
+	// + x^9/9! (x^4/5! * x^3/42 * x^2/72)
+	//(r copy) pow4 0x7800s (as Fxpt) ;div
+		//(r copy) pow2 0x2A00s (as Fxpt) ;div ;mul
+		//(r copy) pow3 0x4800s (as Fxpt) ;div ;mul +
+	//dup ;print nl
+
+	(r drop)
 ])
