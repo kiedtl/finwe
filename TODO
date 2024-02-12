@@ -88,6 +88,8 @@ x Burdampe
 - New: Constant pointers, (const) builtin
   - Constant version of devs (for readonly ports)?
 - Fix: proper precedence rules for multimethods
+- New: dip builtin
+  - Cleanup pervasive "move <do stuff> (r move)" pattern in stdlib
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
