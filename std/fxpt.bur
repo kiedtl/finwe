@@ -8,47 +8,58 @@
 	[frc U8]
 )
 
+// Constants
+(word ONE_SFT  (-- U16) [ 0x8000s ])  // (1 << FRAC_BITS*2)
+(word FRC_MASK (-- U16) [ 0x00FFs ])  // (1 << FRAC_BITS) - 1
+(word INT_LSFT (-- U8 ) [ 0x80 ])
+(word INT_RSFT (-- U8 ) [ 0x08 ])
+
 (word from-single (I8 -- Fxpt) [
 	0 (wild (I8 U8 -- Fxpt) [])
 ])
 
 (word from (I8 U8 -- Fxpt) [
-	//(let bases [U16 3] [ 10s 100s 1000s ])
-	(let bases [U16 3] [ 9s 099s 0999s ])
-	(as U16)
-	dup
+	(let bases [U16 3] [ 1s 11s 111s ])
+	swap dup signb move abs swap // save sign
+	(as U16) dup
 		dup 9s > (as U8) move
 		99s > (as U8)
 		(r move) +
 		@bases : ->
-	swap 0x0ffs * swap /
-	//0x100s * 10s /
+	swap 0x10s * swap / 0x10s * 9s /
 	move
-	0 (wild (I8 U8 -- I16) [])
+	(as U16) INT_LSFT bsft
 	(r move) +
+	(r move) 0<> (when [ bnot 1+ ]) // restore sign
 	(as Fxpt)
 ])
 
+#(method Fxpt) (word abs (     Fxpt -- Fxpt) [ (as I16) abs   (as Fxpt) ])
 #(method Fxpt) (word add (Fxpt Fxpt -- Fxpt) [ (as I16 I16) + (as Fxpt) ])
 #(method Fxpt) (word sub (Fxpt Fxpt -- Fxpt) [ (as I16 I16) - (as Fxpt) ])
 
 // Multiply by parts in order to not overflow
 // Now if only uxn has 32-bit mul/div...
+#private
+(word intmul32 (U16 U16 U16 U16 -- U16) [
+	(let int1 U16) (let frc1 U16) @frc1 <- @int1 <-
+	(let int2 U16) (let frc2 U16) @frc2 <- @int2 <-
+
+	$int1 $int2 * INT_LSFT bsft
+	$int1 $frc2 * +
+	$frc1 $int2 * +
+	$frc1 $frc2 * INT_RSFT bsft FRC_MASK band +
+])
+
 //
 // p = (ai*ai)<<frac_bits + ai*bf + af*bi + (af*bf)>>frac_bits&frac_bits
 //
 #(method Fxpt) (word mul (Fxpt Fxpt -- Fxpt) [
 	2dup (as I16 I16) signb swap signb beor move
 
-	(let int1 U16) (let frc1 U16)
-		(split I8 U8) (as U16) @frc1 <- abs (as U16) @int1 <-
-	(let int2 U16) (let frc2 U16)
-		(split I8 U8) (as U16) @frc2 <- abs (as U16) @int2 <-
-
-	$int1 $int2 * 0x80 bsft
-	$int1 $frc2 * +
-	$frc1 $int2 * +
-	$frc1 $frc2 * 0x08 bsft 0xffs band +
+	move ;abs ;parts (as U16 U16)
+	(r move) ;abs ;parts (as U16 U16)
+	intmul32
 
 	(r move) 0<> (when [ bnot 1+ ])
 	(as Fxpt)
@@ -62,7 +73,7 @@
 //
 #(method Fxpt) (word div (Fxpt Fxpt -- Fxpt) [
 	(as I16 I16) 2dup signb swap signb beor move
-	abs 0x8000s swap /
+	abs ONE_SFT swap /
 	swap abs
 	(as Fxpt Fxpt) ;mul 0x10 bsft (as Fxpt)
 	(r move) 0<> (when [ bnot 1+ (as Fxpt) ])
@@ -73,23 +84,25 @@
 // needed
 // (Because the divisor isn't shifted left, the dividend doesn't need to be)
 //
-(word intdiv (Fxpt I8 -- Fxpt) [
-	sext (as I16 I16) / (as Fxpt)
+(word intdiv (Fxpt U8 -- Fxpt) [
+	(as U16) (as I16 I16) / (as Fxpt)
 ])
 
-// Basically * -1
-// Could also subtract from zero I think
-#(method Fxpt) (word negate (Fxpt -- Fxpt) [
-	(split I8 U8) swap -1i * swap
-	(wild (I8 U8 -- Fxpt) [])
-])
-
-// Get abs, print int portion, multiply/divide fraction (frac * 100 / 0x100),
-// and then print that
+// Get abs, print int portion, multiply/divide fraction, and then print that
+//
 #(method Fxpt) (word print (Fxpt -- ) [
-	(as I16) dup neg? (when [ '- emit abs ] [ (as U16) ])
-	(split I8 U8) swap print-dec '. emit
-	(as U16) 100s * 0x100s / print-dec
+	dup (as I16) neg? (when [ '- emit ;abs ] [ (as Fxpt) ])
+	;parts
+	swap print-dec '. emit
+	10s * 0x10s / 10s * 0x10s /   // frac * 10 / 0x10 * 10 / 0x10
+	print-dec
+])
+
+#(method Fxpt) (word parts (Fxpt -- I16 U16) [
+	//(split I8 U8) move sext (r move) (as U16)
+	dup FRC_MASK band move
+	INT_RSFT bsft (as I8) sext
+	(r move)
 ])
 
 //
@@ -104,31 +117,22 @@
 
 	// x
 	copy
-	//dup ;print nl
 
 	// - x^3/3!
-	(r copy) pow3 0x0600s (as Fxpt) ;div - // / - (as Fxpt)
-	//dup ;print nl
+	(r copy) pow3 6 intdiv -
 
 	// + x^5/5! (x^4/5! * x)
-	(r copy) pow4
-		0x7800s (as Fxpt) ;div
-	//(r copy) pow2 0x002As (as Fxpt) ;mul
-	//(r copy) pow2 0x0600s (as Fxpt) ;div //dup ;print 0x20 emit
-		//(r copy) pow2 0x1400s (as Fxpt) ;div //dup ;print 0x20 emit ;mul
-		(r copy) ;mul //dup ;print 0x20 emit
-		+
-	//dup ;print nl
+	(r copy) pow4 120 intdiv
+		(r copy) ;mul +
 
 	// - x^7/7! (x^4/5! * x^3/42)
-	(r copy) pow4 0x7800s (as Fxpt) ;div
-		(r copy) pow3 0x2A00s (as Fxpt) ;div ;mul - // / (as Fxpt) ;mul -
+	(r copy) pow4 120 intdiv
+		(r copy) pow3 42 intdiv ;mul -
 
 	// + x^9/9! (x^4/5! * x^3/42 * x^2/72)
-	//(r copy) pow4 0x7800s (as Fxpt) ;div
-		//(r copy) pow2 0x2A00s (as Fxpt) ;div ;mul
-		//(r copy) pow3 0x4800s (as Fxpt) ;div ;mul +
-	//dup ;print nl
+	(r copy) pow4 120 intdiv
+		(r copy) pow2 42 intdiv ;mul
+		(r copy) pow3 78 intdiv ;mul +
 
 	(r drop)
 ])
