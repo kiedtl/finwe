@@ -1139,7 +1139,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 c.ret = ctx.r_blk;
 
                 for (c.resolved.constSlice(), 0..) |resolved, i| {
-                    const find = stk.len - i - 1;
+                    const find = stk.len - (c.resolved.len - i - 1) - 1;
                     const from = if (i >= stk.len) .Any else stk.slice()[find];
                     dstarg.append(from) catch unreachable;
                     dststk.append(resolved) catch unreachable;
