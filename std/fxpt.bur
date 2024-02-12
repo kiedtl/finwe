@@ -1,4 +1,7 @@
 // 8:8 fixed point
+// Heavily WIP. Current issues:
+// - Division is inaccurate -- due to multiplying by reciprocal
+// - Lack of testing
 
 (use* std)
 (use* varvara)
