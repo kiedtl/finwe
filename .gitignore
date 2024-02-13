@@ -2,3 +2,5 @@ zig-cache/
 zig-out/
 core*
 !core.bur
+tmp*
+.snarf
