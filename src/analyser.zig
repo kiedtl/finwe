@@ -143,20 +143,27 @@ pub const BlockAnalysis = struct {
     }
 
     pub fn resolveTypeRefs(self: @This(), scope: ?*Scope, arity: ?@This(), program: *Program) !@This() {
-        // std.log.info("resolving {}\n with {}", .{ self, arity });
         var r = self;
         for (r.stack.slice()) |*stack|
             if (stack.isResolvable(program)) {
                 stack.* = try stack.resolveTypeRef(scope, arity, program);
                 assert(!stack.isResolvable(program));
             };
-        // std.log.info("[stack] setting ${}", .{stack.*.TypeRef});
         for (r.args.slice()) |*arg|
             if (arg.isResolvable(program)) {
                 arg.* = try arg.resolveTypeRef(scope, arity, program);
                 assert(!arg.isResolvable(program));
             };
-        // std.log.info("[args] setting ${}", .{arg.*.TypeRef});
+        for (r.rstack.slice()) |*stack|
+            if (stack.isResolvable(program)) {
+                stack.* = try stack.resolveTypeRef(scope, arity, program);
+                assert(!stack.isResolvable(program));
+            };
+        for (r.rargs.slice()) |*arg|
+            if (arg.isResolvable(program)) {
+                arg.* = try arg.resolveTypeRef(scope, arity, program);
+                assert(!arg.isResolvable(program));
+            };
         return r;
     }
 
@@ -559,7 +566,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 nctx.w_blk = true;
                 var wa = a.*;
                 _ = try analyseBlock(program, parent, w.body, &wa, nctx);
-                try (try w.arity.resolveTypeRefs(parent.scope, parent.arity, program))
+                var arity = w.arity;
+                if (ctx.r_blk) arity.reverse();
+                try (try arity.resolveTypeRefs(parent.scope, parent.arity, program))
                     .mergeInto(a, program, node.srcloc);
             },
             .Call => |*c| {
