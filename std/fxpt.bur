@@ -88,7 +88,7 @@
 // (Because the divisor isn't shifted left, the dividend doesn't need to be)
 //
 (word intdiv (Fxpt U8 -- Fxpt) [
-	(as U16) (as I16 I16) / (as Fxpt)
+	(as I16 I16) / (as Fxpt)
 ])
 
 // Get abs, print int portion, multiply/divide fraction, and then print that
@@ -108,6 +108,9 @@
 	(r move)
 ])
 
+// Approximate sin() w/ taylor series.
+// Do not recommend due to bad performance and low precision
+// (due to all the dividing)
 //
 //              x^3     x^5     x^7
 // sin x = x - ----- + ----- - ----- ...
@@ -138,4 +141,50 @@
 		(r copy) pow3 78 intdiv ;mul +
 
 	(r drop)
+])
+
+// CORDIC sin+cos algorithm
+//
+// Ported from this excellent page:
+// https://www.dcs.gla.ac.uk/~jhw/cordic/
+//
+// fn cordic(theta: i16, s: *i16, c: *i16) void {
+//     var x: i16 = fromFloat(0.6072529350088812561694);
+//     var z: i16 = theta;
+//     var y: i16 = 0;
+//     for (0..16) |k| {
+//         const d: i16 = z >> 15;
+//         const tx = x - (((y >> @intCast(k)) ^ d) - d);
+//         y += (((x >> @intCast(k)) ^ d) - d);
+//         z -= ((cordic_ctab[k] ^ d) - d);
+//         x = tx;
+//     }
+//     c.* = x;
+//     s.* = y;
+// }
+
+(word cordic-sincos (Fxpt -- Fxpt Fxpt) [
+	(let CORDIC-CTABLE [U16 16] [
+		0x00c9s 0x0076s 0x003es 0x001fs
+		0x000fs 0x0007s 0x0004s 0x0002s
+		0x0001s 0x0000s 0x0000s 0x0000s
+		0x0000s 0x0000s 0x0000s 0x0000s
+	])
+
+	// x = fromFloat(0.6072529350088812561694)
+	(let x Fxpt) 0x009bs (as Fxpt) @x <-
+	(let y Fxpt) 0x0s (as Fxpt) @y <-
+	(let z Fxpt) @z <-
+
+	0 (until [ 16 = ] [
+		$z (as I16) neg? (when [0xFFFFs] [0s]) move copy
+		$x $y (r copy) bsft // ( k x y>>k -- | d k -- )
+			(r [ over-sb copy ]) beor (r move) - - // (k tx -- | d k -- )
+		$y $x (r copy) bsft // (k tx y x>>k -- | d -- )
+			(r [ over-sb copy ]) beor (r move) - + // (k tx ty -- | d k -- )
+			(as Fxpt Fxpt) @y <- @x <-
+		$z (r move) @CORDIC-CTABLE : -> (r copy) beor (r move) - - (as Fxpt) @z <-
+		1+
+	]) drop
+	$x $y
 ])
