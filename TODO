@@ -72,10 +72,9 @@ x Burdampe
 - New: Allow wild w/o block
 - New: Loops: break/continue
 - Std: Fixed-point (8:8)
-  - Basic arithmetic
-  - Sin
-  - Cos, Tan
-  - Log (natural)
+  x Basic arithmetic
+  x Sin, cos (CORDIC + taylor series)
+  - Natural log
   - Scr1 demo
 - Fix: Solve Effects issue
   - i.e. how to represent effect of quote in arity def?
