@@ -89,6 +89,7 @@ x Burdampe
 - Fix: proper precedence rules for multimethods
 - New: dip builtin
   - Cleanup pervasive "move <do stuff> (r move)" pattern in stdlib
+  - Bi@, bi*, sip, etc
 
 - Static analysis pt 2
   - New analyser pass: track comptime-known vals
