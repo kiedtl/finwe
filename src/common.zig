@@ -717,7 +717,7 @@ pub const TypeInfo = union(enum) {
             .AnyDev => other == .Dev8 or other == .Dev16,
             .Any8 => other.bits(program) != null and other.bits(program).? == 8,
             .Any16 => other.bits(program) != null and other.bits(program).? == 16,
-            .AnyPtr => other == .Ptr8 or other == .Ptr16,
+            .AnyPtr => other == .Ptr8 or other == .Ptr16 or other == .StaticPtr,
             .AnyPtr16 => other == .Ptr16 or other == .StaticPtr,
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
             .Char8 => other == .U8,
