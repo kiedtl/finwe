@@ -13,6 +13,8 @@
            // The string itself will be embedded in the data section.
 
 .Op/Orot   // An enum literal.
+
+[ 1 2 3 ]  // A quote literal.
 ```
 
 ## Words
@@ -308,6 +310,110 @@ references.
 
 ## Quotes
 
+Quotes are anonymous functions, and quote literals compile down to a reference
+to that anonymous function.
+
 ```
-[ 0 1 2 ]  // A quote.
+[ (-- U8 U8 U8) 0 1 2 ]
+
+// Equivalent to:
+(word _anonymous (-- U8 U8 U8) [ 0 1 2 ]
+&_anonymous
+
+// (There's no such syntax as &func, just for demonstration purposes)
 ```
+
+Non-empty quotes are required to specify an arity.
+
+## Wild blocks
+
+Sometimes you need to bypass the analyser to do magic, usually with inline
+assembly. In these cases, the `wild` block can be used:
+
+```
+(wild (<before> -- <after>) [
+    // crazy stuff
+])
+```
+
+This works by forcing the analyser to "forget" what happened in the block,
+erasing the end result with the result of the arity applied to the previous
+stack state. It does *not* work by bypassing the analyser entirely. Thus,
+several wild blocks may be necessary.
+
+For example, the `swap-sb` word, which swaps a short and a byte, works by
+"chopping" the short up and rotating, twice:
+
+```
+(word swap-sb (Any16 Any8 -- $0 $1) [
+	(wild (--) [ (asm "" .Op/Orot) ])
+	(wild (--) [ (asm "" .Op/Orot) ])
+	(wild ($1 $0 -- $0 $1) [])
+])
+```
+
+The first two wild blocks encase the assembly, and make the analyser pretend
+that nothing happened.
+
+The third wild block sets the analyser's stack state to the correct state.
+
+Currently anything can occur in a wild block. In the future, this *may* be
+changed to only allow assembly, as miscompilations can result from calling
+generic functions.
+
+## Loops
+
+There are currently two loop kinds: `until` and `while`. They both work in the
+same general way, with a loop conditional and loop body. (The `until` loop is
+more efficient.)
+
+```
+0 (until [ 9 = ] [
+    print nl
+    1+
+]) drop
+```
+
+Bur will automatically duplicate whatever arguments the loop conditional needs,
+so that the stack is unchanged for the loop body. By default, with no arity
+specified, the loop conditional is assumed to only use the TOS. This can be
+changed by specifying an arity:
+
+- `(until [ (U8 -- Bool) ...`: loop conditional takes a byte. (default)
+- `(until [ (U8 U8 -- Bool) ...`: loop conditional takes two bytes.
+- `(until [ (U16 U8 -- Bool) ...`: loop conditional takes a short and a byte.
+- `(until [ (U16 U16 -- Bool) ...`: loop conditional takes two shorts.
+- `(until [ (-- Bool) ...`: loop conditional takes no args.
+
+Note that the loop conditional must return a single bool.
+
+In the future, `break`/`continue` syntax will be added. For now no such
+mechanism exists.
+
+## When/else
+
+TODO
+
+## Cond blocks
+
+TODO
+
+## `r` blocks
+
+TODO
+
+## Casting
+
+TODO
+
+## Inline assembly
+
+TODO
+
+## Index/field syntax
+
+TODO
+
+## Variables and static data
+
+TODO
