@@ -601,3 +601,35 @@ If using `$name` syntax on an array, only the first memory is loaded.
 
 Currently, variables are never inlined, though that will change in a future
 release.
+
+## Imports
+
+```
+(use my_module) // my_module.bur
+
+(let bar my_module/Bar)
+
+my_module/foo
+```
+
+Use `use*` if you want to import into the current namespace:
+
+```
+(use* my_module)
+
+(let bar Bar)
+
+foo
+```
+
+Typically, you will want to import at least the following:
+
+```
+// For the core words: dup, swap, rot, <, >, etc
+(use* core)
+
+// For print, nl, dbg, etc
+(use* varvara)
+```
+
+Please browse the `std/` for stdlib docs until those are written.
