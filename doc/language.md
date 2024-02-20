@@ -15,6 +15,9 @@
 .Op/Orot   // An enum literal.
 
 [ 1 2 3 ]  // A quote literal.
+
+nil        // Boolean literals.
+t          // Equal to 1.
 ```
 
 ## Words
@@ -105,7 +108,7 @@ The value can be specified, instead of being assigned at random:
 ```
 (enum Foo U8
     [foo    0xAB]
-    [bar    0xCD]
+    bar
     [baz    0xEF]
 )
 ```
@@ -180,6 +183,9 @@ Generic types allow for declaring generic words, which are then monomorphized.
     // do stuff that can be done to either shorts or bytes
 ])
 ```
+
+Nearly all the core words are generic, which allows for using them with both
+shorts and bytes (though not a mix).
 
 - `Any`: takes any type, short or byte sized.
 - `Any8`: takes any byte-sized type.
@@ -314,7 +320,11 @@ references.
 ## Quotes
 
 Quotes are anonymous functions, and quote literals compile down to a reference
-to that anonymous function.
+to that anonymous function. In that way, they are very much unlike Tal's
+lambdas.
+
+Please note: the brackets in `(when [ body ])` etc do not denote a quote, it is
+simply a reuse of syntax.
 
 ```
 [ (-- U8 U8 U8) 0 1 2 ]
@@ -326,7 +336,9 @@ to that anonymous function.
 // (There's no such syntax as &func, just for demonstration purposes)
 ```
 
-Non-empty quotes are required to specify an arity.
+- Non-empty quotes are required to specify an arity.
+- The type of a quote pointer on the stack is `@(Fn <arity>)`.
+- Quotes can be executed with the `do` core word.
 
 ## Wild blocks
 
