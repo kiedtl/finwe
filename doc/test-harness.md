@@ -46,4 +46,4 @@ An assertion is automatically added to the end of each test function, asserting
 that the test is completed and doesn't erroneously return early.
 
 The test harness also implicitly asserts that assertions not contained in a
-conditional or loop execute, also the catch early returns.
+conditional or loop execute, also to catch early returns.
