@@ -20,7 +20,7 @@ pub fn main() anyerror!void {
         clap.parseParam("-1, --debug-asm          Output ASM to stderr.") catch unreachable,
         clap.parseParam("-2, --debug-inf          Output word analysis to stderr.") catch unreachable,
         clap.parseParam("-x, --emit <str>         Output UXN rom to file.") catch unreachable,
-        clap.parseParam("-x, --dump-asm <str>...  Print UXN bytecode for function.") catch unreachable,
+        clap.parseParam("-a, --dump-asm <str>...  Print UXN bytecode for function.") catch unreachable,
         clap.parseParam("-d, --emit-debug         Output debug info to syms file. Requires -x.") catch
             unreachable,
         clap.parseParam("<str>...") catch unreachable,
