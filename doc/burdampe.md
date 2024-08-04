@@ -32,4 +32,5 @@ initial protection.
 
 ## Status
 
-The extension details, like Bur itself, is beta and subject to change at any time. No other emulators are known to implement it.
+The extension details, like Bur itself, is beta and subject to change at any
+time. No other emulators are known to implement it.

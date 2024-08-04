@@ -1,5 +1,8 @@
 # Bur language
 
+*Note: familiarity with the Uxn VM and Varvara is assumed. Please check their
+respective docs for an overview if necessary.*
+
 ## Literals
 
 ```
@@ -160,7 +163,7 @@ type to data and pointers.
 
 (struct Foo
     [field1      U8]
-    [field2 [U16 12] // Arrays can be part of structs
+    [field2 [U16 12]] // Arrays can be part of structs
 )
 
 @[U16 12] // Array pointer. NOT a slice.
@@ -172,7 +175,10 @@ Opaque is a type-erased object. By itself, it cannot be used in any context,
 because the size is unknown -- it could be a byte, a short, or an array of 500
 shorts.
 
-`@Opaque` is equivalent to `void *` in C.
+`@Opaque` is equivalent to `void *` in C. It is used, for example, in the memory
+allocator, where the pointer is passed around but not dereferenced. As an added
+bonus, since `@Opaque` cannot be dereferenced, one is forced to cast it to a
+concrete type before using.
 
 ### Generic types
 
