@@ -8,9 +8,9 @@ This language is an experimental project that I began to determine how modern,
 high-level language features (such as structs, enums and memory allocators)
 could be implemented in a constrained environment.
 
-This project is possibly also the first to implement compiler-enforced stack
-safety, i.e. using static analysis to catch underflows, overflows, type errors,
-and so on.
+This project is possibly the first stack-based language to implement
+compiler-enforced stack safety, i.e. using static analysis to catch underflows,
+overflows, type errors, and so on.
 
 Other features include a test harness, memory protection, and generics.
 
@@ -46,7 +46,7 @@ My first forays into Uxn were difficult. Like all concatentive languages, one
 needs to be able to keep the stack context in their heads while writing code;
 Uxn makes this more difficult by introducing 16-bit words, which act on a pair
 of byte, treating it as a single item. Thus, a single mistake can lead to some
-difficult-to-debug mistakes.
+difficult-to-debug issues.
 
 Bureaucrat was originally designed to abstract away the concept of 16-bit/8-bit
 words. In Bur, all the core words can work with both (are "generic"), taking
