@@ -1,4 +1,4 @@
-# Bureaucrat
+# Finwë
 
 A compiled language for the [Uxn VM](https://wiki.xxiivv.com/site/uxn.html).
 
@@ -37,7 +37,7 @@ stack has no items on it at that point, the following compile error is given:
    4 |  drop
            ^
 StackUnderflow: Stack underflow (at index 1)
-      at ot.bur:4:5
+      at ot.finw:4:5
 ```
 
 # Why?
@@ -48,8 +48,8 @@ Uxn makes this more difficult by introducing 16-bit words, which act on a pair
 of byte, treating it as a single item. Thus, a single mistake can lead to some
 difficult-to-debug issues.
 
-Bureaucrat was originally designed to abstract away the concept of 16-bit/8-bit
-words. In Bur, all the core words can work with both (are "generic"), taking
+Finwë was originally designed to abstract away the concept of 16-bit/8-bit
+words. In Finwë, all the core words can work with both (are "generic"), taking
 `Any` args (instead of `U16`/`U8`). At runtime, they are monomorphized into a
 specific flavor -- either 16-bit or 8-bit -- and compiled to Uxn bytecode.
 
@@ -69,7 +69,7 @@ A language being write-only also implies it is difficult to write.
 
 ## Status
 
-Bur is currently experimental. Much work remains regarding language features,
+Finwë is currently experimental. Much work remains regarding language features,
 safety, and especially error reporting.
 
 ## Installation
@@ -78,10 +78,10 @@ No binary is currently provided, please compile on your own:
 
 ```
 $ zig build
-$ zig-out/bin/bur myfile.bur               # Compile and run with builtin VM.
-$ zig-out/bin/bur myfile.bur -x out.rom    # Compile to ROM.
-$ zig-out/bin/bur myfile.bur -a func       # Dump assembly for function.
-$ zig-out/bin/bur myfile.bur -d            # Output debug info to .syms file. Requires -x.
+$ zig-out/bin/finwe myfile.finw             # Compile and run with builtin VM.
+$ zig-out/bin/finwe myfile.finw -x out.rom  # Compile to ROM.
+$ zig-out/bin/finwe myfile.finw -a func     # Dump assembly for function.
+$ zig-out/bin/finwe myfile.finw -d          # Output debug info to .syms file. Requires -x.
 ```
 
 Note that the standard library must be in the same directory as the file you are
@@ -91,7 +91,7 @@ compiling.
 
 - [Language overview](doc/language.md)
 - [Test harness](doc/test-harness.md)
-- [BURDAMPE Varvara extension](doc/burdampe.md)
+- [DAMPE Varvara extension](doc/dampe.md)
 
 External:
 - [Uxn homepage](https://wiki.xxiivv.com/site/uxn.html)

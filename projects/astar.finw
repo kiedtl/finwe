@@ -2,7 +2,7 @@
 (use* varvara)
 (use std)
 (use vec)
-(use burdampe)
+(use dampe)
 (use alloc)
 
 (enum Dir U8 [n 0] [s 1] [e 2] [w 3] [nw 4] [ne 5] [sw 6] [se 7])
@@ -319,7 +319,7 @@
 	alloc/init
 	@buf vec/init
 
-	0x100s (as @Opaque) here-statics 0x100s - burdampe/protect
+	0x100s (as @Opaque) here-statics 0x100s - dampe/protect
 
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo

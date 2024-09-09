@@ -60,7 +60,7 @@ pub fn main() anyerror!void {
         };
         defer lexer.deinit();
 
-        program.flag_burdampe = args.args.emit == null;
+        program.flag_dampe = args.args.emit == null;
 
         var parser = parserm.Parser.init(&program, args.args.@"test" > 0, alloc);
         parser.parse(&lexed) catch |e| {

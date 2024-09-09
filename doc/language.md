@@ -1,4 +1,4 @@
-# Bur language
+# Language
 
 *Note: familiarity with the Uxn VM and Varvara is assumed. Please check their
 respective docs for an overview if necessary.*
@@ -59,7 +59,7 @@ STACK )`
 
 ## Types
 
-This is easily the most complex part of Bur.
+This is easily the most complex bit.
 
 There are several categories of types: the two basic elementary types (byte and
 short), the basic types which add meaning to the elementary types (pointers,
@@ -94,7 +94,7 @@ Finally, there are pointers, both byte (zero-page) and short-sized.
 
 ### Devices
 
-TODO (see std/varvara.bur in the meantime)
+TODO (see std/varvara.finw in the meantime)
 
 ### Enums
 
@@ -120,11 +120,11 @@ Enum literals take the following syntax: `.TYPE/elem`.
 
 For example: `.Foo/foo`, `.Foo/bar`, `.Foo/baz`.
 
-In the future, when Bur gets some basic type inference, the need to specify the
-type might go away: `.foo`.
+In the future, when Finwë gets some basic type inference, the need to specify
+the type might go away: `.foo`.
 
 
-Bur has some builtin enums, such as `Op`. See the `asm()` docs for more info.
+There are some builtin enums, such as `Op`. See the `asm()` docs for more info.
 
 ### Structs
 
@@ -258,7 +258,7 @@ More powerful generic types are available through type expressions.
 ### `Type`
 
 Sometimes, you need the caller of a generic function to specify a type, without
-actually passing an arg of that type. Rather than re-inventing turbofish, Bur
+actually passing an arg of that type. Rather than re-inventing turbofish, Finwë
 uses `Type` arguments and the `of()` builtin.
 
 ```
@@ -270,7 +270,7 @@ uses `Type` arguments and the `of()` builtin.
 ```
 
 These special `Type` arguments do not appear on the stack at all. They live
-entirely in Bur's head.
+entirely in Finwë's head.
 
 ### Struct templates
 
@@ -312,7 +312,7 @@ template, with the `AnyOf()` type expression:
 ])
 ```
 
-For an example of how this is used, see `std/vec.bur`.
+For an example of how this is used, see `std/vec.finw`.
 
 ### Type aliases
 
@@ -384,7 +384,7 @@ generic functions.
 
 ## When/else
 
-When blocks are Bur's conditionals. Behold:
+When blocks are Finwë's conditionals. Behold:
 
 ```
 // some boolean value is on the stack
@@ -435,7 +435,7 @@ more efficient.)
 ]) drop
 ```
 
-Bur will automatically duplicate whatever arguments the loop conditional needs,
+Finwë will automatically duplicate whatever arguments the loop conditional needs,
 so that the stack is unchanged for the loop body. By default, with no arity
 specified, the loop conditional is assumed to only use the TOS. This can be
 changed by specifying an arity:
@@ -477,7 +477,7 @@ Conds are where-clauses on steroids. Behold:
 ```
 
 Notes:
-- Like loop conditionals, Bur will automatically insert code to duplicate the
+- Like loop conditionals, Finwë will automatically insert code to duplicate the
   conditional block's arguments.
 - Rules against stack branching apply -- stack effects for branches must be the
   same.
@@ -585,7 +585,7 @@ Notes:
 - Using a `U8` as an index causes casting to `U16` under the hood, so prefer
   `U16` directly where possible. (Naturally, `<u8-index> <ptr>` will lead to the
   most inefficient code.
-- If indexing an array with a known length and with a known index, Bur can
+- If indexing an array with a known length and with a known index, Finwë can
   perform bounds checking. Thus, prefer `:<index>` where possible.
 
 ## Variables and static data
@@ -611,7 +611,7 @@ release.
 ## Imports
 
 ```
-(use my_module) // my_module.bur
+(use my_module) // my_module.finw
 
 (let bar my_module/Bar)
 

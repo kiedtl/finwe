@@ -481,8 +481,8 @@ pub const Parser = struct {
             .Keyword => |kwd| {
                 if (mem.eql(u8, kwd, "private")) {
                     parsed.node.TypeDef.is_private = true;
-                } else if (mem.eql(u8, kwd, "burdampe")) {
-                    parsed.node.TypeDef.is_targ_burdampe = true;
+                } else if (mem.eql(u8, kwd, "dampe")) {
+                    parsed.node.TypeDef.is_targ_dampe = true;
                 } else {
                     return self.program.perr(error.InvalidMetadata, item.location, .{kwd});
                 }
@@ -508,7 +508,7 @@ pub const Parser = struct {
                     var is_noreturn: bool = false;
                     var is_method: ?TypeInfo = null;
                     var is_private: bool = false;
-                    var is_targ_burdampe: bool = false;
+                    var is_targ_dampe: bool = false;
                     var is_inline: common.ASTNode.Decl.Inline = .Auto;
 
                     for (metadata) |item| switch (item.node.Metadata.node) {
@@ -527,8 +527,8 @@ pub const Parser = struct {
                         .Keyword => |kwd| {
                             if (mem.eql(u8, kwd, "private")) {
                                 is_private = true;
-                            } else if (mem.eql(u8, kwd, "burdampe")) {
-                                is_targ_burdampe = true;
+                            } else if (mem.eql(u8, kwd, "dampe")) {
+                                is_targ_dampe = true;
                             } else if (mem.eql(u8, kwd, "noreturn")) {
                                 is_noreturn = true;
                             } else if (mem.eql(u8, kwd, "inline")) {
@@ -566,7 +566,7 @@ pub const Parser = struct {
                         .in_scope = scope,
                         .is_method = is_method,
                         .is_private = is_private,
-                        .is_targ_burdampe = is_targ_burdampe,
+                        .is_targ_dampe = is_targ_dampe,
                         .is_noreturn = is_noreturn,
                         .is_inline = is_inline,
                     } }, .srcloc = ast[0].location };
@@ -1022,7 +1022,7 @@ pub const Parser = struct {
                 if (node.node != .TypeDef)
                     return;
 
-                //if (node.node.TypeDef.is_targ_burdampe and !self.flag_burdampe)
+                //if (node.node.TypeDef.is_targ_dampe and !self.flag_dampe)
                 //return;
 
                 const scope = if (parent) |p| switch (p.node) {
@@ -1039,7 +1039,7 @@ pub const Parser = struct {
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
                             .is_private = node.node.TypeDef.is_private,
-                            .is_targ_burdampe = node.node.TypeDef.is_targ_burdampe,
+                            .is_targ_dampe = node.node.TypeDef.is_targ_dampe,
                             .def = .{ .Alias = .{
                                 .val = try aliasdef.val.resolveTypeRef(scope, null, self),
                             } },
@@ -1054,7 +1054,7 @@ pub const Parser = struct {
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
                             .is_private = node.node.TypeDef.is_private,
-                            .is_targ_burdampe = node.node.TypeDef.is_targ_burdampe,
+                            .is_targ_dampe = node.node.TypeDef.is_targ_dampe,
                             .def = .{ .Enum = .{
                                 .is_short = enumdef.type == .U16,
                                 .fields = UserType.EnumField.AList.init(parser.alloc),
@@ -1099,7 +1099,7 @@ pub const Parser = struct {
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
                             .is_private = node.node.TypeDef.is_private,
-                            .is_targ_burdampe = node.node.TypeDef.is_targ_burdampe,
+                            .is_targ_dampe = node.node.TypeDef.is_targ_dampe,
                             .def = .{ .Struct = .{
                                 .args = strdef.args,
                                 .fields = UserType.StructField.AList.init(parser.alloc),
@@ -1147,7 +1147,7 @@ pub const Parser = struct {
                             .name = node.node.TypeDef.name,
                             .scope = Scope.create(scope),
                             .is_private = node.node.TypeDef.is_private,
-                            .is_targ_burdampe = node.node.TypeDef.is_targ_burdampe,
+                            .is_targ_dampe = node.node.TypeDef.is_targ_dampe,
                             .def = .{ .Device = .{ .start = devdef.start, .fields = fields } },
                         }) catch unreachable;
                         scope.types.append(self.types.items.len - 1) catch unreachable;
@@ -1236,7 +1236,7 @@ pub const Parser = struct {
 
             var path: []const u8 = "";
 
-            const PATHS = [_][]const u8{ "{s}.bur", "std/{s}.bur", "{s}/prelude.bur" };
+            const PATHS = [_][]const u8{ "{s}.finw", "std/{s}.finw", "{s}/prelude.finw" };
 
             inline for (PATHS) |possible_path_fmt| {
                 const possible_path = std.fmt.allocPrint(

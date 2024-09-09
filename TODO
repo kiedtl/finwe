@@ -53,7 +53,7 @@ x Analyser: proper checks
   x Cond branches
 x Fix: inlining func w/ early return
 x Fix: inlining func w/ whens/conds/loops
-x Burdampe
+x Dampe
   x docs
   x mailing list discussion + proposal
   x change to .System/expansion
@@ -83,7 +83,7 @@ x Burdampe
 - Opt: Make std/alloc faster
   - Auto-merge when freeing (only immediate next block)
   - Remove Header/prev
-  - Remove Header/guard* when burdampe is used
+  - Remove Header/guard* when dampe is used
 - New: Constant pointers, (const) builtin
   - Constant version of devs (for readonly ports)?
 - Fix: proper precedence rules for multimethods

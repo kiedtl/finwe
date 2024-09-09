@@ -1,7 +1,7 @@
 # Test harness
 
-Bur has an inbuilt test harness that can be used to write unit tests. With the
-`-t` flag, Bur will compile all the tests it can find into a single ROM, and
+Finwë has an inbuilt test harness that can be used to write unit tests. With the
+`-t` flag, Finwë will compile all the tests it can find into a single ROM, and
 then executes each test as a function while ensuring any assertions yield the
 desired value.
 
@@ -22,7 +22,7 @@ In the future, tests from other modules will have to be explicitly imported.
 ```
 
 ```
-// Tests from my_module.bur imported
+// Tests from my_module.finw imported
 
 (use my_module)
 ```

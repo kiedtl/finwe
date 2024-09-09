@@ -932,7 +932,7 @@ pub const ASTNode = struct {
             Alias: AliasDef,
         },
         is_private: bool = false,
-        is_targ_burdampe: bool = false,
+        is_targ_dampe: bool = false,
 
         pub const AliasDef = struct {
             val: TypeInfo,
@@ -1165,7 +1165,7 @@ pub const ASTNode = struct {
         is_analysed: bool = false,
         is_test: bool = false,
         is_inline: Inline = .Auto,
-        is_targ_burdampe: bool = false,
+        is_targ_dampe: bool = false,
 
         bytecode_size: usize = 0,
         folded_into: ?*ASTNode = null,
@@ -1329,8 +1329,8 @@ pub const Error = struct {
         lexnodetype2: ?meta.Tag(lexer.Node.NodeType) = null,
         string1: ?[]const u8 = null,
         string2: ?[]const u8 = null,
-        burtype1: ?TypeInfo = null,
-        burtype2: ?TypeInfo = null,
+        finwetype1: ?TypeInfo = null,
+        finwetype2: ?TypeInfo = null,
         ushort1: ?u16 = null,
         ushort2: ?u16 = null,
         analysis1: ?analyser.BlockAnalysis = null,
@@ -1362,7 +1362,7 @@ pub const Error = struct {
                     u16 => "ushort",
                     []const u8 => "string",
                     meta.Tag(lexer.Node.NodeType) => "lexnodetype",
-                    TypeInfo => "burtype",
+                    TypeInfo => "finwetype",
                     analyser.BlockAnalysis => "analysis",
                     lexer.Lexer.Stack.Type => "parentype",
                     else => @typeName(fieldinfo.type),
@@ -1571,7 +1571,7 @@ pub const Scope = struct {
             const decl = def.node.Decl;
             // std.log.info("    - ... {s}", .{decl.name});
             if (!decl.is_test and (allow_private or !decl.is_private) and
-                (!decl.is_targ_burdampe or program.flag_burdampe) and
+                (!decl.is_targ_dampe or program.flag_dampe) and
                 mem.eql(u8, decl.name, name))
             {
                 buf.append(def) catch unreachable;
@@ -1599,7 +1599,7 @@ pub const Scope = struct {
         return for (self.types.items) |type_ind| {
             const typedef = p.types.items[type_ind];
             if ((allow_private or !typedef.is_private) and
-                (!typedef.is_targ_burdampe or p.flag_burdampe) and
+                (!typedef.is_targ_dampe or p.flag_dampe) and
                 mem.eql(u8, typedef.name, name))
             {
                 break type_ind;
@@ -1650,7 +1650,7 @@ pub const Program = struct {
     // Keep track of which files evaluated, to avoid import infinite loop
     imports: ASTNodePtrList,
 
-    flag_burdampe: bool = false,
+    flag_dampe: bool = false,
 
     // Stupid hack to allow "dry-run"'ing parser funcs without keeping errors
     // around
@@ -1770,7 +1770,7 @@ pub const UserType = struct {
     scope: *Scope, // for methods etc
 
     is_private: bool = false,
-    is_targ_burdampe: bool = false,
+    is_targ_dampe: bool = false,
 
     pub const AList = std.ArrayList(UserType);
 

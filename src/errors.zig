@@ -105,11 +105,11 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         }) catch unreachable,
         // HINT: type does not have a defined size
         error.InvalidFieldType => stderr.print("Type {} cannot be in container field", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         // HINT: non-generic types cannot be used as template args
         error.InvalidStructArg => stderr.print("{} is not generic", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.StupidArraySyntax => stderr.print("Just use normal []/@[] array syntax you doofus", .{}) catch unreachable,
         error.MissingQuoteArity => stderr.print("Anonymous functions require explicit arity", .{}) catch unreachable,
@@ -129,22 +129,22 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
 
         // Analyser
         error.GenericNotMatching => stderr.print("Arg {} not included in parameter {}", .{
-            TypeFmt.from(e.ctx.burtype1.?, program), TypeFmt.from(e.ctx.burtype2.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program), TypeFmt.from(e.ctx.finwetype2.?, program),
         }) catch unreachable,
         error.TypeNotMatching => stderr.print("Arg {} doesn't match parameter {}", .{
-            TypeFmt.from(e.ctx.burtype1.?, program), TypeFmt.from(e.ctx.burtype2.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program), TypeFmt.from(e.ctx.finwetype2.?, program),
         }) catch unreachable,
         error.CannotCallMethod => stderr.print("Cannot call method on type {}", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.StructNotForStack => stderr.print("Struct {} does not fit on stack", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.CannotGetIndex => stderr.print("{} cannot be indexed", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.InvalidIndexType => stderr.print("{} cannot be used as index, only u8/u16", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         // HINT: amazing you managed to get this error
         error.IndexWouldOverflow => stderr.print("Index of {} would overflow (type size is {})", .{
@@ -154,13 +154,13 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             e.ctx.ushort1.?, e.ctx.ushort2.?,
         }) catch unreachable,
         error.CannotGetFieldMultiPtr => stderr.print("Cannot get field of {} (too many indirections)", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.CannotGetField => stderr.print("Cannot get field of {}", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.NoSuchField => stderr.print("No \"{s}\" in {}", .{
-            e.ctx.string1.?, TypeFmt.from(e.ctx.burtype1.?, program),
+            e.ctx.string1.?, TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         error.CannotSplitIntoShort => stderr.print("Split() targets must be byte-sized", .{}) catch unreachable,
         error.CannotSplitByte => stderr.print("Split() argument must be short-sized", .{}) catch unreachable,
@@ -189,7 +189,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
             stderr.print("Stack underflow", .{}) catch unreachable;
         },
         error.ExpectedStruct => stderr.print("Expected struct type, got {}", .{
-            TypeFmt.from(e.ctx.burtype1.?, program),
+            TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,

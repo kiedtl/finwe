@@ -1,7 +1,7 @@
 (use* core)
 (use* varvara)
 (use std)
-(use burdampe)
+(use dampe)
 
 // I wanted to have U16 guards, that way we could have 0x1cedc0fe
 //
@@ -27,7 +27,7 @@
 	T       first :free <-
 	0xc0    first :guard1 <-
 	0xfe    first :guard2 <-
-	first (sizeof Header) (as U16) burdampe/protect
+	first (sizeof Header) (as U16) dampe/protect
 ])
 
 // ( block-count oldptr block-type -- (sizeof block-type)*block-count )
@@ -63,14 +63,14 @@
 
 	(let chosen @Header)
 	@chosen <-
-	burdampe/priv-enter
+	dampe/priv-enter
 		nil $chosen :free <-
-		burdampe/priv-exit
+		dampe/priv-exit
 
 	$chosen chunk-size $size -
 		(sizeof Header) (as U16) 1+
 	< not (when [
-		burdampe/priv-enter
+		dampe/priv-enter
 
 		(let next @Header)
 		(sizeof Header) (as U16) $size $chosen + + @next <-
@@ -82,10 +82,10 @@
 		$next            $chosen :next <-
 		0xc0             $next   :guard1 <-
 		0xfe             $next   :guard2 <-
-		$chosen burdampe/assert-prot
-		$next   (sizeof Header) (as U16) burdampe/protect
+		$chosen dampe/assert-prot
+		$next   (sizeof Header) (as U16) dampe/protect
 
-		burdampe/priv-exit
+		dampe/priv-exit
 	])
 
 	$chosen (sizeof Header) (as @Opaque) +
@@ -152,9 +152,9 @@
 	dup :free ->
 		(when [ "Double-free" error-dealloc ])
 
-	burdampe/priv-enter
+	dampe/priv-enter
 		T swap-sb :free <-
-		burdampe/priv-exit
+		dampe/priv-exit
 	drop
 ])
 
@@ -183,9 +183,9 @@
 		dup     :free ->
 		over-sb :next -> :free -> and
 		(when [
-			burdampe/priv-enter
+			dampe/priv-enter
 			dup :next ->
-			dup burdampe/unprotect
+			dup dampe/unprotect
 
 			// current->next = next->next
 			// ( current next )
@@ -205,7 +205,7 @@
 				// ( current )
 
 
-			burdampe/priv-exit
+			dampe/priv-exit
 		] [ :next -> ])
 	]) drop
 ])

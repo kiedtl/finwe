@@ -1,8 +1,8 @@
-# burdampe extension
+# DAMPE Extension
 
-Burdampe (Bur Debugging and Memory Protection Extension) is an extension to the
-System device of Varvara, to add various features to aid debugging (especially
-memory corruption, buffer overflows, and the like).
+Dampe (Debugging and Memory Protection Extension) is an extension to the System
+device of Varvara, to add various features to aid debugging (especially memory
+corruption, buffer overflows, and the like).
 
 It adds a few commands to the .System/extension port:
 
@@ -32,5 +32,4 @@ initial protection.
 
 ## Status
 
-The extension details, like Bur itself, is beta and subject to change at any
-time. No other emulators are known to implement it.
+The extension details, like Finwë itself, is beta and subject to change at any time. No other emulators are known to implement it.

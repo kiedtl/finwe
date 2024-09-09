@@ -147,7 +147,7 @@
 	10s @foo + -> (should eq 'X)
 ])
 
-#noreturn #burdampe
+#noreturn #dampe
 (word panic (@U8 -- ) [
 	"Panic: " print-string print-string nl
 	0x40 .System/debug deo
