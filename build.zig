@@ -1,9 +1,7 @@
-const Builder = @import("std").build.Builder;
+const Build = @import("std").Build;
 
-pub fn build(b: *Builder) void {
-    const clap_module = b.addModule("clap", .{
-        .source_file = .{ .path = "third_party/zig-clap/clap.zig" },
-    });
+pub fn build(b: *Build) void {
+    const clap = b.dependency("clap", .{});
 
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -17,14 +15,14 @@ pub fn build(b: *Builder) void {
 
     const exe = b.addExecutable(.{
         .name = "finwe",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("clap", clap_module);
+    exe.root_module.addImport("clap", clap.module("clap"));
 
     exe.linkLibC();
-    exe.addIncludePath(.{ .path = "third_party/uxn/src/" });
+    exe.addIncludePath(b.path("third_party/uxn/src/"));
     exe.addCSourceFiles(.{ .files = &[_][]const u8{
         "third_party/uxn/src/uxn.c",
         "third_party/uxn/src/uxnemu.c",
@@ -37,7 +35,7 @@ pub fn build(b: *Builder) void {
         "third_party/uxn/src/devices/mouse.c",
         "third_party/uxn/src/devices/datetime.c",
     } });
-    exe.addIncludePath(.{ .path = "/usr/include/SDL2/" });
+    exe.addIncludePath(.{ .cwd_relative = "/usr/include/SDL2/" });
     exe.linkSystemLibrary("SDL2");
 
     b.installArtifact(exe);
@@ -52,7 +50,7 @@ pub fn build(b: *Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });

@@ -156,7 +156,7 @@ pub fn s(args: anytype) PatRepSet {
     comptime var began_repl = false;
     const listinfo = @typeInfo(@TypeOf(args));
     comptime {
-        inline for (listinfo.Struct.fields) |fieldinfo| {
+        for (listinfo.Struct.fields) |fieldinfo| {
             const field = @field(args, fieldinfo.name);
             if (fieldinfo.type == Pattern) {
                 if (began_repl)

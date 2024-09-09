@@ -388,7 +388,7 @@ pub const VM = struct {
                     stderr.print("Initial protection:\n", .{}) catch unreachable;
                     self.printBacktrace(&existing.rst, existing.rst_ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
+                    std.process.exit(1);
                 } else {
                     self.protected.append(.{
                         .a = begin,
@@ -410,7 +410,7 @@ pub const VM = struct {
                     stderr.print("Bad range to unprotect {x:0>4}\n", .{paddr}) catch unreachable;
                     self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
+                    std.process.exit(1);
                 }
             },
             0x43 => {
@@ -429,7 +429,7 @@ pub const VM = struct {
                     stderr.print("Address {x:0>4} not protected\n", .{paddr}) catch unreachable;
                     self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
-                    std.os.exit(1);
+                    std.process.exit(1);
                 }
             },
             else => unreachable,
@@ -469,7 +469,7 @@ pub const VM = struct {
                         stderr.print("Initial protection:\n", .{}) catch unreachable;
                         self.printBacktrace(&protected_range.rst, protected_range.rst_ptr);
                         stderr.print("Aborting.\n", .{}) catch unreachable;
-                        std.os.exit(1);
+                        std.process.exit(1);
                     }
                 }
             },
@@ -479,7 +479,7 @@ pub const VM = struct {
 };
 
 pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
-    const self = @fieldParentPtr(VM, "uxn", u);
+    const self: *VM = @ptrCast(@as(*allowzero VM, @fieldParentPtr("uxn", u)));
     switch (addr) {
         0x03 => {
             const cmdaddr = @as(u16, u.*.dev[0x02]) << 8 | u.*.dev[0x03];
@@ -515,15 +515,17 @@ pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
 // Stolen from a blogpost describing this same feature in the fish/zsh shells
 //
 fn _printHappyPercent(stderr: anytype) void {
-    var wsz: std.os.linux.winsize = undefined;
-    const fd = @as(usize, @bitCast(@as(isize, 1)));
-    const rc = linux.syscall3(.ioctl, fd, linux.T.IOCGWINSZ, @intFromPtr(&wsz));
-    const columns = switch (linux.getErrno(rc)) {
-        .SUCCESS => @as(usize, @intCast(wsz.ws_col)),
-        .INTR => return, // F you linux
-        else => return, // Not a tty, stick head in sand immediately
-    };
-    stderr.print("\x1b[7m%\x1b[m", .{}) catch unreachable;
-    stderr.writeByteNTimes(' ', columns - 1) catch unreachable;
-    stderr.print("\r", .{}) catch unreachable;
+    if (@import("builtin").os.tag == .linux) {
+        var wsz: std.os.linux.winsize = undefined;
+        const fd = @as(usize, @bitCast(@as(isize, 1)));
+        const rc = linux.syscall3(.ioctl, fd, linux.T.IOCGWINSZ, @intFromPtr(&wsz));
+        const columns = switch (std.posix.errno(rc)) {
+            .SUCCESS => @as(usize, @intCast(wsz.ws_col)),
+            .INTR => return, // F you linux
+            else => return, // Not a tty, stick head in sand immediately
+        };
+        stderr.print("\x1b[7m%\x1b[m", .{}) catch unreachable;
+        stderr.writeByteNTimes(' ', columns - 1) catch unreachable;
+        stderr.print("\r", .{}) catch unreachable;
+    }
 }

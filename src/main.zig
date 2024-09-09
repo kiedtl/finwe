@@ -15,6 +15,8 @@ const vmm = @import("vm.zig");
 const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
+    const alloc = gpa.allocator();
+
     const params = comptime [_]clap.Param(clap.Help){
         clap.parseParam("-t, --test               Run test harness.") catch unreachable,
         clap.parseParam("-1, --debug-asm          Output ASM to stderr.") catch unreachable,
@@ -31,6 +33,7 @@ pub fn main() anyerror!void {
     // care about the extra information `Diagnostics` provides.
     var diag = clap.Diagnostic{};
     var args = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .allocator = alloc,
         .diagnostic = &diag,
     }) catch |err| {
         // Report useful error and exit
@@ -38,8 +41,6 @@ pub fn main() anyerror!void {
         return;
     };
     defer args.deinit();
-
-    const alloc = gpa.allocator();
 
     for (args.positionals) |filename| {
         const file = try std.fs.cwd().openFile(filename, .{});
@@ -56,7 +57,7 @@ pub fn main() anyerror!void {
         const lexed = lexer.lexList(.Root) catch {
             assert(program.errors.items.len > 0);
             errors.printErrors(&program, filename);
-            std.os.exit(1);
+            std.process.exit(1);
         };
         defer lexer.deinit();
 
@@ -66,7 +67,7 @@ pub fn main() anyerror!void {
         parser.parse(&lexed) catch |e| {
             if (program.errors.items.len > 0) {
                 errors.printErrors(&program, filename);
-                std.os.exit(1);
+                std.process.exit(1);
             } else {
                 @panic(@errorName(e));
             }
@@ -75,7 +76,7 @@ pub fn main() anyerror!void {
         analyser.analyse(&program, args.args.@"test" > 0) catch |e| {
             if (program.errors.items.len > 0) {
                 errors.printErrors(&program, filename);
-                std.os.exit(1);
+                std.process.exit(1);
             } else {
                 @panic(@errorName(e));
             }
