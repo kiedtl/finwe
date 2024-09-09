@@ -99,6 +99,9 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidEnumField => stderr.print("No such field \"{s}\" in {s}", .{
             e.ctx.string1.?, e.ctx.string2.?,
         }) catch unreachable,
+        error.InvalidImport => stderr.print("Couldn't find import \"{s}\"", .{
+            e.ctx.string1.?,
+        }) catch unreachable,
         // HINT (if str == u8,u16,i8,i16,etc): Did you mean <capitalized>?
         error.NoSuchType => stderr.print("No such type \"{s}\"", .{
             e.ctx.string1.?,

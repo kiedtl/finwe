@@ -1251,7 +1251,8 @@ pub const Parser = struct {
                 }
             }
 
-            if (path.len == 0) return error.InvalidImport;
+            if (path.len == 0)
+                return self.perr(error.InvalidImport, importptr.*.srcloc, .{import.name});
 
             const already_imported: ?*ASTNode = for (self.imports.items) |imp| {
                 if (mem.eql(u8, imp.node.Import.path, path)) break imp;
