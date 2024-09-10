@@ -33,3 +33,8 @@ initial protection.
 ## Status
 
 The extension details, like Finwë itself, is beta and subject to change at any time. No other emulators are known to implement it.
+
+## Limitations
+
+In its current implementation, DAMPE will not help you if a device decides to
+overwrite your memory.
