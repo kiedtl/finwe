@@ -1,0 +1,16 @@
+(struct Connect
+	[port U16]
+	[host @U8]
+)
+
+(device Net 0xd0
+	[_reserved1 @Opaque]
+	[current         U8] // todo
+	[length         U16]
+	[connect   @Connect]
+	[send           @U8]
+	[recv           @U8]
+	[_reserved2 @Opaque]
+	[_reserved3 @Opaque]
+	[status          U8] // todo
+)
