@@ -1643,6 +1643,9 @@ pub const Scope = struct {
 };
 
 pub const Program = struct {
+    compiler_dir_path: []u8,
+    compiler_dir: std.fs.Dir,
+
     ast: ASTNodeList,
     defs: ASTNodePtrList,
     macs: ASTNodePtrList,
@@ -1664,8 +1667,15 @@ pub const Program = struct {
     // around
     forget_errors: bool = false,
 
-    pub fn init(alloc: mem.Allocator) @This() {
+    pub fn init(alloc: mem.Allocator) !@This() {
+        const compiler_dir_path = std.fs.selfExeDirPathAlloc(alloc) catch
+            return error.CannotOpenSelfDir;
+        const compiler_dir = std.fs.openDirAbsolute(compiler_dir_path, .{}) catch
+            return error.CannotOpenSelfDir;
+
         return Program{
+            .compiler_dir_path = compiler_dir_path,
+            .compiler_dir = compiler_dir,
             .ast = ASTNodeList.init(alloc),
             .defs = ASTNodePtrList.init(alloc),
             .macs = ASTNodePtrList.init(alloc),

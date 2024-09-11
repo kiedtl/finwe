@@ -1234,7 +1234,6 @@ pub const Parser = struct {
                 continue;
 
             var path: []const u8 = "";
-
             const PATHS = [_][]const u8{ "{s}.finw", "std/{s}.finw", "{s}/prelude.finw" };
 
             inline for (PATHS) |possible_path_fmt| {
@@ -1243,11 +1242,19 @@ pub const Parser = struct {
                     possible_path_fmt,
                     .{import.name},
                 ) catch unreachable;
+
                 if (std.fs.cwd().statFile(possible_path)) |_| {
                     path = possible_path;
-                } else |_| {
+                    break;
+                } else |_| {}
+
+                if (self.compiler_dir.statFile(possible_path)) |_| {
+                    path = std.fs.path.join(parser_.alloc, &.{ self.compiler_dir_path, possible_path }) catch unreachable;
                     parser_.alloc.free(possible_path);
-                }
+                    break;
+                } else |_| {}
+
+                parser_.alloc.free(possible_path);
             }
 
             if (path.len == 0)

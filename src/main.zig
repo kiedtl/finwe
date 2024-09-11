@@ -51,7 +51,12 @@ pub fn main() anyerror!void {
         defer alloc.free(buf);
         _ = try file.readAll(buf);
 
-        var program = common.Program.init(alloc);
+        var program = common.Program.init(alloc) catch |e| switch (e) {
+            error.CannotOpenSelfDir => {
+                std.log.err("Can't open compiler directory.", .{});
+                return;
+            },
+        };
 
         var lexer = lexerm.Lexer.init(&program, buf, filename, alloc);
         const lexed = lexer.lexList(.Root) catch {

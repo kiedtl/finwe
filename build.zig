@@ -38,6 +38,11 @@ pub fn build(b: *Build) void {
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/SDL2/" });
     exe.linkSystemLibrary("SDL2");
 
+    b.installDirectory(.{
+        .source_dir = b.path("std/"),
+        .install_dir = .bin,
+        .install_subdir = "std",
+    });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
