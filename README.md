@@ -2,6 +2,8 @@
 
 A compiled language for the [Uxn VM](https://wiki.xxiivv.com/site/uxn.html).
 
+Formerly named "Bureaucrat".
+
 ## What?
 
 This language is an experimental project that I began to determine how modern,
