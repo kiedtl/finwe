@@ -1,16 +1,39 @@
-(struct Connect
-	[port U16]
-	[host @U8]
+// TODO: mark as non-exhaustive (need new language feature)
+//
+// (for documentation purposes?)
+// (any enum used in device should be marked as such -- nothing's stopping
+// the emulator from putting an invalid value in there!)
+//
+(enum Status I8
+	[ok-retry           2i]
+	[ok                 1i]
+	[ok-no-data         0i]
+	[err-tls-config    -1i]
+	[err-tls-init      -2i]
+	[err-tls-configure -1i]
+	[err-resolve       -3i]
+	[err-connect       -4i]
+	[err-tls-upgrade   -5i]
+	[err-tls-handshake -6i]
+	[err-system        -7i]
+	[err-not-inited    -8i]
+	[err-unknown       -9i]
+)
+
+(struct ConnectArgs
+	[tls? Bool] // todo
+	[port  U16]
+	[host  @U8]
 )
 
 (device Net 0xd0
-	[_reserved1 @Opaque]
-	[current         U8] // todo
-	[length         U16]
-	[connect   @Connect]
-	[send           @U8]
-	[recv           @U8]
-	[_reserved2 @Opaque]
-	[_reserved3 @Opaque]
-	[status          U8] // todo
+	[_reserved1   @Opaque]
+	[current           U8] // todo
+	[length           U16]
+	[connect @ConnectArgs]
+	[send             @U8]
+	[recv             @U8]
+	[_reserved2   @Opaque]
+	[_reserved3   @Opaque]
+	[status            I8] // Status
 )
