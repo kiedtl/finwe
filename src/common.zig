@@ -1643,7 +1643,12 @@ pub const Scope = struct {
 };
 
 pub const Program = struct {
-    compiler_dir_path: []u8,
+    alloc: mem.Allocator,
+
+    file_dir_path: []const u8,
+    file_dir: std.fs.Dir,
+
+    compiler_dir_path: []const u8,
     compiler_dir: std.fs.Dir,
 
     ast: ASTNodeList,
@@ -1667,15 +1672,23 @@ pub const Program = struct {
     // around
     forget_errors: bool = false,
 
-    pub fn init(alloc: mem.Allocator) !@This() {
+    pub fn init(alloc: mem.Allocator, file_dir_path: []const u8) !@This() {
         const compiler_dir_path = std.fs.selfExeDirPathAlloc(alloc) catch
             return error.CannotOpenSelfDir;
         const compiler_dir = std.fs.openDirAbsolute(compiler_dir_path, .{}) catch
             return error.CannotOpenSelfDir;
+        const file_dir = std.fs.openDirAbsolute(file_dir_path, .{}) catch
+            return error.CannotOpenFileDir;
 
         return Program{
+            .alloc = alloc,
+
+            .file_dir_path = file_dir_path,
+            .file_dir = file_dir,
+
             .compiler_dir_path = compiler_dir_path,
             .compiler_dir = compiler_dir,
+
             .ast = ASTNodeList.init(alloc),
             .defs = ASTNodePtrList.init(alloc),
             .macs = ASTNodePtrList.init(alloc),
@@ -1688,6 +1701,28 @@ pub const Program = struct {
             .global_scope = Scope.create(null),
             .imports = ASTNodePtrList.init(alloc),
         };
+    }
+
+    pub fn resolveNameToPath(self: *Program, name: []const u8) ?[]const u8 {
+        var path: []const u8 = "";
+        const PATHS = [_][]const u8{ "{s}.finw", "std/{s}.finw", "{s}/prelude.finw" };
+
+        inline for (PATHS) |possible_path_fmt| {
+            const possible_path = std.fmt.allocPrint(self.alloc, possible_path_fmt, .{name}) catch unreachable;
+            defer self.alloc.free(possible_path);
+
+            if (self.file_dir.statFile(possible_path)) |_| {
+                path = std.fs.path.join(self.alloc, &.{ self.file_dir_path, possible_path }) catch unreachable;
+                break;
+            } else |_| {}
+
+            if (self.compiler_dir.statFile(possible_path)) |_| {
+                path = std.fs.path.join(self.alloc, &.{ self.compiler_dir_path, possible_path }) catch unreachable;
+                break;
+            } else |_| {}
+        }
+
+        return if (path.len == 0) null else path;
     }
 
     pub fn walkNodes(self: *Program, parent: ?*ASTNode, nodes: ASTNodeList, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {

@@ -43,6 +43,26 @@ pub fn main() anyerror!void {
     defer args.deinit();
 
     for (args.positionals) |filename| {
+        const file_path = std.fs.cwd().realpathAlloc(alloc, filename) catch |e| {
+            std.log.err("Couldn't get absolute file path: {}", .{e});
+            std.process.exit(1);
+        };
+        defer alloc.free(file_path);
+
+        const file_dir = std.fs.path.dirname(file_path) orelse "/";
+
+        var program = common.Program.init(alloc, file_dir) catch |e| {
+            switch (e) {
+                error.CannotOpenFileDir => {
+                    std.log.err("Can't open file directory.", .{});
+                },
+                error.CannotOpenSelfDir => {
+                    std.log.err("Can't open compiler directory.", .{});
+                },
+            }
+            std.process.exit(1);
+        };
+
         const file = try std.fs.cwd().openFile(filename, .{});
         defer file.close();
 
@@ -50,13 +70,6 @@ pub fn main() anyerror!void {
         const buf = try alloc.alloc(u8, size);
         defer alloc.free(buf);
         _ = try file.readAll(buf);
-
-        var program = common.Program.init(alloc) catch |e| switch (e) {
-            error.CannotOpenSelfDir => {
-                std.log.err("Can't open compiler directory.", .{});
-                return;
-            },
-        };
 
         var lexer = lexerm.Lexer.init(&program, buf, filename, alloc);
         const lexed = lexer.lexList(.Root) catch {

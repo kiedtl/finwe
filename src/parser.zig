@@ -1233,31 +1233,7 @@ pub const Parser = struct {
             if (!mem.eql(u8, import.path, "<unresolved>"))
                 continue;
 
-            var path: []const u8 = "";
-            const PATHS = [_][]const u8{ "{s}.finw", "std/{s}.finw", "{s}/prelude.finw" };
-
-            inline for (PATHS) |possible_path_fmt| {
-                const possible_path = std.fmt.allocPrint(
-                    parser_.alloc,
-                    possible_path_fmt,
-                    .{import.name},
-                ) catch unreachable;
-
-                if (std.fs.cwd().statFile(possible_path)) |_| {
-                    path = possible_path;
-                    break;
-                } else |_| {}
-
-                if (self.compiler_dir.statFile(possible_path)) |_| {
-                    path = std.fs.path.join(parser_.alloc, &.{ self.compiler_dir_path, possible_path }) catch unreachable;
-                    parser_.alloc.free(possible_path);
-                    break;
-                } else |_| {}
-
-                parser_.alloc.free(possible_path);
-            }
-
-            if (path.len == 0)
+            const path = self.resolveNameToPath(import.name) orelse
                 return self.perr(error.InvalidImport, importptr.*.srcloc, .{import.name});
 
             const already_imported: ?*ASTNode = for (self.imports.items) |imp| {
