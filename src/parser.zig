@@ -51,6 +51,7 @@ pub const Parser = struct {
         NoMainFunction,
         InvalidEnumField,
         InvalidImport,
+        InvalidEmbed,
         InvalidMetadata,
         InvalidAsmOp,
         InvalidAsmFlag,
@@ -97,17 +98,50 @@ pub const Parser = struct {
         return @field(node.node, @tagName(nodetype));
     }
 
-    fn parseStaticDefaults(self: *Parser, node: *const lexer.Node) ParserError!StaticData {
+    fn parseStaticData(self: *Parser, node: *const lexer.Node) ParserError!StaticData {
         return switch (node.node) {
             .String => |s| .{ .String = s },
+            .List => |lst_obj| b: {
+                const lst = lst_obj.body.items;
+                if (lst.len == 0)
+                    return error.EmptyList;
+
+                const k = try self.expectNode(.Keyword, &lst[0]);
+                if (mem.eql(u8, k, "embed")) {
+                    try self.validateListLength(lst, 2);
+                    const path = try self.parseValueExpectString(&lst[1]);
+                    const resolved = self.program.resolveLiteralNameToPath(path.items) orelse
+                        return self.program.perr(error.InvalidEmbed, lst[1].location, .{path.items});
+                    const file = std.fs.cwd().openFile(resolved, .{}) catch |e| {
+                        return self.program.perr(error.InvalidEmbed, lst[1].location, .{ path.items, e });
+                    };
+                    defer file.close();
+
+                    const size = file.getEndPos() catch |e| {
+                        return self.program.perr(error.InvalidEmbed, lst[1].location, .{ path.items, e });
+                    };
+                    const buf = self.alloc.alloc(u8, size) catch unreachable;
+                    _ = file.readAll(buf) catch |e| {
+                        return self.program.perr(error.InvalidEmbed, lst[1].location, .{ path.items, e });
+                    };
+
+                    break :b .{ .Embed = .{
+                        .path = path.items,
+                        .resolved_path = resolved,
+                        .data = buf,
+                    } };
+                } else {
+                    return self.program.perr(error.InvalidKeyword, lst[0].location, .{k});
+                }
+            },
             .Quote => return self.program.perr(error.InvalidNestedDefault, node.location, .{}),
-            else => {
+            else => b: {
                 const v = try self.parseValue(node);
                 const bits = v.typ.bits(self.program).?;
                 if (bits == 16) {
-                    return .{ .Short = v.toU16(self.program) };
+                    break :b .{ .Short = v.toU16(self.program) };
                 } else if (bits == 8) {
-                    return .{ .Byte = v.toU8(self.program) };
+                    break :b .{ .Byte = v.toU8(self.program) };
                 } else unreachable;
             },
         };
@@ -629,9 +663,9 @@ pub const Parser = struct {
                     if (ast.len == 4) switch (ast[3].node) {
                         .Quote => |q| {
                             for (q.items) |item|
-                                defaults.append(try self.parseStaticDefaults(&item)) catch unreachable;
+                                defaults.append(try self.parseStaticData(&item)) catch unreachable;
                         },
-                        else => defaults.append(try self.parseStaticDefaults(&ast[3])) catch unreachable,
+                        else => defaults.append(try self.parseStaticData(&ast[3])) catch unreachable,
                     };
 
                     break :b ASTNode{
@@ -1233,7 +1267,7 @@ pub const Parser = struct {
             if (!mem.eql(u8, import.path, "<unresolved>"))
                 continue;
 
-            const path = self.resolveNameToPath(import.name) orelse
+            const path = self.resolveImportNameToPath(import.name) orelse
                 return self.perr(error.InvalidImport, importptr.*.srcloc, .{import.name});
 
             const already_imported: ?*ASTNode = for (self.imports.items) |imp| {

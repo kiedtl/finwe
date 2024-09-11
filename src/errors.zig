@@ -105,6 +105,9 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.InvalidImport => stderr.print("Couldn't find import \"{s}\"", .{
             e.ctx.string1.?,
         }) catch unreachable,
+        error.InvalidEmbed => stderr.print("Couldn't open \"{s}\" to embed: {}", .{
+            e.ctx.string1.?, e.ctx.err1 orelse error.FileDoesNotExist,
+        }) catch unreachable,
         // HINT (if str == u8,u16,i8,i16,etc): Did you mean <capitalized>?
         error.NoSuchType => stderr.print("No such type \"{s}\"", .{
             e.ctx.string1.?,

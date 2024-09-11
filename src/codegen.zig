@@ -596,10 +596,13 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
                 try emit(buf, null, 0, false, false, .{ .Oraw = @intCast(s & 0xFF) });
             },
             .String => |s| {
-                assert((s.items.len + 1) <= totalsz);
                 for (s.items) |b| try emit(buf, null, 0, false, false, .{ .Oraw = b });
                 try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
                 done += s.items.len + 1;
+            },
+            .Embed => |e| {
+                for (e.data) |b| try emit(buf, null, 0, false, false, .{ .Oraw = b });
+                done += e.data.len;
             },
         };
 

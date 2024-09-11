@@ -1337,6 +1337,7 @@ pub const Error = struct {
         analysis2: ?analyser.BlockAnalysis = null,
         parentype1: ?lexer.Lexer.Stack.Type = null,
         parentype2: ?lexer.Lexer.Stack.Type = null,
+        err1: ?anyerror = null,
 
         pub fn from(tuple: anytype) Context {
             var new = Context{};
@@ -1360,12 +1361,18 @@ pub const Error = struct {
                 };
                 const typename = switch (fieldinfo.type) {
                     u16 => "ushort",
-                    []const u8 => "string",
+                    []u8, []const u8 => "string",
                     meta.Tag(lexer.Node.NodeType) => "lexnodetype",
                     TypeInfo => "finwetype",
                     analyser.BlockAnalysis => "analysis",
                     lexer.Lexer.Stack.Type => "parentype",
-                    else => @typeName(fieldinfo.type),
+                    else => b: {
+                        if (@typeInfo(fieldinfo.type) == .ErrorSet) {
+                            break :b "err";
+                        } else {
+                            break :b @typeName(fieldinfo.type);
+                        }
+                    },
                 };
                 @field(new, typename ++ nstr) = @field(tuple, fieldinfo.name);
             }
@@ -1410,6 +1417,7 @@ pub const Local = struct {
                     //  @panic("Can only infer length of Char8/U8 array when given string");
                     ctr += @intCast(s.items.len + 1);
                 },
+                .Embed => |e| ctr += @intCast(e.data.len),
                 .Byte => ctr += 1,
                 .Short => ctr += 2,
             };
@@ -1439,11 +1447,13 @@ pub const StaticData = union(enum) {
     String: String,
     Byte: u8,
     Short: u16,
-    // Embed: struct {
-    //     path: []const u8,
-    //     // TODO: compress embeds
-    //     // compress: bool,
-    // },
+    Embed: struct {
+        path: []const u8,
+        resolved_path: []const u8,
+        data: []u8, // heap-allocated
+        // TODO: compress embeds
+        // compress: bool,
+    },
     // TODO: struct literals
     // StructLit: struct {
     //     type: usize,
@@ -1703,23 +1713,39 @@ pub const Program = struct {
         };
     }
 
-    pub fn resolveNameToPath(self: *Program, name: []const u8) ?[]const u8 {
-        var path: []const u8 = "";
+    pub fn resolveImportNameToPath(self: *Program, name: []const u8) ?[]const u8 {
         const PATHS = [_][]const u8{ "{s}.finw", "std/{s}.finw", "{s}/prelude.finw" };
+        return self._resolveToPath(name, &PATHS);
+    }
 
-        inline for (PATHS) |possible_path_fmt| {
-            const possible_path = std.fmt.allocPrint(self.alloc, possible_path_fmt, .{name}) catch unreachable;
-            defer self.alloc.free(possible_path);
+    pub fn resolveLiteralNameToPath(self: *Program, name: []const u8) ?[]const u8 {
+        return self._resolveToPath(name, &[_][]const u8{"{s}"});
+    }
 
-            if (self.file_dir.statFile(possible_path)) |_| {
-                path = std.fs.path.join(self.alloc, &.{ self.file_dir_path, possible_path }) catch unreachable;
-                break;
-            } else |_| {}
+    fn _resolveToPath(self: *Program, name: []const u8, comptime PATHS: []const []const u8) ?[]const u8 {
+        var alloc_buf: [4096 * 2]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(alloc_buf[0..]);
 
-            if (self.compiler_dir.statFile(possible_path)) |_| {
-                path = std.fs.path.join(self.alloc, &.{ self.compiler_dir_path, possible_path }) catch unreachable;
-                break;
-            } else |_| {}
+        var path: []const u8 = "";
+        const DIRS = [_]struct { d: std.fs.Dir, p: []const u8 }{
+            .{ .d = self.file_dir, .p = self.file_dir_path },
+            .{ .d = self.compiler_dir, .p = self.compiler_dir_path },
+        };
+
+        search: inline for (PATHS) |possible_path_fmt| {
+            const possible_path = std.fmt.allocPrint(fba.allocator(), possible_path_fmt, .{name}) catch unreachable;
+            defer fba.allocator().free(possible_path);
+
+            for (DIRS) |direntry| {
+                const real_possible_path = direntry.d.realpathAlloc(fba.allocator(), possible_path) catch continue;
+
+                // FIXME: I think realpath() already checks that the file
+                // exists, so this is redundant?
+                if (direntry.d.statFile(real_possible_path)) |_| {
+                    path = self.alloc.dupe(u8, real_possible_path) catch unreachable;
+                    break :search;
+                } else |_| {}
+            }
         }
 
         return if (path.len == 0) null else path;
