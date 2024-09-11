@@ -573,8 +573,8 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     for (0..program.statics.items.len) |i| statics.append(i) catch unreachable;
     std.sort.insertion(usize, statics.items, program, struct {
         pub fn lessThan(p: *Program, lhs: usize, rhs: usize) bool {
-            const is_a_nil = p.statics.items[lhs].default == .None;
-            const is_b_nil = p.statics.items[rhs].default == .None;
+            const is_a_nil = p.statics.items[lhs].default.items.len == 0;
+            const is_b_nil = p.statics.items[rhs].default.items.len == 0;
             return !is_a_nil and is_b_nil;
         }
     }.lessThan);
@@ -587,16 +587,27 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
         const totalsz = _staticTotalSize(program, data_i);
         var done: usize = 0;
 
-        switch (data.default) {
-            .Mixed, .String => |s| {
-                const emitnullbyte = data.default == .String;
-                assert((s.items.len + if (emitnullbyte) @as(usize, 1) else 0) <= totalsz);
-
-                for (s.items) |b| try emit(buf, null, 0, false, false, .{ .Oraw = b });
-                if (emitnullbyte) try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
-                done += s.items.len + if (emitnullbyte) @as(usize, 1) else 0;
+        for (data.default.items) |default| switch (default) {
+            .Byte => |b| {
+                try emit(buf, null, 0, false, false, .{ .Oraw = b });
             },
-            .None => {},
+            .Short => |s| {
+                try emit(buf, null, 0, false, false, .{ .Oraw = @intCast(s >> 8) });
+                try emit(buf, null, 0, false, false, .{ .Oraw = @intCast(s & 0xFF) });
+            },
+            .String => |s| {
+                assert((s.items.len + 1) <= totalsz);
+                for (s.items) |b| try emit(buf, null, 0, false, false, .{ .Oraw = b });
+                try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
+                done += s.items.len + 1;
+            },
+        };
+
+        if (done > totalsz) {
+            std.log.err("[Bug] {} has de facto size larger than defined ({} > {})", .{
+                data.srcloc, done, totalsz,
+            });
+            unreachable;
         }
 
         for (0..(totalsz - done)) |_|

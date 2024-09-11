@@ -80,6 +80,9 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.ExpectedValue => stderr.print("Expected value, got {}", .{
             e.ctx.lexnodetype1.?,
         }) catch unreachable,
+        error.ExpectedString => stderr.print("Expected string, got {}", .{
+            e.ctx.lexnodetype1.?,
+        }) catch unreachable,
         error.ExpectedNum => stderr.print("Expected number value, got {}", .{
             e.ctx.lexnodetype1.?,
         }) catch unreachable,
@@ -117,10 +120,12 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.StupidArraySyntax => stderr.print("Just use normal []/@[] array syntax you doofus", .{}) catch unreachable,
         error.MissingQuoteArity => stderr.print("Anonymous functions require explicit arity", .{}) catch unreachable,
         // HINT: enum type can only be either U16 or U8
-        error.InvalidEnumType => stderr.print("Only U16 or U8 may be used as enum type", .{}) catch unreachable,
+        error.InvalidEnumType => stderr.print("Only U16/U8/I8/I16 may be used as enum type", .{}) catch unreachable,
         error.InvalidBreakpoint => stderr.print("Unknown breakpoint type \"{s}\"", .{
             e.ctx.string1.?,
         }) catch unreachable,
+        // HINT: just flatten it already
+        error.InvalidNestedDefault => stderr.print("Nested default value lists don't make sense here.", .{}) catch unreachable,
 
         // Parser + analyser
         error.UnknownLocal => stderr.print("No such variable \"{s}\" in scope", .{

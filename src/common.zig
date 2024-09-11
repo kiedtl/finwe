@@ -1004,7 +1004,7 @@ pub const ASTNode = struct {
         name: []const u8,
         localptr: ?*Local,
         utyp: TypeInfo,
-        default: Static.Default,
+        default: StaticData.AList,
     };
 
     pub const VRef = struct {
@@ -1386,7 +1386,7 @@ pub const Local = struct {
     name: []const u8,
     ind: ?usize = null,
     rtyp: TypeInfo,
-    default: Static.Default,
+    default: StaticData.AList,
     declnode: *ASTNode,
 
     pub const List = LinkedList(@This());
@@ -1394,21 +1394,32 @@ pub const Local = struct {
     pub fn inferLength(self: *Local, program: *Program) void {
         if (self.rtyp == .Array and self.rtyp.Array.count == null) {
             const artyp = program.ztype(self.rtyp.Array.typ);
-            switch (self.default) {
-                .String => |s| {
-                    if (artyp != .Char8 and artyp != .U8)
-                        @panic("Can only infer length of Char8/U8 array when given string");
-                    self.rtyp.Array.count = @intCast(s.items.len + 1);
-                },
-                .Mixed => |b| {
-                    const typsz = artyp.size(program).?;
-                    const bufsz = @as(u16, @intCast(b.items.len));
-                    if (bufsz % typsz != 0)
-                        @panic("Data size in bytes no evenly divisible by local type size (hint: provide concrete array length)");
-                    self.rtyp.Array.count = bufsz / typsz;
-                },
-                .None => @panic("Need default for inferred array length"),
+
+            if (self.default.items.len == 0) {
+                @panic("Need default for inferred array length");
             }
+
+            var ctr: u16 = 0;
+            for (self.default.items) |default| switch (default) {
+                .String => |s| {
+                    // TODO: add this back as a warning
+                    // "You are potentially making a grave mistake! [U16] with
+                    // a bunch of strings? really?"
+                    //
+                    //if (artyp != .Char8 and artyp != .U8)
+                    //  @panic("Can only infer length of Char8/U8 array when given string");
+                    ctr += @intCast(s.items.len + 1);
+                },
+                .Byte => ctr += 1,
+                .Short => ctr += 2,
+            };
+
+            const typsz = artyp.size(program).?;
+            if (ctr % typsz != 0)
+                @panic("Data size in bytes not evenly divisible by local type size (hint: provide concrete array length)");
+
+            ctr /= typsz;
+            self.rtyp.Array.count = ctr;
         }
     }
 };
@@ -1416,31 +1427,28 @@ pub const Local = struct {
 pub const Static = struct {
     type: TypeInfo,
     count: usize,
-    default: Default,
+    default: StaticData.AList,
     romloc: usize = 0xFFFF,
     srcloc: Srcloc,
     used: bool = false,
 
-    pub const Default = union(enum) {
-        String: String,
-        Mixed: std.ArrayList(u8),
-        // TODO: embeds
-        // Embed: struct {
-        //     path: []const u8,
-        //     kind: union(enum) {
-        //         Chr,
-        //         Ufx,
-        //         Raw,
-        //     },
-        //     compress: bool,
-        // },
-        None,
-        // TODO: struct literals
-        // StructLit: struct {
-        //     type: usize,
-        //     values: std.ArrayList(Value),
-        // },
-    };
+    pub const AList = std.ArrayList(@This());
+};
+
+pub const StaticData = union(enum) {
+    String: String,
+    Byte: u8,
+    Short: u16,
+    // Embed: struct {
+    //     path: []const u8,
+    //     // TODO: compress embeds
+    //     // compress: bool,
+    // },
+    // TODO: struct literals
+    // StructLit: struct {
+    //     type: usize,
+    //     values: std.ArrayList(Value),
+    // },
 
     pub const AList = std.ArrayList(@This());
 };

@@ -11,6 +11,7 @@ const utils = @import("utils.zig");
 const StackBuffer = @import("buffer.zig").StackBuffer;
 const BlockAnalysis = @import("analyser.zig").BlockAnalysis;
 const ASTNode = @import("common.zig").ASTNode;
+const StaticData = common.StaticData;
 const TypeInfo = common.TypeInfo;
 const Value = common.Value;
 const Srcloc = common.Srcloc;
@@ -59,6 +60,7 @@ pub const Parser = struct {
         InvalidStructArg,
         InvalidEnumType,
         InvalidBreakpoint,
+        InvalidNestedDefault,
         StupidArraySyntax,
     } || mem.Allocator.Error || std.fs.File.GetSeekPosError || std.fs.File.ReadError;
 
@@ -95,6 +97,29 @@ pub const Parser = struct {
         return @field(node.node, @tagName(nodetype));
     }
 
+    fn parseStaticDefaults(self: *Parser, node: *const lexer.Node) ParserError!StaticData {
+        return switch (node.node) {
+            .String => |s| .{ .String = s },
+            .Quote => return self.program.perr(error.InvalidNestedDefault, node.location, .{}),
+            else => {
+                const v = try self.parseValue(node);
+                const bits = v.typ.bits(self.program).?;
+                if (bits == 16) {
+                    return .{ .Short = v.toU16(self.program) };
+                } else if (bits == 8) {
+                    return .{ .Byte = v.toU8(self.program) };
+                } else unreachable;
+            },
+        };
+    }
+
+    fn parseValueExpectString(self: *Parser, node: *const lexer.Node) ParserError!common.String {
+        return switch (node.node) {
+            .String => |s| s,
+            else => self.program.perr(error.ExpectedString, node.location, .{@as(meta.Tag(@TypeOf(node.node)), node.node)}),
+        };
+    }
+
     fn parseValue(self: *Parser, node: *const lexer.Node) ParserError!Value {
         return switch (node.node) {
             .T => .{ .typ = .Bool, .val = .{ .u8 = 1 } },
@@ -106,10 +131,13 @@ pub const Parser = struct {
             .Char8 => |c| .{ .typ = .Char8, .val = .{ .u8 = c } },
             .Char16 => |c| .{ .typ = .Char16, .val = .{ .u16 = c } },
             .String => |s| b: {
+                var list = StaticData.AList.init(self.alloc);
+                list.append(.{ .String = s }) catch unreachable;
+
                 self.program.statics.append(.{
                     .type = .Char8,
                     .count = s.items.len + 1,
-                    .default = .{ .String = s },
+                    .default = list,
                     .srcloc = node.location,
                 }) catch unreachable;
                 break :b .{
@@ -438,7 +466,7 @@ pub const Parser = struct {
         } else if (mem.eql(u8, k, "enum")) {
             const name = try self.expectNode(.Keyword, &ast[1]);
             const etyp = try self.parseType(&ast[2]);
-            if (etyp != .U8 and etyp != .U16)
+            if (etyp != .U8 and etyp != .U16 and etyp != .I8 and etyp != .I16)
                 return self.program.perr(error.InvalidEnumType, ast[2].location, .{});
             var fields = ASTNode.TypeDef.EnumField.AList.init(self.alloc);
             for (ast[3..]) |node| switch (node.node) {
@@ -596,37 +624,14 @@ pub const Parser = struct {
 
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const ltyp = try self.parseType(&ast[2]);
+                    var defaults = StaticData.AList.init(self.alloc);
 
-                    const default = if (ast.len == 3)
-                        common.Static.Default.None
-                    else switch (ast[3].node) {
-                        .String => |s| common.Static.Default{ .String = s },
-                        .Quote => |q| bz: {
-                            var mixed = std.ArrayList(u8).init(self.alloc);
-                            for (q.items) |item| switch (item.node) {
-                                .String => |s| mixed.appendSlice(s.items) catch
-                                    unreachable,
-                                else => {
-                                    const v = try self.parseValue(&item);
-                                    const bits = v.typ.bits(self.program).?;
-                                    if (bits == 16) {
-                                        const v16 = v.toU16(self.program);
-                                        mixed.append(@intCast(v16 >> 8)) catch
-                                            unreachable;
-                                        mixed.append(@intCast(v16 & 0xFF)) catch
-                                            unreachable;
-                                    } else if (bits == 8) {
-                                        mixed.append(v.toU8(self.program)) catch
-                                            unreachable;
-                                    } else unreachable;
-                                },
-                            };
-                            break :bz common.Static.Default{ .Mixed = mixed };
+                    if (ast.len == 4) switch (ast[3].node) {
+                        .Quote => |q| {
+                            for (q.items) |item|
+                                defaults.append(try self.parseStaticDefaults(&item)) catch unreachable;
                         },
-                        else => return self.program.perr(error.ExpectedNode, ast[3].location, .{
-                            @as(lexer.Node.Tag, .Quote),
-                            @as(lexer.Node.Tag, ast[3].node),
-                        }),
+                        else => defaults.append(try self.parseStaticDefaults(&ast[3])) catch unreachable,
                     };
 
                     break :b ASTNode{
@@ -634,7 +639,7 @@ pub const Parser = struct {
                             .name = name,
                             .utyp = ltyp,
                             .localptr = null,
-                            .default = default,
+                            .default = defaults,
                         } },
                         .srcloc = ast[0].location,
                     };
@@ -766,9 +771,7 @@ pub const Parser = struct {
                             b = .{ .TosShouldNeqSos = .Any };
                         }
                     } else if (mem.eql(u8, t, "stdout-eq")) {
-                        const v = try self.parseValue(&ast[2]);
-                        const str = self.program.statics.items[v.typ.StaticPtr];
-                        b = .{ .StdoutShouldEq = str.default.String };
+                        b = .{ .StdoutShouldEq = try self.parseValueExpectString(&ast[2]) };
                     } else {
                         return self.program.perr(error.InvalidBreakpoint, ast[1].location, .{t});
                     }
@@ -863,17 +866,13 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "asm")) {
                     try self.validateListLength(ast, 3);
 
-                    const asm_flags = try self.parseValue(&ast[1]);
-                    if (asm_flags.typ != .StaticPtr and
-                        self.program.statics.items[asm_flags.typ.StaticPtr].default != .String)
-                        return error.ExpectedString;
+                    const asm_flags = try self.parseValueExpectString(&ast[1]);
 
                     var asm_stack: usize = WK_STACK;
                     var asm_keep = false;
                     var asm_short = false;
                     var asm_generic = false;
-                    const str = self.program.statics.items[asm_flags.typ.StaticPtr].default.String;
-                    for (str.items) |char| switch (char) {
+                    for (asm_flags.items) |char| switch (char) {
                         'k' => asm_keep = true,
                         'r' => asm_stack = RT_STACK,
                         's' => asm_short = true,
@@ -1047,7 +1046,7 @@ pub const Parser = struct {
                         scope.types.append(self.types.items.len - 1) catch unreachable;
                     },
                     .Enum => |enumdef| {
-                        assert(enumdef.type == .U16 or enumdef.type == .U8);
+                        assert(enumdef.type == .U16 or enumdef.type == .U8 or enumdef.type == .I16 or enumdef.type == .I8);
 
                         self.types.append(UserType{
                             .node = node,
@@ -1070,11 +1069,11 @@ pub const Parser = struct {
                             }
 
                             const val_a: u8 = switch (enumdef.type) {
-                                .U8 => if (field.value) |v|
+                                .I8, .U8 => if (field.value) |v|
                                     v.val.u8
                                 else
                                     self.rng.random().int(u8),
-                                .U16 => if (field.value) |v|
+                                .I16, .U16 => if (field.value) |v|
                                     @as(u8, @intCast(v.val.u16 & 0xFF))
                                 else
                                     self.rng.random().int(u8),
@@ -1082,8 +1081,8 @@ pub const Parser = struct {
                             };
 
                             const val_b: ?u8 = switch (enumdef.type) {
-                                .U8 => null,
-                                .U16 => if (field.value) |v|
+                                .I8, .U8 => null,
+                                .I16, .U16 => if (field.value) |v|
                                     @as(u8, @intCast((v.val.u16 >> 8) & 0xFF))
                                 else
                                     self.rng.random().int(u8),
