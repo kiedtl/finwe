@@ -23,8 +23,8 @@ pub fn main() anyerror!void {
         clap.parseParam("-2, --debug-inf          Output word analysis to stderr.") catch unreachable,
         clap.parseParam("-x, --emit <str>         Output UXN rom to file.") catch unreachable,
         clap.parseParam("-a, --dump-asm <str>...  Print UXN bytecode for function.") catch unreachable,
-        clap.parseParam("-d, --emit-debug         Output debug info to syms file. Requires -x.") catch
-            unreachable,
+        clap.parseParam("-d, --emit-debug         Output debug info to syms file. Requires -x.") catch unreachable,
+        clap.parseParam("-g, --graphical          Enable graphical mode.") catch unreachable,
         clap.parseParam("<str>...") catch unreachable,
     };
 
@@ -80,6 +80,7 @@ pub fn main() anyerror!void {
         defer lexer.deinit();
 
         program.flag_dampe = args.args.emit == null;
+        program.flag_graphical = args.args.graphical != 0;
 
         var parser = parserm.Parser.init(&program, args.args.@"test" > 0, alloc);
         parser.parse(&lexed) catch |e| {

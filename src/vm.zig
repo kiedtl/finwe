@@ -31,14 +31,15 @@ const c = @cImport({
     @cInclude("devices/controller.h");
     @cInclude("devices/mouse.h");
     @cInclude("devices/datetime.h");
+    @cInclude("devices/net.h");
 });
 
 extern "c" fn set_zoom(z: u8, win: c_int) void;
-extern "c" fn emu_init() c_int;
-extern "c" fn emu_restart(u: [*c]c.Uxn, rom: [*c]u8, soft: c_int) void;
-extern "c" fn emu_redraw(u: [*c]c.Uxn) c_int;
-extern "c" fn emu_resize(width: c_int, height: c_int) c_int;
-extern "c" fn emu_end(uxn: [*c]c.Uxn) c_int;
+extern "c" fn emu_init_graphical() c_int;
+extern "c" fn emu_run_graphical(u: [*c]c.Uxn) void;
+extern "c" fn emu_end_graphical(uxn: [*c]c.Uxn) c_int;
+extern "c" fn emu_run_plain(u: [*c]c.Uxn) void;
+extern "c" fn emu_end_plain(uxn: [*c]c.Uxn) c_int;
 extern "c" fn base_emu_deo(uxn: [*c]c.Uxn, addr: c_char) void;
 
 const Item = struct { romloc: usize, node: *ASTNode };
@@ -84,20 +85,26 @@ pub const VM = struct {
 
         c.system_connect(0x0, c.SYSTEM_VERSION, c.SYSTEM_DEIMASK, c.SYSTEM_DEOMASK);
         c.system_connect(0x1, c.CONSOLE_VERSION, c.CONSOLE_DEIMASK, c.CONSOLE_DEOMASK);
-        c.system_connect(0x2, c.SCREEN_VERSION, c.SCREEN_DEIMASK, c.SCREEN_DEOMASK);
-        c.system_connect(0x3, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
-        c.system_connect(0x4, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
-        c.system_connect(0x5, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
-        c.system_connect(0x6, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
-        c.system_connect(0x8, c.CONTROL_VERSION, c.CONTROL_DEIMASK, c.CONTROL_DEOMASK);
-        c.system_connect(0x9, c.MOUSE_VERSION, c.MOUSE_DEIMASK, c.MOUSE_DEOMASK);
         c.system_connect(0xa, c.FILE_VERSION, c.FILE_DEIMASK, c.FILE_DEOMASK);
         c.system_connect(0xb, c.FILE_VERSION, c.FILE_DEIMASK, c.FILE_DEOMASK);
         c.system_connect(0xc, c.DATETIME_VERSION, c.DATETIME_DEIMASK, c.DATETIME_DEOMASK);
+        c.system_connect(0xd, c.NET_VERSION, c.NET_DEIMASK, c.NET_DEOMASK);
 
-        set_zoom(2, 0);
-        if (emu_init() == 0)
-            @panic("Emulator failed to init.");
+        if (self.program.flag_graphical) {
+            c.system_connect(0x2, c.SCREEN_VERSION, c.SCREEN_DEIMASK, c.SCREEN_DEOMASK);
+            c.system_connect(0x3, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+            c.system_connect(0x4, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+            c.system_connect(0x5, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+            c.system_connect(0x6, c.AUDIO_VERSION, c.AUDIO_DEIMASK, c.AUDIO_DEOMASK);
+            c.system_connect(0x8, c.CONTROL_VERSION, c.CONTROL_DEIMASK, c.CONTROL_DEOMASK);
+            c.system_connect(0x9, c.MOUSE_VERSION, c.MOUSE_DEIMASK, c.MOUSE_DEOMASK);
+        }
+
+        //set_zoom(2, 0);
+
+        if (self.program.flag_graphical)
+            if (emu_init_graphical() == 0)
+                @panic("Emulator graphics failed to init.");
 
         return self;
     }
@@ -168,18 +175,17 @@ pub const VM = struct {
     pub fn execute(self: *VM) void {
         self.is_testing = false;
 
-        const stderr = std.io.getStdErr().writer();
-
-        var ctr: usize = 0;
-        var pc: c_ushort = c.PAGE_PROGRAM;
-        while (true) : (ctr += 1) {
-            self._checkInstruction(pc, stderr);
-            pc = c.uxn_eval_once(&self.uxn, pc);
-            if (pc <= 1) break;
-            assert(!self.is_breakpoint);
+        if (uxn_eval(&self.uxn, c.PAGE_PROGRAM) != 0) {
+            if (self.program.flag_graphical)
+                emu_run_graphical(&self.uxn)
+            else
+                emu_run_plain(&self.uxn);
         }
 
-        _ = emu_end(&self.uxn);
+        if (self.program.flag_graphical)
+            _ = emu_end_graphical(&self.uxn)
+        else
+            _ = emu_end_plain(&self.uxn);
     }
 
     fn _failTest(stderr: anytype, comptime format: []const u8, args: anytype, romloc: usize, srcloc: Srcloc) !void {
@@ -325,7 +331,7 @@ pub const VM = struct {
 
             while (true) {
                 self._checkInstruction(pc, stderr);
-                pc = c.uxn_eval_once(&self.uxn, pc);
+                pc = c.uxn_step(&self.uxn, pc);
                 if (pc == 0) @panic("test halted");
                 if (pc == 1) break;
 
@@ -362,7 +368,7 @@ pub const VM = struct {
             }
         }
 
-        _ = emu_end(&self.uxn);
+        _ = emu_end_plain(&self.uxn);
     }
 
     fn executeExpansionCmd(self: *VM, cmdaddr: u16) void {
@@ -503,6 +509,24 @@ pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
         else
             base_emu_deo(u, addr),
         else => base_emu_deo(u, addr),
+    }
+}
+
+pub export fn uxn_eval(u: [*c]c.Uxn, p_pc: c_ushort) callconv(.C) c_int {
+    const self: *VM = @ptrCast(@as(*allowzero VM, @fieldParentPtr("uxn", u)));
+
+    if (p_pc == 0 or self.uxn.dev[0x0f] > 0)
+        return 0;
+
+    const stderr = std.io.getStdErr().writer();
+
+    var pc = p_pc;
+    while (true) {
+        self._checkInstruction(pc, stderr);
+        pc = c.uxn_step(&self.uxn, pc);
+        if (pc <= 1)
+            return @intCast(pc);
+        assert(!self.is_breakpoint);
     }
 }
 

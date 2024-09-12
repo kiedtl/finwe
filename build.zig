@@ -34,9 +34,11 @@ pub fn build(b: *Build) void {
         "third_party/uxn/src/devices/controller.c",
         "third_party/uxn/src/devices/mouse.c",
         "third_party/uxn/src/devices/datetime.c",
+        "third_party/uxn/src/devices/net.c",
     } });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/SDL2/" });
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("tls");
 
     b.installDirectory(.{
         .source_dir = b.path("std/"),

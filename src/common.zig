@@ -1677,6 +1677,7 @@ pub const Program = struct {
     imports: ASTNodePtrList,
 
     flag_dampe: bool = false,
+    flag_graphical: bool = false,
 
     // Stupid hack to allow "dry-run"'ing parser funcs without keeping errors
     // around
