@@ -17,16 +17,17 @@ const gpa = &@import("common.zig").gpa;
 pub fn main() anyerror!void {
     const alloc = gpa.allocator();
 
-    const params = comptime [_]clap.Param(clap.Help){
-        clap.parseParam("-t, --test               Run test harness.") catch unreachable,
-        clap.parseParam("-1, --debug-asm          Output ASM to stderr.") catch unreachable,
-        clap.parseParam("-2, --debug-inf          Output word analysis to stderr.") catch unreachable,
-        clap.parseParam("-x, --emit <str>         Output UXN rom to file.") catch unreachable,
-        clap.parseParam("-a, --dump-asm <str>...  Print UXN bytecode for function.") catch unreachable,
-        clap.parseParam("-d, --emit-debug         Output debug info to syms file. Requires -x.") catch unreachable,
-        clap.parseParam("-g, --graphical          Enable graphical mode.") catch unreachable,
-        clap.parseParam("<str>...") catch unreachable,
-    };
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help               Print this help message.
+        \\-t, --test               Run test harness.
+        \\-1, --debug-asm          Output ASM to stderr.
+        \\-2, --debug-inf          Output word analysis to stderr.
+        \\-x, --emit <str>         Output UXN rom to file.
+        \\-a, --dump-asm <str>...  Print UXN bytecode for function.
+        \\-d, --emit-debug         Output debug info to syms file. Requires -x.
+        \\-g, --graphical          Enable graphical mode.
+        \\<str>...
+    );
 
     // Initalize our diagnostics, which can be used for reporting useful errors.
     // This is optional. You can also pass `.{}` to `clap.parse` if you don't
@@ -41,6 +42,18 @@ pub fn main() anyerror!void {
         return;
     };
     defer args.deinit();
+
+    if (args.args.help != 0) {
+        const stderr = std.io.getStdErr().writer();
+        stderr.print("Usage: finwe [options] [args]\n", .{}) catch {};
+        clap.help(stderr, clap.Help, &params, .{
+            .description_on_new_line = false,
+            .description_indent = 0,
+            .indent = 3,
+            .spacing_between_parameters = 0,
+        }) catch {};
+        return;
+    }
 
     for (args.positionals) |filename| {
         const file_path = std.fs.cwd().realpathAlloc(alloc, filename) catch |e| {
