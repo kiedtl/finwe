@@ -75,6 +75,7 @@ pub fn main() anyerror!void {
             }
             std.process.exit(1);
         };
+        defer program.deinit();
 
         const file = try std.fs.cwd().openFile(filename, .{});
         defer file.close();

@@ -65,7 +65,7 @@ pub fn LinkedList(comptime T: type) type {
             };
         }
 
-        pub fn deinit(self: *Self) void {
+        pub fn deinit(self: *const Self) void {
             if (self.head == null) {
                 return;
             }

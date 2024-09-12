@@ -620,15 +620,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         newdef.node.Decl.arity = ungenericified;
                         c.node = newdef;
 
-                        // const newdef_ = d.deepclone(null, program);
-                        // const newdef = program.ast.appendAndReturn(newdef_) catch unreachable;
-                        // c.node = newdef;
-                        // program.defs.append(newdef) catch unreachable;
-
-                        // cdecl.variations.append(newdef) catch unreachable;
-                        // newdef.node.Decl.variant = cdecl.variations.items.len;
-                        // newdef.node.Decl.arity = ungenericified;
-
                         var ab = BlockAnalysis{};
                         const sr = if (ctx.r_blk) c.args.len else 0;
                         const sn = if (ctx.r_blk) 0 else c.args.len;
