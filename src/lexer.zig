@@ -59,7 +59,7 @@ pub const Node = struct {
 
     pub fn deinit(self: *Node, alloc: mem.Allocator) void {
         switch (self.node) {
-            .At => |node| {
+            .Metadata, .At => |node| {
                 node.deinit(alloc);
                 alloc.destroy(node);
             },

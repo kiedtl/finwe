@@ -883,21 +883,6 @@ pub const ASTNode = struct {
         ret: bool = false,
     };
 
-    pub const Import = struct {
-        name: []const u8,
-        path: []const u8,
-        scope: *Scope,
-        body: ASTNodeList,
-
-        // Import into current namespace?
-        is_defiling: bool = false,
-
-        // Import that was already imported previously (into another
-        // namspace)? Keep track of this so that walkNodes doesn't go
-        // over import ast multiple times
-        is_dupe: bool = false,
-    };
-
     pub const Builtin = struct {
         type: union(enum) {
             SizeOf: SizeOf,
@@ -1179,6 +1164,17 @@ pub const ASTNode = struct {
         pub fn skipGen(self: @This()) bool {
             return self.calls == 0 or self.is_inline == .Always or self.is_inline == .AutoYes;
         }
+
+        pub fn deinit(self: *@This(), program: *Program) void {
+            // std.log.info("freeing {}", .{def});
+            self.variations.deinit();
+            self.scope.deinit();
+            var itr = self.body.iterator();
+            while (itr.next()) |item| {
+                item.deinit(1, program);
+            }
+            self.body.deinit();
+        }
     };
 
     pub const Quote = struct {
@@ -1313,7 +1309,10 @@ pub const ASTNode = struct {
             },
             .Cond => |c| {
                 if (c.else_branch) |b| _freeList(b, recursed_ctr + 1, program);
-                for (c.branches.items) |b| _freeList(b.body, recursed_ctr + 1, program);
+                for (c.branches.items) |b| {
+                    _freeList(b.body, recursed_ctr + 1, program);
+                    _freeList(b.cond, recursed_ctr + 1, program);
+                }
             },
             .Loop => |l| {
                 _freeList(l.body, recursed_ctr + 1, program);
@@ -1333,7 +1332,7 @@ pub const ASTNode = struct {
             .RBlock => |b| _freeList(b.body, recursed_ctr + 1, program),
             .Import => |i| {
                 i.scope.deinit();
-                //_freeList(i.body, recursed_ctr + 1, program);
+                _freeList(i.body, recursed_ctr + 1, program);
             },
             .VDecl => {},
             .VDeref, .VRef => {},
@@ -1528,6 +1527,29 @@ pub const StaticData = union(enum) {
     // },
 
     pub const AList = std.ArrayList(@This());
+};
+
+// TODO: rename to "Module"
+pub const Import = struct {
+    name: []const u8,
+    path: []const u8,
+    scope: *Scope,
+    body: ASTNodeList,
+
+    // Import into current namespace?
+    is_defiling: bool = false,
+
+    // Import that was already imported previously (into another
+    // namspace)? Keep track of this so that walkNodes doesn't go
+    // over import ast multiple times
+    is_dupe: bool = false,
+
+    pub fn deinit(self: *@This(), program: *Program) void {
+        if (self.is_dupe)
+            return;
+        //self.scope.deinit(); // Double-free!
+        program.alloc.free(self.path);
+    }
 };
 
 pub const Scope = struct {
@@ -1751,6 +1773,10 @@ pub const Program = struct {
     errors: Error.AList,
     global_scope: *Scope,
 
+    // Keep ownership of lexer memory, which includes all strings
+    // from the file, so that it can be freed when Program is deinit'ed
+    lexed: std.ArrayList(lexer.NodeList),
+
     // Keep track of which files evaluated, to avoid import infinite loop
     imports: ASTNodePtrList,
 
@@ -1789,23 +1815,22 @@ pub const Program = struct {
             .breakpoints = ASTNodePtrList.init(alloc),
             .global_scope = Scope.create(null),
             .imports = ASTNodePtrList.init(alloc),
+            .lexed = std.ArrayList(lexer.NodeList).init(alloc),
         };
     }
 
     pub fn deinit(self: *Program) void {
-        for (self.defs.items) |def| {
-            // std.log.info("freeing {}", .{def});
-            def.node.Decl.variations.deinit();
-            def.node.Decl.scope.deinit();
-            var itr = def.node.Decl.body.iterator();
-            while (itr.next()) |item| {
-                item.deinit(1, self);
-            }
-            def.node.Decl.body.deinit();
-        }
+        for (self.defs.items) |def|
+            def.node.Decl.deinit(self);
+
+        for (self.lexed.items) |l|
+            lexer.Node.deinitMain(l, self.alloc);
 
         for (self.types.items) |t|
             t.scope.deinit();
+
+        for (self.imports.items) |imp|
+            imp.node.Import.deinit(self);
 
         self.ast.deinit();
         self.defs.deinit();

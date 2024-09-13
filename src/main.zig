@@ -16,6 +16,9 @@ const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const alloc = gpa.allocator();
+    defer {
+        _ = gpa.deinit();
+    }
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help               Print this help message.
@@ -92,6 +95,7 @@ pub fn main() anyerror!void {
             std.process.exit(1);
         };
         defer lexer.deinit();
+        defer lexerm.Node.deinitMain(lexed, alloc);
 
         program.flag_dampe = args.args.emit == null;
         program.flag_graphical = args.args.graphical != 0;
@@ -161,6 +165,4 @@ pub fn main() anyerror!void {
             vm.execute();
         }
     }
-
-    // FIXME: all memory is leaked lol
 }

@@ -1300,6 +1300,8 @@ pub const Parser = struct {
                 .List => |l| try parser_.parseList(l.body.items, l.metadata.items, import.scope),
                 else => try parser_.parseStatement(node, import.scope),
             });
+
+            self.lexed.append(lexed) catch unreachable;
         }
 
         if (parser_.stuff_to_import)
