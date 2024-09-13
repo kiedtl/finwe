@@ -19,6 +19,7 @@ const Scope = common.Scope;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const ASTNodePtrList = @import("common.zig").ASTNodePtrList;
 const Program = @import("common.zig").Program;
+const Import = @import("common.zig").Import;
 const Op = @import("common.zig").Op;
 const ErrorSet = @import("common.zig").Error.Set;
 const UserType = @import("common.zig").UserType;
@@ -30,7 +31,10 @@ pub const Parser = struct {
     program: *Program,
     alloc: mem.Allocator,
     is_testing: bool = false,
-    stuff_to_import: bool = false,
+
+    // List of (use <name>) nodes to process and add to program.imports. Each
+    // process step may then yield more imports.
+    import_queue: std.ArrayList(Import),
 
     pub const ParserError = error{
         EmptyList,
@@ -71,6 +75,7 @@ pub const Parser = struct {
             .program = program,
             .alloc = alloc,
             .is_testing = is_testing,
+            .import_queue = std.ArrayList(Import).init(alloc),
         };
     }
 
@@ -732,15 +737,18 @@ pub const Parser = struct {
                     try self.validateListLength(ast, 2);
                     const name = try self.expectNode(.Keyword, &ast[1]);
                     const is_defiling = mem.eql(u8, k, "use*");
-                    self.stuff_to_import = true;
+                    const path = self.program.resolveImportNameToPath(name) orelse
+                        return self.program.perr(error.InvalidImport, ast[1].location, .{name});
+                    p_scope.imports.append(path) catch unreachable;
+                    self.import_queue.append(.{
+                        .name = name,
+                        .path = path,
+                        .scope = undefined,
+                        .body = undefined,
+                        .is_defiling = is_defiling,
+                    }) catch unreachable;
                     break :b ASTNode{
-                        .node = .{ .Import = .{
-                            .name = name,
-                            .path = "<unresolved>",
-                            .scope = Scope.create(null),
-                            .body = undefined,
-                            .is_defiling = is_defiling,
-                        } },
+                        .node = .{ .Import = path },
                         .srcloc = ast[0].location,
                     };
                 } else if (mem.eql(u8, k, "return")) {
@@ -958,28 +966,12 @@ pub const Parser = struct {
 
     // Extract definitions
     pub fn extractDefs(parser_: *Parser) ErrorSet!void {
-        try parser_.program.walkNodes(null, parser_.program.ast, {}, struct {
-            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: void) ErrorSet!void {
+        try parser_.program.walkNodes({}, struct {
+            pub fn f(node: *ASTNode, _: ?*ASTNode, parent_scope: *Scope, self: *Program, _: void) ErrorSet!void {
                 switch (node.node) {
                     .Decl => |d| {
-                        // const pname: []const u8 = if (parent) |p| switch (p.node) {
-                        //     .Decl => |de| de.name,
-                        //     .Import => |i| i.name,
-                        //     else => unreachable,
-                        // } else "<global>";
-                        // std.log.info("function: {s} -> {s}", .{
-                        //     node.node.Decl.name,
-                        //     pname,
-                        // });
-
-                        const norm_scope = if (parent) |p| switch (p.node) {
-                            .Decl => |de| de.scope,
-                            .Import => |i| i.scope,
-                            else => unreachable,
-                        } else self.global_scope;
-
                         const method_scope = if (d.is_method) |method_type|
-                            if (norm_scope.findType(method_type.Unresolved.ident, self, true)) |t|
+                            if (parent_scope.findType(method_type.Unresolved.ident, self, true)) |t|
                                 self.types.items[t].scope
                             else
                                 return self.aerr(
@@ -990,7 +982,7 @@ pub const Parser = struct {
                         else
                             null;
 
-                        const scope = method_scope orelse norm_scope;
+                        const scope = method_scope orelse parent_scope;
                         node.node.Decl.in_scope = scope;
                         try scope.defs.append(node);
                         try self.defs.append(node);
@@ -1050,19 +1042,13 @@ pub const Parser = struct {
 
     pub fn extractTypes(parser_: *Parser) ErrorSet!void {
         // Add typedefs
-        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn _f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
+        try parser_.program.walkNodes(parser_, struct {
+            pub fn _f(node: *ASTNode, _: ?*ASTNode, scope: *Scope, self: *Program, parser: *Parser) ErrorSet!void {
                 if (node.node != .TypeDef)
                     return;
 
                 //if (node.node.TypeDef.is_targ_dampe and !self.flag_dampe)
                 //return;
-
-                const scope = if (parent) |p| switch (p.node) {
-                    .Decl => |d| d.scope,
-                    .Import => |i| i.scope,
-                    else => unreachable,
-                } else self.global_scope;
 
                 // FIXME: check for name collisions
                 switch (node.node.TypeDef.def) {
@@ -1195,16 +1181,9 @@ pub const Parser = struct {
         // stage we find and set that information.
         //
         // Also check calls to determine what type they are.
-        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, parser: *Parser) ErrorSet!void {
-                const scope = if (parent) |p| switch (p.node) {
-                    .Decl => |d| d.scope,
-                    .Import => |i| i.scope,
-                    else => unreachable,
-                } else self.global_scope;
-
+        try parser_.program.walkNodes(parser_, struct {
+            pub fn f(node: *ASTNode, _: ?*ASTNode, scope: *Scope, self: *Program, parser: *Parser) ErrorSet!void {
                 switch (node.node) {
-                    .Import => |i| if (i.is_dupe) return error._Continue,
                     .Value => |v| switch (v.val.typ) {
                         .AmbigEnumLit => node.node = try parser.lowerEnumValue(v.val.val.AmbigEnumLit, node.srcloc),
                         else => {},
@@ -1214,7 +1193,7 @@ pub const Parser = struct {
 
                 // Do variables, but ONLY global scope
                 //
-                if (parent == null or parent.?.node == .Import) switch (node.node) {
+                if (scope.parent == null) switch (node.node) {
                     .VDecl => |*vd| {
                         scope.locals.append(.{
                             .name = vd.name,
@@ -1240,79 +1219,46 @@ pub const Parser = struct {
     }
 
     // Not really part of parsing
-    pub fn importModules(parser_: *Parser) ErrorSet!void {
-        parser_.stuff_to_import = false;
+    pub fn importModules(parser: *Parser) ErrorSet!void {
+        const self = parser.program;
 
-        try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
-            pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
-                if (node.node == .Import) {
-                    // Since we're recursively adding stuff, don't add it
-                    // twice
-                    for (self.imports.items) |imp|
-                        if (imp == node)
-                            return;
+        // Make a copy since we'll be modifying it in the loop!
+        var import_queue = parser.import_queue;
+        defer import_queue.deinit();
+        parser.import_queue = @TypeOf(parser.import_queue).init(parser.alloc);
 
-                    self.imports.append(node) catch unreachable;
-                    if (parent) |p| {
-                        switch (p.node) {
-                            .Decl => |d| d.scope.imports.append(node) catch unreachable,
-                            .Import => |i| i.scope.imports.append(node) catch unreachable,
-                            else => {},
-                        }
-                    } else {
-                        self.global_scope.imports.append(node) catch unreachable;
-                    }
-                }
-            }
-        }.f);
-
-        const self = parser_.program;
-
-        for (self.imports.items) |*importptr| {
-            const import = &importptr.*.node.Import;
-            if (!mem.eql(u8, import.path, "<unresolved>"))
-                continue;
-
-            const path = self.resolveImportNameToPath(import.name) orelse
-                return self.perr(error.InvalidImport, importptr.*.srcloc, .{import.name});
-
-            const already_imported: ?*ASTNode = for (self.imports.items) |imp| {
-                if (mem.eql(u8, imp.node.Import.path, path)) break imp;
-            } else null;
-
-            if (already_imported) |nodeptr| {
-                assert(importptr.* != nodeptr);
-                import.path = path;
-                import.body = nodeptr.node.Import.body;
-                import.is_dupe = true;
+        while (import_queue.popOrNull()) |import_p| {
+            if (self.imports.contains(import_p.path)) {
                 continue;
             }
 
-            import.path = path;
-            import.body = ASTNodeList.init(parser_.alloc);
+            var import = import_p;
+            import.scope = Scope.create(null);
+            import.body = ASTNodeList.init(parser.alloc);
 
-            const file = std.fs.cwd().openFile(path, .{}) catch unreachable;
+            const file = std.fs.cwd().openFile(import.path, .{}) catch unreachable;
             defer file.close();
 
             const size = try file.getEndPos();
-            const buf = try parser_.alloc.alloc(u8, size);
-            defer parser_.alloc.free(buf);
+            const buf = try parser.alloc.alloc(u8, size);
+            defer parser.alloc.free(buf);
             _ = try file.readAll(buf);
 
-            var lex = lexer.Lexer.init(self, buf, path, parser_.alloc);
+            var lex = lexer.Lexer.init(self, buf, import.path, parser.alloc);
             const lexed = try lex.lexList(.Root);
             defer lex.deinit();
 
             for (lexed.items) |*node| try import.body.append(switch (node.node) {
-                .List => |l| try parser_.parseList(l.body.items, l.metadata.items, import.scope),
-                else => try parser_.parseStatement(node, import.scope),
+                .List => |l| try parser.parseList(l.body.items, l.metadata.items, import.scope),
+                else => try parser.parseStatement(node, import.scope),
             });
 
             self.lexed.append(lexed) catch unreachable;
+            self.imports.put(import.path, import) catch unreachable;
         }
 
-        if (parser_.stuff_to_import)
-            try parser_.importModules();
+        if (parser.import_queue.items.len > 0)
+            try parser.importModules();
     }
 
     pub fn setupMainFunc(self: *Parser) ParserError!void {

@@ -1249,8 +1249,9 @@ pub fn postProcess(self: *Program) ErrorSet!void {
             try _S.registerLocals(def.node.Decl.scope, self);
             try _S.walkNodes(self, def, def.node.Decl.body);
         };
-    for (self.imports.items) |import|
-        try _S.registerLocals(import.node.Import.scope, self);
+    var imports = self.imports.valueIterator();
+    while (imports.next()) |import|
+        try _S.registerLocals(import.scope, self);
     try _S.registerLocals(self.global_scope, self);
 
     for (self.defs.items) |def|

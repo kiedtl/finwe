@@ -10,6 +10,7 @@ const StackBufferError = @import("buffer.zig").StackBufferError;
 
 const TypeFmt = @import("common.zig").TypeFmt;
 const ASTNode = @import("common.zig").ASTNode;
+const Scope = @import("common.zig").Scope;
 const ASTNodeList = @import("common.zig").ASTNodeList;
 const Program = @import("common.zig").Program;
 const Ins = @import("common.zig").Ins;
@@ -817,8 +818,8 @@ pub fn emitDebug(writer: anytype, program: *Program) !void {
     var items = Item.AList.init(gpa.allocator());
     defer items.deinit();
 
-    try program.walkNodes(null, program.ast, &items, struct {
-        pub fn f(node: *ASTNode, parent: ?*ASTNode, _: *Program, buf: *Item.AList) ErrorSet!void {
+    try program.walkNodes(&items, struct {
+        pub fn f(node: *ASTNode, parent: ?*ASTNode, _: *Scope, _: *Program, buf: *Item.AList) ErrorSet!void {
             if (node.romloc != 0xFFFF)
                 buf.append(.{
                     .romloc = node.romloc + 0x100,
@@ -837,7 +838,7 @@ pub fn emitDebug(writer: anytype, program: *Program) !void {
     for (items.items) |item| {
         if (item.parent) |par| {
             const s = switch (par.node) {
-                .Import => |i| i.name,
+                .Import => |i| program.imports.get(i).?.name,
                 .Decl => |d| d.name,
                 else => unreachable,
             };

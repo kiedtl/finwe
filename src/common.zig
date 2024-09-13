@@ -26,10 +26,8 @@ pub var gpa = std.heap.GeneralPurposeAllocator(.{
 
     .safety = true,
 
-    // Probably would enable this later?
-    .thread_safe = false,
-
-    .never_unmap = false,
+    //.never_unmap = true,
+    //.retain_metadata = true,
 }){};
 
 pub const String = std.ArrayList(u8);
@@ -829,7 +827,7 @@ pub const ASTNode = struct {
 
     pub const Type = union(enum) {
         None, // Placeholder for removed ast values
-        Import: Import,
+        Import: []const u8, // String is heap-allocated. Node does not own it
         Decl: Decl, // word declaration
         Call: Call,
         Wild: Wild,
@@ -866,7 +864,7 @@ pub const ASTNode = struct {
                 .Asm => |a| try writer.print("Asm<{}>", .{a}),
                 .Value => |v| try writer.print("Val<{}, {}>", .{ v.val.typ, v.val.val }),
                 //.Cast => |c| try writer.print("Cast<{}, {} ${?}>", .{ c.of, c.to, c.ref }),
-                .Import => |i| try writer.print("Import<{s}>", .{i.name}),
+                .Import => |i| try writer.print("Import<{s}>", .{i}),
                 .Decl => |d| try writer.print("Decl<{s} {}>", .{ d.name, d.variant }),
                 else => try writer.print("{s}", .{s}),
             }
@@ -1164,17 +1162,6 @@ pub const ASTNode = struct {
         pub fn skipGen(self: @This()) bool {
             return self.calls == 0 or self.is_inline == .Always or self.is_inline == .AutoYes;
         }
-
-        pub fn deinit(self: *@This(), program: *Program) void {
-            // std.log.info("freeing {}", .{def});
-            self.variations.deinit();
-            self.scope.deinit(program);
-            var itr = self.body.iterator();
-            while (itr.next()) |item| {
-                item.deinit(1, program);
-            }
-            self.body.deinit();
-        }
     };
 
     pub const Quote = struct {
@@ -1302,6 +1289,15 @@ pub const ASTNode = struct {
         // stdout.print("freeing {} {}\n", .{ self, self.srcloc }) catch unreachable;
 
         switch (self.node) {
+            .Decl => |d| {
+                d.variations.deinit();
+                d.scope.deinit(program);
+                var itr = d.body.iterator();
+                while (itr.next()) |item| {
+                    item.deinit(1, program);
+                }
+                d.body.deinit();
+            },
             .TypeDef => {},
             .When => |w| {
                 _freeList(w.yup, recursed_ctr + 1, program);
@@ -1321,7 +1317,6 @@ pub const ASTNode = struct {
                     .While => |u| _freeList(u.cond, recursed_ctr + 1, program),
                 }
             },
-            .Decl => {}, // Done separately
             .Quote => {}, // Nothing to deinit!
             .Wild => |w| _freeList(w.body, recursed_ctr + 1, program),
             .RBlock => |b| _freeList(b.body, recursed_ctr + 1, program),
@@ -1531,21 +1526,12 @@ pub const Import = struct {
     // Import into current namespace?
     is_defiling: bool = false,
 
-    // Import that was already imported previously (into another
-    // namspace)? Keep track of this so that walkNodes doesn't go
-    // over import ast multiple times
-    is_dupe: bool = false,
-
     pub fn deinit(self: *@This(), program: *Program) void {
-        if (self.is_dupe)
-            return;
-
         //std.log.info("freeing {*} {s}", .{ self, self.path });
 
         var i = self.body.iterator();
         while (i.next()) |n| {
-            if (n.node != .Decl)
-                n.deinit(0, program);
+            n.deinit(0, program);
         }
 
         self.scope.deinit(program);
@@ -1556,7 +1542,7 @@ pub const Import = struct {
 pub const Scope = struct {
     defs: ASTNodePtrList,
     locals: Local.List,
-    imports: ASTNodePtrList,
+    imports: std.ArrayList([]const u8),
     types: std.ArrayList(usize),
     parent: ?*Scope,
 
@@ -1600,7 +1586,7 @@ pub const Scope = struct {
         p.* = .{
             .defs = ASTNodePtrList.init(gpa.allocator()),
             .locals = Local.List.init(gpa.allocator()),
-            .imports = ASTNodePtrList.init(gpa.allocator()),
+            .imports = std.ArrayList([]const u8).init(gpa.allocator()),
             .types = std.ArrayList(usize).init(gpa.allocator()),
             .parent = parent,
         };
@@ -1617,7 +1603,7 @@ pub const Scope = struct {
         caller_args: *const analyser.BlockAnalysis,
         r_stk: bool,
     ) !?*ASTNode {
-        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        var searched_import_buf = std.ArrayList([]const u8).init(gpa.allocator());
         defer searched_import_buf.deinit();
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
@@ -1641,7 +1627,7 @@ pub const Scope = struct {
     }
 
     pub fn findDeclAny(self: *Scope, program: *Program, name: []const u8) ?*ASTNode {
-        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        var searched_import_buf = std.ArrayList([]const u8).init(gpa.allocator());
         defer searched_import_buf.deinit();
         var buf = ASTNodePtrList.init(gpa.allocator());
         defer buf.deinit();
@@ -1650,40 +1636,42 @@ pub const Scope = struct {
     }
 
     pub fn findDeclAll(self: *Scope, program: *Program, name: []const u8) ASTNodePtrList {
-        var searched_import_buf = ASTNodePtrList.init(gpa.allocator());
+        var searched_import_buf = std.ArrayList([]const u8).init(gpa.allocator());
         defer searched_import_buf.deinit();
         var buf = ASTNodePtrList.init(gpa.allocator());
         self._findDecl(name, &buf, &searched_import_buf, true, program);
         return buf;
     }
 
-    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, searched_imports: *ASTNodePtrList, allow_private: bool, program: *Program) void {
-        for (self.imports.items) |import| {
+    fn _findDecl(self: *Scope, name: []const u8, buf: *ASTNodePtrList, searched_imports: *std.ArrayList([]const u8), allow_private: bool, program: *Program) void {
+        for (self.imports.items) |import_path| {
             const already_searched = for (searched_imports.items) |prev_import| {
-                if (mem.eql(u8, prev_import.node.Import.name, import.node.Import.name))
+                if (mem.eql(u8, prev_import, import_path))
                     break true;
             } else false;
             if (already_searched)
                 continue;
-            if (import.node.Import.is_defiling) {
+
+            const import = program.imports.get(import_path).?;
+            if (import.is_defiling) {
                 // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
                 //     @intFromPtr(self),
-                //     import.node.Import.name,
-                //     @intFromPtr(import.node.Import.scope),
+                //     import.name,
+                //     @intFromPtr(import.scope),
                 //     name,
                 // });
-                import.node.Import.scope._findDecl(name, buf, searched_imports, false, program);
-                searched_imports.append(import) catch unreachable;
+                import.scope._findDecl(name, buf, searched_imports, false, program);
+                searched_imports.append(import.path) catch unreachable;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
-                if (mem.eql(u8, name[0..n], import.node.Import.name)) {
+                if (mem.eql(u8, name[0..n], import.name)) {
                     // std.log.info("[{x}] search import {s} ({x}) for {s}", .{
                     //     @intFromPtr(self),
-                    //     import.node.Import.name,
-                    //     @intFromPtr(import.node.Import.scope),
+                    //     import.name,
+                    //     @intFromPtr(import.scope),
                     //     name,
                     // });
-                    import.node.Import.scope._findDecl(name[n + 1 ..], buf, searched_imports, false, program);
-                    searched_imports.append(import) catch unreachable;
+                    import.scope._findDecl(name[n + 1 ..], buf, searched_imports, false, program);
+                    searched_imports.append(import.path) catch unreachable;
                 }
             }
         }
@@ -1707,13 +1695,14 @@ pub const Scope = struct {
     }
 
     pub fn findType(self: *Scope, name: []const u8, p: *Program, allow_private: bool) ?usize {
-        for (self.imports.items) |import| {
-            if (import.node.Import.is_defiling) {
-                if (import.node.Import.scope.findType(name, p, false)) |n|
+        for (self.imports.items) |import_path| {
+            const import = p.imports.get(import_path).?;
+            if (import.is_defiling) {
+                if (import.scope.findType(name, p, false)) |n|
                     return n;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
-                if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    if (import.node.Import.scope.findType(name[n + 1 ..], p, false)) |d|
+                if (mem.eql(u8, name[0..n], import.name))
+                    if (import.scope.findType(name[n + 1 ..], p, false)) |d|
                         return d;
             }
         }
@@ -1731,13 +1720,14 @@ pub const Scope = struct {
     }
 
     pub fn findLocal(self: *Scope, name: []const u8, p: *Program, allow_private: bool) ?*Local {
-        for (self.imports.items) |import| {
-            if (import.node.Import.is_defiling) {
-                if (import.node.Import.scope.findLocal(name, p, false)) |n|
+        for (self.imports.items) |import_path| {
+            const import = p.imports.get(import_path).?;
+            if (import.is_defiling) {
+                if (import.scope.findLocal(name, p, false)) |n|
                     return n;
             } else if (mem.indexOfScalar(u8, name, '/')) |n| {
-                if (mem.eql(u8, name[0..n], import.node.Import.name))
-                    if (import.node.Import.scope.findLocal(name[n + 1 ..], p, false)) |d|
+                if (mem.eql(u8, name[0..n], import.name))
+                    if (import.scope.findLocal(name[n + 1 ..], p, false)) |d|
                         return d;
             }
         }
@@ -1781,7 +1771,7 @@ pub const Program = struct {
     lexed: std.ArrayList(lexer.NodeList),
 
     // Keep track of which files evaluated, to avoid import infinite loop
-    imports: ASTNodePtrList,
+    imports: std.StringHashMap(Import),
 
     flag_dampe: bool = false,
     flag_graphical: bool = false,
@@ -1817,7 +1807,7 @@ pub const Program = struct {
             .rng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp())),
             .breakpoints = ASTNodePtrList.init(alloc),
             .global_scope = Scope.create(null),
-            .imports = ASTNodePtrList.init(alloc),
+            .imports = std.StringHashMap(Import).init(alloc),
             .lexed = std.ArrayList(lexer.NodeList).init(alloc),
         };
     }
@@ -1825,18 +1815,15 @@ pub const Program = struct {
     pub fn deinit(self: *Program) void {
         var i = self.ast.iterator();
         while (i.next()) |n| {
-            if (n.node != .Decl)
-                n.deinit(0, self);
+            n.deinit(0, self);
         }
-
-        for (self.defs.items) |def|
-            def.node.Decl.deinit(self);
 
         for (self.types.items) |t|
             t.scope.deinit(self);
 
-        for (self.imports.items) |imp|
-            imp.node.Import.deinit(self);
+        var imports = self.imports.valueIterator();
+        while (imports.next()) |imp|
+            imp.deinit(self);
 
         for (self.lexed.items) |l|
             lexer.Node.deinitMain(l, self.alloc);
@@ -1892,42 +1879,48 @@ pub const Program = struct {
         return if (path.len == 0) null else path;
     }
 
-    pub fn walkNodes(self: *Program, parent: ?*ASTNode, nodes: ASTNodeList, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
+    pub fn walkNodes(self: *Program, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Scope, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
+        try self._walkNodeList(null, self.global_scope, self.ast, ctx, func);
+        var imports = self.imports.valueIterator();
+        while (imports.next()) |import|
+            try self._walkNodeList(null, import.scope, import.body, ctx, func);
+    }
+
+    fn _walkNodeList(self: *Program, parent: ?*ASTNode, scope: *Scope, nodes: ASTNodeList, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Scope, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         var iter = nodes.iterator();
         while (iter.next()) |node|
-            walkNode(self, parent, node, ctx, func) catch |e| switch (e) {
+            self._walkNode(parent, scope, node, ctx, func) catch |e| switch (e) {
                 error._Continue => continue,
                 else => return e,
             };
     }
 
-    pub fn walkNode(self: *Program, parent: ?*ASTNode, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
-        try func(node, parent, self, ctx);
+    fn _walkNode(self: *Program, parent: ?*ASTNode, scope: *Scope, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Scope, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
+        try func(node, parent, scope, self, ctx);
         switch (node.node) {
-            .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
-            .Import => |b| try walkNodes(self, node, b.body, ctx, func),
-            .Decl => |b| try walkNodes(self, node, b.body, ctx, func),
-            .Wild => |b| try walkNodes(self, parent, b.body, ctx, func),
-            .RBlock => |b| try walkNodes(self, parent, b.body, ctx, func),
-            .Quote => |b| try walkNode(self, parent, b.def, ctx, func),
+            .Import, .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .Decl => |b| try self._walkNodeList(node, b.scope, b.body, ctx, func),
+            .Wild => |b| try self._walkNodeList(parent, scope, b.body, ctx, func),
+            .RBlock => |b| try self._walkNodeList(parent, scope, b.body, ctx, func),
+            .Quote => |b| try self._walkNode(parent, scope, b.def, ctx, func),
             .Loop => |d| {
                 switch (d.loop) {
-                    .Until => |u| try walkNodes(self, parent, u.cond, ctx, func),
-                    .While => |u| try walkNodes(self, parent, u.cond, ctx, func),
+                    .Until => |u| try self._walkNodeList(parent, scope, u.cond, ctx, func),
+                    .While => |u| try self._walkNodeList(parent, scope, u.cond, ctx, func),
                 }
-                try walkNodes(self, parent, d.body, ctx, func);
+                try self._walkNodeList(parent, scope, d.body, ctx, func);
             },
             .When => |when| {
-                try walkNodes(self, parent, when.yup, ctx, func);
-                if (when.nah) |n| try walkNodes(self, parent, n, ctx, func);
+                try self._walkNodeList(parent, scope, when.yup, ctx, func);
+                if (when.nah) |n| try self._walkNodeList(parent, scope, n, ctx, func);
             },
             .Cond => |cond| {
                 for (cond.branches.items) |branch| {
-                    try walkNodes(self, parent, branch.cond, ctx, func);
-                    try walkNodes(self, parent, branch.body, ctx, func);
+                    try self._walkNodeList(parent, scope, branch.cond, ctx, func);
+                    try self._walkNodeList(parent, scope, branch.body, ctx, func);
                 }
                 if (cond.else_branch) |branch|
-                    try walkNodes(self, parent, branch, ctx, func);
+                    try self._walkNodeList(parent, scope, branch, ctx, func);
             },
         }
     }
