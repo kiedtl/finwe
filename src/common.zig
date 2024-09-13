@@ -1168,7 +1168,7 @@ pub const ASTNode = struct {
         pub fn deinit(self: *@This(), program: *Program) void {
             // std.log.info("freeing {}", .{def});
             self.variations.deinit();
-            self.scope.deinit();
+            self.scope.deinit(program);
             var itr = self.body.iterator();
             while (itr.next()) |item| {
                 item.deinit(1, program);
@@ -1321,19 +1321,10 @@ pub const ASTNode = struct {
                     .While => |u| _freeList(u.cond, recursed_ctr + 1, program),
                 }
             },
-            .Decl => |_| {
-                // d.variations.deinit();
-                // d.scope.deinit();
-                // _freeList(d.body, recursed_ctr + 1, program);
-            },
-            //.Quote => |q| q.def.deinit(recursed_ctr + 1, program),
-            .Quote => {},
+            .Decl => {}, // Done separately
+            .Quote => {}, // Nothing to deinit!
             .Wild => |w| _freeList(w.body, recursed_ctr + 1, program),
             .RBlock => |b| _freeList(b.body, recursed_ctr + 1, program),
-            .Import => |i| {
-                i.scope.deinit();
-                _freeList(i.body, recursed_ctr + 1, program);
-            },
             .VDecl => {},
             .VDeref, .VRef => {},
             .Cast => |c| {
@@ -1342,6 +1333,7 @@ pub const ASTNode = struct {
                 program.alloc.destroy(c.resolved);
             },
             .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Return => {},
+            .Import => {}, // Done separately
         }
     }
 };
@@ -1547,7 +1539,16 @@ pub const Import = struct {
     pub fn deinit(self: *@This(), program: *Program) void {
         if (self.is_dupe)
             return;
-        //self.scope.deinit(); // Double-free!
+
+        //std.log.info("freeing {*} {s}", .{ self, self.path });
+
+        var i = self.body.iterator();
+        while (i.next()) |n| {
+            if (n.node != .Decl)
+                n.deinit(0, program);
+        }
+
+        self.scope.deinit(program);
         program.alloc.free(self.path);
     }
 };
@@ -1561,7 +1562,7 @@ pub const Scope = struct {
 
     pub const AList = std.ArrayList(Scope);
 
-    pub fn deinit(self: *Scope) void {
+    pub fn deinit(self: *Scope, program: *Program) void {
         var i = self.locals.iterator();
         while (i.next()) |local|
             local.default.deinit();
@@ -1570,6 +1571,8 @@ pub const Scope = struct {
         self.imports.deinit();
         self.types.deinit();
         self.locals.deinit();
+
+        program.alloc.destroy(self);
     }
 
     pub fn shallowclone(self: *Scope) *Scope {
@@ -1820,17 +1823,23 @@ pub const Program = struct {
     }
 
     pub fn deinit(self: *Program) void {
+        var i = self.ast.iterator();
+        while (i.next()) |n| {
+            if (n.node != .Decl)
+                n.deinit(0, self);
+        }
+
         for (self.defs.items) |def|
             def.node.Decl.deinit(self);
 
-        for (self.lexed.items) |l|
-            lexer.Node.deinitMain(l, self.alloc);
-
         for (self.types.items) |t|
-            t.scope.deinit();
+            t.scope.deinit(self);
 
         for (self.imports.items) |imp|
             imp.node.Import.deinit(self);
+
+        for (self.lexed.items) |l|
+            lexer.Node.deinitMain(l, self.alloc);
 
         self.ast.deinit();
         self.defs.deinit();
@@ -1840,8 +1849,9 @@ pub const Program = struct {
         self.builtin_types.deinit();
         self.errors.deinit();
         self.breakpoints.deinit();
-        self.global_scope.deinit();
+        self.global_scope.deinit(self);
         self.imports.deinit();
+        self.lexed.deinit();
     }
 
     pub fn resolveImportNameToPath(self: *Program, name: []const u8) ?[]const u8 {

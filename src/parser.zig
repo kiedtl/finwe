@@ -1246,6 +1246,12 @@ pub const Parser = struct {
         try parser_.program.walkNodes(null, parser_.program.ast, parser_, struct {
             pub fn f(node: *ASTNode, parent: ?*ASTNode, self: *Program, _: *Parser) ErrorSet!void {
                 if (node.node == .Import) {
+                    // Since we're recursively adding stuff, don't add it
+                    // twice
+                    for (self.imports.items) |imp|
+                        if (imp == node)
+                            return;
+
                     self.imports.append(node) catch unreachable;
                     if (parent) |p| {
                         switch (p.node) {
@@ -1276,6 +1282,7 @@ pub const Parser = struct {
 
             if (already_imported) |nodeptr| {
                 assert(importptr.* != nodeptr);
+                import.path = path;
                 import.body = nodeptr.node.Import.body;
                 import.is_dupe = true;
                 continue;

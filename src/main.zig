@@ -16,9 +16,9 @@ const gpa = &@import("common.zig").gpa;
 
 pub fn main() anyerror!void {
     const alloc = gpa.allocator();
-    defer {
-        _ = gpa.deinit();
-    }
+    // defer {
+    //     _ = gpa.deinit();
+    // }
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help               Print this help message.
