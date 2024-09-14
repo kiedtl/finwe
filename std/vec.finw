@@ -72,13 +72,14 @@
 
 #(method Vector)
 (word pop ( @(AnyOf Vector) -- (Child (FieldType (Child $0) items)) ) [
-	dup ;last 1s rot ;shrink-by
+	//dup ;last move 1s ;shrink-by (r move)
+	1s swap dup ;last move ;shrink-by (r move)
 ])
 
 #(method Vector)
 (word add-one ( @(AnyOf Vector) -- ) [
 	dup :len -> 1+ over :len <-
-	dup :len -> over ;ensure-capacity
+	dup :len -> swap ;ensure-capacity
 ])
 
 #(method Vector)
