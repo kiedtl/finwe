@@ -48,6 +48,20 @@
 ])
 
 #(method Vector)
+(word append-many ( U16 @(Child (FieldType (Child $0) items)) @(AnyOf Vector) -- ) [
+	// len slice self
+	move
+	// len slice -- self
+	over (r copy) :len -> + (r copy) ;ensure-capacity
+	// len slice -- self
+	tuck> (r copy) :len -> (r copy) :items -> :
+	// len len slice self[len] -- self
+	std/memcpy drop
+	// len -- self
+	(r move) ;grow-by-assume-cap
+])
+
+#(method Vector)
 (word last-ptr ( @(AnyOf Vector) -- @(Child (FieldType (Child $0) items)) ) [
 	dup :items -> swap :len -> 1- :
 	(as @(Child (FieldType (Child $0) items)))
@@ -87,6 +101,13 @@
 	:len <-
 ])
 
+#(method Vector)
+(word grow-by-assume-cap ( U16 @(AnyOf Vector) -- ) [
+	tuck
+	:len -> swap +
+	// ( vec* new-len )
+	swap :len <-
+])
 
 #(method Vector)
 (word shrink-by ( U16 @(AnyOf Vector) -- ) [
@@ -223,4 +244,37 @@
 	0s @lst ;swap-remove (should eq 1s)
 	@lst :len -> (should eq 2s)
 	0 @lst :items -> : -> (should eq 5s)
+])
+
+(test Vector/append-many [
+	alloc/init
+	(let lst (Of Vector U8))
+	@lst init
+
+	"Hi!" dup std/strlen swap @lst ;append-many
+
+	@lst :len -> (should eq 3s)
+	@lst :items -> :0 -> (should eq 'H)
+	@lst :items -> :1 -> (should eq 'i)
+	@lst :items -> :2 -> (should eq '!)
+
+	" How are you!" dup std/strlen swap @lst ;append-many
+
+	@lst :len -> (should eq 16s)
+	@lst :items -> :0  -> (should eq 'H)
+	@lst :items -> :1  -> (should eq 'i)
+	@lst :items -> :2  -> (should eq '!)
+	@lst :items -> :3  -> (should eq 0x20)
+	@lst :items -> :4  -> (should eq 'H)
+	@lst :items -> :5  -> (should eq 'o)
+	@lst :items -> :6  -> (should eq 'w)
+	@lst :items -> :7  -> (should eq 0x20)
+	@lst :items -> :8  -> (should eq 'a)
+	@lst :items -> :9  -> (should eq 'r)
+	@lst :items -> :10 -> (should eq 'e)
+	@lst :items -> :11 -> (should eq 0x20)
+	@lst :items -> :12 -> (should eq 'y)
+	@lst :items -> :13 -> (should eq 'o)
+	@lst :items -> :14 -> (should eq 'u)
+	@lst :items -> :15 -> (should eq '!)
 ])
