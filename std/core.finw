@@ -48,7 +48,7 @@
 (word 2dup  ((AnySz $0) Any -- $1 $0 $1 $0  ) [ over over                    ])
 
 (word rot   ((AnySz $0) (AnySz $0) Any -- $1 $0 $2) [ (asm "g" .Op/Orot)     ])
-(word rot>  ((AnySz $0) (AnySz $0) Any -- $0 $0 $0) [ rot rot                ])
+(word rot>  ((AnySz $0) (AnySz $0) Any -- $0 $2 $1) [ rot rot                ])
 (word tuck  ((AnySz $0) Any -- $0 $1 $0     ) [ swap over                    ])
 (word tuck> ((AnySz $0) Any -- $1 $1 $0     ) [ over swap                    ])
 
