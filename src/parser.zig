@@ -398,6 +398,10 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, i, "debug")) {
                     break :b ASTNode{ .node = .Debug, .srcloc = node.location };
+                } else if (mem.eql(u8, i, "break")) {
+                    break :b ASTNode{ .node = .{ .Break = .{} }, .srcloc = node.location };
+                } else if (mem.eql(u8, i, "continue")) {
+                    break :b ASTNode{ .node = .{ .Continue = .{} }, .srcloc = node.location };
                 }
                 break :b ASTNode{ .node = .{ .Call = .{ .name = i } }, .srcloc = node.location };
             },
@@ -825,6 +829,12 @@ pub const Parser = struct {
                 } else if (mem.eql(u8, k, "debug")) {
                     try self.validateListLength(ast, 1);
                     break :b ASTNode{ .node = .Debug, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "break")) {
+                    try self.validateListLength(ast, 1);
+                    break :b ASTNode{ .node = .{ .Break = .{} }, .srcloc = ast[0].location };
+                } else if (mem.eql(u8, k, "continue")) {
+                    try self.validateListLength(ast, 1);
+                    break :b ASTNode{ .node = .{ .Continue = .{} }, .srcloc = ast[0].location };
                 } else if (mem.eql(u8, k, "until") or mem.eql(u8, k, "while")) {
                     try self.validateListLength(ast, 3);
 

@@ -202,6 +202,8 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         error.ExpectedStruct => stderr.print("Expected struct type, got {}", .{
             TypeFmt.from(e.ctx.finwetype1.?, program),
         }) catch unreachable,
+        error.NakedBreak => stderr.print("Break cannot occur outside of a loop.", .{}) catch unreachable,
+        error.NakedContinue => stderr.print("Continue cannot occur outside of a loop.", .{}) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,
         // }) catch unreachable,

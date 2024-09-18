@@ -843,6 +843,8 @@ pub const ASTNode = struct {
         Call: Call,
         Wild: Wild,
         RBlock: RBlock,
+        Continue: Continue,
+        Break: Break,
         Loop: Loop,
         When: When,
         Cond: Cond,
@@ -1079,6 +1081,14 @@ pub const ASTNode = struct {
         };
     };
 
+    pub const Break = struct {
+        loop: ?*ASTNode = null,
+    };
+
+    pub const Continue = struct {
+        loop: ?*ASTNode = null,
+    };
+
     pub const CondPrep = enum {
         unchecked,
         none,
@@ -1215,6 +1225,8 @@ pub const ASTNode = struct {
     pub fn deepclone(self: @This(), parent: ?*Decl, program: *Program) @This() {
         var new = self.node;
         switch (new) {
+            .Break => |b| assert(b.loop == null),
+            .Continue => |c| assert(c.loop == null),
             .TypeDef => unreachable,
             .When => {
                 new.When.yup = _deepcloneASTList(new.When.yup, parent, program);
@@ -1338,7 +1350,7 @@ pub const ASTNode = struct {
                 program.alloc.destroy(c.original);
                 program.alloc.destroy(c.resolved);
             },
-            .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Return => {},
+            .Continue, .Break, .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Return => {},
             .Import => {}, // Done separately
         }
     }
@@ -1909,7 +1921,7 @@ pub const Program = struct {
     fn _walkNode(self: *Program, parent: ?*ASTNode, scope: *Scope, node: *ASTNode, ctx: anytype, func: *const fn (*ASTNode, ?*ASTNode, *Scope, *Program, @TypeOf(ctx)) Error.Set!void) Error.Set!void {
         try func(node, parent, scope, self, ctx);
         switch (node.node) {
-            .Import, .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
+            .Continue, .Break, .Import, .None, .Asm, .Cast, .Debug, .Breakpoint, .Builtin, .Return, .Call, .GetChild, .GetIndex, .VDecl, .VDeref, .VRef, .Value, .TypeDef => {},
             .Decl => |b| try self._walkNodeList(node, b.scope, b.body, ctx, func),
             .Wild => |b| try self._walkNodeList(parent, scope, b.body, ctx, func),
             .RBlock => |b| try self._walkNodeList(parent, scope, b.body, ctx, func),

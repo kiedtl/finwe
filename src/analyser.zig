@@ -43,6 +43,8 @@ pub const Error = error{
     StackBranching2,
     StackImbalanceLoop,
     ExpectedStruct,
+    NakedBreak,
+    NakedContinue,
 };
 
 pub const AnalysisFmt = struct {
@@ -520,7 +522,7 @@ const Ctx = struct {
     w_blk: bool = false,
 
     conditional: bool = false,
-    loop: bool = false,
+    loop: ?*ASTNode = null,
 };
 
 fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis, ctx: Ctx) ErrorSet!AnalyserInfo {
@@ -677,7 +679,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Loop => |*l| {
                 var nctx = ctx;
-                nctx.loop = true;
+                nctx.loop = node;
 
                 switch (l.loop) {
                     .While, .Until => |*u| if (u.cond_arity) |*arity| {
@@ -733,6 +735,16 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         }
                     },
                 }
+            },
+            .Break => |*b| {
+                b.loop = ctx.loop orelse
+                    return program.aerr(error.NakedBreak, node.srcloc, .{});
+                break;
+            },
+            .Continue => |*b| {
+                b.loop = ctx.loop orelse
+                    return program.aerr(error.NakedContinue, node.srcloc, .{});
+                break;
             },
             .When => |w| {
                 var nctx = ctx;
@@ -1030,7 +1042,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Breakpoint => |*brk| {
-                brk.must_execute = !ctx.loop and !ctx.conditional;
+                brk.must_execute = ctx.loop == null and !ctx.conditional;
                 brk.parent_test = parent;
                 program.breakpoints.append(node) catch unreachable;
 

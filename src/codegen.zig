@@ -55,6 +55,7 @@ pub const UA = struct {
 
 pub const LabelType = union(enum) {
     LoopBegin,
+    LoopContinue,
     LoopEnd,
     DeclBegin,
     DeclEnd,
@@ -77,6 +78,7 @@ pub const LabelType = union(enum) {
 
         return switch (self) {
             .LoopBegin => try writer.print("loop", .{}),
+            .LoopContinue => try writer.print("loop_test_continue", .{}),
             .LoopEnd => try writer.print("done", .{}),
             .DeclBegin => try writer.print("", .{}),
             .DeclEnd => try writer.print("end_decl", .{}),
@@ -354,6 +356,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             switch (l.loop) {
                 .While => |u| {
                     try emitLabel(buf, .LoopBegin, node);
+                    try emitLabel(buf, .LoopContinue, node);
                     try genCondPrep(program, buf, node, u.cond_prep);
                     try genNodeList(program, buf, u.cond, ctx);
 
@@ -372,14 +375,24 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
                     try emitLabel(buf, .LoopBegin, node);
                     try genNodeList(program, buf, l.body, ctx);
 
+                    try emitLabel(buf, .LoopContinue, node);
                     try genCondPrep(program, buf, node, u.cond_prep);
                     try genNodeList(program, buf, u.cond, ctx);
                     try emitIMM(buf, node, WK_STACK, false, .Olit, 0);
                     try emit(buf, node, WK_STACK, false, false, .Oequ);
                     try emit(buf, node, WK_STACK, false, true, .Ojci);
                     try emitUA(buf, .LoopBegin, .Always, node);
+                    try emitLabel(buf, .LoopEnd, node);
                 },
             }
+        },
+        .Break => |b| {
+            try emit(buf, node, WK_STACK, false, false, .Ojmi);
+            try emitUA(buf, .LoopEnd, .Auto, b.loop.?);
+        },
+        .Continue => |c| {
+            try emit(buf, node, WK_STACK, false, false, .Ojmi);
+            try emitUA(buf, .LoopContinue, .Auto, c.loop.?);
         },
         .Asm => |a| try emit(buf, node, a.stack, a.keep, a.short, a.op),
         .Call => |f| if (f.is_inline_override or
