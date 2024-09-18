@@ -28,6 +28,7 @@
 #inline (word copy (    Any -- $0 | -- $0   ) [ (asm "kg" .Op/Osth)          ])
 #inline (word move (    Any --    | -- $0   ) [ (asm "g" .Op/Osth)           ])
 
+#noreturn
 #inline (word halt (        --              ) [ (asm "" .Op/Obrk)            ])
 
 (word lda  (       AnyPtr16 -- (Child $0)   ) [ (asm "g" .Op/Olda) (as (Child $0)) ])
