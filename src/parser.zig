@@ -721,9 +721,9 @@ pub const Parser = struct {
                     };
                 } else if (mem.eql(u8, k, "as")) {
                     try self.validateListLengthMinMax(ast, 2, 777);
-                    const from = StackBuffer(TypeInfo, 4).new();
-                    const orig = StackBuffer(TypeInfo, 4).new();
-                    const resv = StackBuffer(TypeInfo, 4).new();
+                    const from = StackBuffer(TypeInfo, 4).new(self.program.alloc);
+                    const orig = StackBuffer(TypeInfo, 4).new(self.program.alloc);
+                    const resv = StackBuffer(TypeInfo, 4).new(self.program.alloc);
                     for (ast[1..]) |node| {
                         orig.append(try self.parseType(&node)) catch unreachable;
                         resv.append(.Any) catch unreachable;

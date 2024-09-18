@@ -1282,9 +1282,9 @@ pub const ASTNode = struct {
             .VDecl => {},
             .VDeref, .VRef => {},
             .Cast => {
-                new.Cast.from = new.Cast.from.clone();
-                new.Cast.original = new.Cast.original.clone();
-                new.Cast.resolved = new.Cast.resolved.clone();
+                new.Cast.from = new.Cast.from.clone(program.alloc);
+                new.Cast.original = new.Cast.original.clone(program.alloc);
+                new.Cast.resolved = new.Cast.resolved.clone(program.alloc);
             },
             .GetIndex, .GetChild, .None, .Call, .Asm, .Value, .Debug, .Builtin, .Breakpoint, .Return => {},
         }
@@ -1332,6 +1332,7 @@ pub const ASTNode = struct {
                     _freeList(b.body, recursed_ctr + 1, program);
                     _freeList(b.cond, recursed_ctr + 1, program);
                 }
+                c.branches.deinit();
             },
             .Loop => |l| {
                 _freeList(l.body, recursed_ctr + 1, program);
@@ -1837,6 +1838,8 @@ pub const Program = struct {
     }
 
     pub fn deinit(self: *Program) void {
+        self.alloc.free(self.compiler_dir_path);
+
         var i = self.ast.iterator();
         while (i.next()) |n| {
             n.deinit(0, self);

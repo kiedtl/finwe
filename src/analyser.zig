@@ -1371,14 +1371,14 @@ const core =
 ;
 
 fn _testExpectErr(p: []const u8, e: Error) !void {
-    // TODO: use testing allocator once mem leaks are fixed
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const talloc = gpa.allocator();
+    const talloc = testing.allocator;
 
     var program = common.Program.init(talloc, "/") catch unreachable;
+    defer program.deinit();
 
     var lexer = @import("lexer.zig").Lexer.init(&program, p, "<stdin>", talloc);
     const lexed = try lexer.lexList(.Root);
+    defer @import("lexer.zig").Node.deinitMain(lexed, talloc);
     defer lexer.deinit();
 
     var parser = @import("parser.zig").Parser.init(&program, true, talloc);

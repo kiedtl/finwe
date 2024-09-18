@@ -36,14 +36,14 @@ pub fn StackBuffer(comptime T: type, comptime capacity: usize) type {
             self.* = Self.init(data);
         }
 
-        pub fn new() *Self {
-            const buf = gpa.allocator().create(Self) catch unreachable;
+        pub fn new(alloc: mem.Allocator) *Self {
+            const buf = alloc.create(Self) catch unreachable;
             buf.reinit(null);
             return buf;
         }
 
-        pub fn clone(self: *Self) *Self {
-            const buf = gpa.allocator().create(Self) catch unreachable;
+        pub fn clone(self: *Self, alloc: mem.Allocator) *Self {
+            const buf = alloc.create(Self) catch unreachable;
             buf.reinit(self.constSlice());
             return buf;
         }
