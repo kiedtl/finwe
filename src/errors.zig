@@ -204,6 +204,7 @@ pub fn printError(program: *Program, e: Error, lines: []const []const u8) void {
         }) catch unreachable,
         error.NakedBreak => stderr.print("Break cannot occur outside of a loop.", .{}) catch unreachable,
         error.NakedContinue => stderr.print("Continue cannot occur outside of a loop.", .{}) catch unreachable,
+        error.NoreturnCannotReturn => stderr.print("<noreturn> words cannot return items.", .{}) catch unreachable,
         // error.Template => stderr.print("ohno {} {}", .{
         //     e.ctx.usize1.?, e.ctx.usize2.?,
         // }) catch unreachable,

@@ -45,6 +45,7 @@ pub const Error = error{
     ExpectedStruct,
     NakedBreak,
     NakedContinue,
+    NoreturnCannotReturn,
 };
 
 pub const AnalysisFmt = struct {
@@ -627,6 +628,8 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         newdef.node.Decl.arity = ungenericified;
                         c.node = newdef;
 
+                        try checkFuncAritySanity(newdef, program);
+
                         var ab = BlockAnalysis{};
                         const sr = if (ctx.r_blk) c.args.len else 0;
                         const sn = if (ctx.r_blk) 0 else c.args.len;
@@ -1172,6 +1175,16 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
     return info;
 }
 
+// Sanity checks for function arities
+fn checkFuncAritySanity(node: *ASTNode, p: *Program) !void {
+    const decl = node.node.Decl;
+    if (decl.is_noreturn and
+        (decl.arity.?.stack.len > 0 or decl.arity.?.rstack.len > 0))
+    {
+        return p.aerr(error.NoreturnCannotReturn, node.srcloc, .{});
+    }
+}
+
 // Ensure stack state matches what's expected at the end
 fn checkEndState(
     a: *const BlockAnalysis,
@@ -1420,5 +1433,13 @@ test "error on cond bodies having differing stack effects" {
         "(word main [ 0 (cond [ 0= ] [ 9s ] [ 1 = ] [ 0 ]) ])",
     }) |s| {
         try _testExpectErr(core ++ s, error.StackBranching2);
+    }
+}
+
+test "error on noreturn trying to return values" {
+    inline for (&[_][]const u8{
+        "(word main (--) [ foo ]) #noreturn (word foo (-- Bool) [ t ])",
+    }) |s| {
+        try _testExpectErr(core ++ s, error.NoreturnCannotReturn);
     }
 }
