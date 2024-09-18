@@ -516,6 +516,7 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
 }
 
 const AnalyserInfo = struct {
+    continues: bool = false,
     early_return: bool = false,
     no_return: bool = false,
 
@@ -529,7 +530,7 @@ const Ctx = struct {
     w_blk: bool = false,
 
     conditional: bool = false,
-    loop: ?*ASTNode = null,
+    loop: ?struct { node: *ASTNode, expected_arity: *const BlockAnalysis } = null,
 };
 
 fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a: *BlockAnalysis, ctx: Ctx) ErrorSet!AnalyserInfo {
@@ -688,7 +689,6 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
             },
             .Loop => |*l| {
                 var nctx = ctx;
-                nctx.loop = node;
 
                 switch (l.loop) {
                     .While, .Until => |*u| if (u.cond_arity) |*arity| {
@@ -700,6 +700,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 switch (l.loop) {
                     .Until => |*u| {
                         const olda = a.*;
+                        nctx.loop = .{ .node = node, .expected_arity = &olda };
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
 
                         if (!ctx.w_blk) {
@@ -709,7 +710,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         const t = a.stack.last();
                         try u.cond_prep.execute(a);
 
-                        _ = try analyseBlock(program, parent, u.cond, a, nctx);
+                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
                         assert(a.stack.last().? == .Bool);
                         _ = a.stack.pop() catch unreachable;
 
@@ -724,7 +725,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         const t = a.stack.last().?;
                         try u.cond_prep.execute(a);
 
-                        _ = try analyseBlock(program, parent, u.cond, a, nctx);
+                        _ = try analyseBlock(program, parent, u.cond, a, ctx);
                         assert(a.stack.last().? == .Bool);
                         assert(a.stack.len == oldlen + 1);
 
@@ -737,6 +738,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                             };
 
                         const olda = a.*;
+                        nctx.loop = .{ .node = node, .expected_arity = &olda };
                         _ = try analyseBlock(program, parent, l.body, a, nctx);
 
                         if (!ctx.w_blk) {
@@ -746,13 +748,18 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Break => |*b| {
-                b.loop = ctx.loop orelse
+                b.loop = if (ctx.loop) |loop_info|
+                    loop_info.node
+                else
                     return program.aerr(error.NakedBreak, node.srcloc, .{});
                 break;
             },
             .Continue => |*b| {
-                b.loop = ctx.loop orelse
-                    return program.aerr(error.NakedContinue, node.srcloc, .{});
+                b.loop = if (ctx.loop) |loop_info|
+                    loop_info.node
+                else
+                    return program.aerr(error.NakedBreak, node.srcloc, .{});
+                info.continues = true;
                 break;
             },
             .When => |w| {
@@ -840,9 +847,11 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     //                  false, program);
 
                     _ = a.stack.pop() catch unreachable;
-                    _ = try analyseBlock(program, parent, branch.body, a, ctx);
+                    const r = try analyseBlock(program, parent, branch.body, a, ctx);
 
-                    if (firsta) |firsta_| {
+                    if (r.continues) {
+                        try checkEndState(a, ctx.loop.?.expected_arity, .LoopBody, ctx.loop.?.node.srcloc, false, program);
+                    } else if (firsta) |firsta_| {
                         try checkEndState(a, &firsta_, .CondBody, branch.body_srcloc, false, program);
                     } else {
                         firsta = a.*;
@@ -851,8 +860,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 if (cond.else_branch) |else_br| {
                     a.* = olda;
-                    _ = try analyseBlock(program, parent, else_br, a, ctx);
-                    try checkEndState(a, &firsta.?, .CondBody, cond.else_srcloc.?, false, program);
+                    const r = try analyseBlock(program, parent, else_br, a, ctx);
+                    if (r.continues) {
+                        try checkEndState(a, ctx.loop.?.expected_arity, .LoopBody, ctx.loop.?.node.srcloc, false, program);
+                    } else {
+                        try checkEndState(a, &firsta.?, .CondBody, cond.else_srcloc.?, false, program);
+                    }
                 }
 
                 // TODO: do branch arity checking

@@ -449,11 +449,22 @@ changed by specifying an arity:
 Notes:
 
 - The loop conditional must always return a single bool.
-- In the future, `break`/`continue` syntax will be added. For now no such
-  mechanism exists.
 - The body may not introduce stack branching (like when clauses).
 - The `until` loop is more efficient than the `while`, so prefer `until` as long
   as it doesn't cause larger/inefficient code.
+
+### Break/continue
+
+`break` and `continue` both exist, but are somewhat cumbersome and fragile in
+their current state. `break` in particular lacks testing.
+
+If something strange is happening and you suspect a miscompilation, try removing
+`break` and `continue`, and file a bug if that turns out to be the source of the
+issue.
+
+`continue` will jump straight to the condition, so ensure the stack is in an
+acceptable state by then. Otherwise, you'll get cryptic "Stack changes in loop
+body" errors with no further context.
 
 ## Cond blocks
 

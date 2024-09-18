@@ -388,11 +388,11 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
         },
         .Break => |b| {
             try emit(buf, node, WK_STACK, false, false, .Ojmi);
-            try emitUA(buf, .LoopEnd, .Auto, b.loop.?);
+            try emitUA(buf, .LoopEnd, .Always, b.loop.?);
         },
         .Continue => |c| {
             try emit(buf, node, WK_STACK, false, false, .Ojmi);
-            try emitUA(buf, .LoopContinue, .Auto, c.loop.?);
+            try emitUA(buf, .LoopContinue, .Always, c.loop.?);
         },
         .Asm => |a| try emit(buf, node, a.stack, a.keep, a.short, a.op),
         .Call => |f| if (f.is_inline_override or
