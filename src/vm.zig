@@ -156,8 +156,10 @@ pub const VM = struct {
             }
         }.lessThan);
 
+        const paranoid = rst_ptr % 2 != 0;
+
         var ptr = rst_ptr;
-        while (ptr > 0) : (ptr -= 2) {
+        while (ptr > 0) : (ptr -= if (paranoid) 1 else 2) {
             const addr = @as(u16, @intCast(rst[ptr -| 2])) << 8 | rst[ptr -| 1];
             stderr.print("  \x1b[36mat \x1b[m{x:0>4}", .{addr}) catch unreachable;
             if (self._getFuncNameForAddr(items.items, addr)) |node| {
@@ -170,6 +172,9 @@ pub const VM = struct {
                 stderr.print(" \x1b[37;1m???\x1b[m\n", .{}) catch unreachable;
             }
         }
+
+        if (paranoid)
+            stderr.print("\x1b[33;1mNOTE:\x1b[m Trace printed in paranoid mode (RST size not even).\n", .{}) catch unreachable;
     }
 
     pub fn execute(self: *VM) void {
