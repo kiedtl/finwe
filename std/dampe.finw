@@ -17,6 +17,7 @@
 
 (let c DampeCmd)
 
+#dampe (word backtrace   (             --) [ 0x40 @c :id <- ->expan            ])
 #dampe (word protect     (AnyPtr16 U16 --) [ 0x41 @c :id <- @c :len <- @c :ptr <- ->expan ])
 #dampe (word unprotect   (    AnyPtr16 --) [ 0x42 @c :id <- @c :ptr <- ->expan ])
 #dampe (word priv-enter  (             --) [ 0x43 @c :id <-            ->expan ])
@@ -25,8 +26,9 @@
 
 #private (word ->expan ( -- ) [ @c .System/expansion deo ])
 
-(word protect               (AnyPtr16 U16 --  ) [ 2drop                       ])
-(word unprotect             (    AnyPtr16 --  ) [ drop                        ])
-(word priv-enter            (             --  ) [                             ])
-(word priv-exit             (             --  ) [                             ])
-(word assert-prot           (    AnyPtr16 --  ) [ drop                        ])
+(word backtrace          (             --) [                                   ])
+(word protect            (AnyPtr16 U16 --) [ 2drop                             ])
+(word unprotect          (    AnyPtr16 --) [ drop                              ])
+(word priv-enter         (             --) [                                   ])
+(word priv-exit          (             --) [                                   ])
+(word assert-prot        (    AnyPtr16 --) [ drop                              ])
