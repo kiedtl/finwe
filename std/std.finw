@@ -1,6 +1,8 @@
 (use* core)
 (use* varvara)
 
+(use dampe)
+
 (struct Maybe0 (Any) [value $0])//{{{
 
 #(method Maybe0) (word maybe? ((AnyOf Maybe0) -- Bool) [
@@ -61,6 +63,73 @@
 (test MaybeFF/orelse [ 0xFF (make (Of MaybeFF U8)) 12 swap ;orelse (should eq 12) ])
 //}}}
 
+(word itoa10 (AnySigned @U8 --) [
+	move
+	dup sign 0<> (when [
+		'- (r copy) <- (r 1+)
+		abs
+	] [ (as (USz $1)) ])
+	(r move)
+	itoa10
+])
+
+(word itoa10 (Any @U8 --) [
+	move
+	dup  9 (as $1) > (when [ (r 1+) ])
+	dup 99 (as $1) > (when [ (r 1+) ])
+	(until [ 0= ] [
+		10 (as $1) /mod
+		(as U8) '0 + (r copy) <-
+		// TODO: replace with (r 1-) when bug is fixed
+		(r [ 1s - (as @U8) ])
+	]) drop
+	(r drop)
+])
+(test itoa10 [
+	(let buf [U8 6])
+
+	0 6s @buf memset8
+	   3 @buf itoa10 @buf print-string (should stdout-eq "3")
+
+	0 6s @buf memset8
+	-79i @buf itoa10 @buf print-string (should stdout-eq "-79")
+
+	0 6s @buf memset8
+	918s @buf itoa10 @buf print-string (should stdout-eq "918")
+
+	0 6s @buf memset8
+	100s @buf itoa10 @buf print-string (should stdout-eq "100")
+])
+
+// ( src dst -- dst[src] )
+(word strcat ( @[Char8] @[Char8] -- @[Char8] ) [
+	(while [ (-- Bool) ldak 0<> ] [ 1+ ])
+	move
+	ldak (while [ 0<> ] [ (r copy) <- (r 1+) 1+ ldak ]) drop
+	0 (r copy) <-
+	drop (r move)
+])
+(test strcat [
+	(let buf [U8 24])
+
+	0 24s @buf memset8
+	"foo" @buf strcat drop @buf print-string (should stdout-eq "foo")
+	"bar" @buf strcat drop @buf print-string (should stdout-eq "foobar")
+
+	0 24s @buf memset8
+	""    @buf strcat drop @buf print-string (should stdout-eq "")
+	"hi"  @buf strcat drop @buf print-string (should stdout-eq "hi")
+	""    @buf strcat drop @buf print-string (should stdout-eq "hi")
+
+	0 24s @buf memset8
+	"C"   @buf strcat "++" swap strcat drop
+		@buf print-string (should stdout-eq "C++")
+
+	0 24s @buf memset8
+	// Test that it adds the null terminator
+	"foo\0aaaa" @buf strcat drop @buf print-string (should stdout-eq "foo")
+])
+
 // FIXME: hundred ways to optimize this, see ;scmp from left project
 // Probably have to wait for (r)/move/copy and friends though.
 //
@@ -82,6 +151,34 @@
 	"Hail Zig" "Hail Zig\0zags" strequ (should eq t)
 	"Hail Zig2" "Hail Zig"      strequ (should eq nil)
 	"foo" "" strequ                    (should eq nil)
+])
+
+// ( haystack needle -- haystack-starts-with-needle? )
+(word strstartequ ( @[Char8] @[Char8] -- Bool ) [
+	move
+
+	(while [
+		(-- Bool)
+		ldak (r [ ldak move ])
+		2dup = rot 0<> rot 0<> and and
+	] [
+		1+ (r 1+)
+	])
+	drop
+	(r [ move ]) -> 0=
+])
+(test strstartequ [
+	"Hail Zig2" "Hail Zig" strstartequ (should eq t)
+	"blah blah" "foo bar"  strstartequ (should eq nil)
+	"blah foo"  "foo bar"  strstartequ (should eq nil)
+	"foo"       "foo bar"  strstartequ (should eq nil)
+	"foo bar"   "foo"      strstartequ (should eq t)
+	//""          ""         strstartequ (should eq t)
+	"c"         "b"        strstartequ (should eq nil)
+	""          "b"        strstartequ (should eq nil)
+	"b"         "b"        strstartequ (should eq t)
+	"b"         ""         strstartequ (should eq t)
+	"foo\0abc"  "foo\0xyz" strstartequ (should eq t)
 ])
 
 (word strlen ( @[Char8] -- U16 ) [ // TODO: move to str module
@@ -108,6 +205,42 @@
 	])
 
 	3drop
+])
+
+(struct ExpansionFillCommand
+	[type      U8]
+	[len      U16]
+	[bank     U16]
+	[addr @Opaque]
+	[value     U8]
+)
+
+// ( len ptr -- )
+(word memzero (U16 AnyPtr16 -- ) [
+	(let cmdbuf ExpansionFillCommand [0x00 0x0000s 0x0000s 0x0000s 0x00])
+
+	@cmdbuf :addr <-
+	@cmdbuf :len  <-
+
+	//0s @cmdbuf :bank  <-
+	//0  @cmdbuf :value <-
+
+	@cmdbuf .System/expansion deo
+])
+(test memset8_and_memzero [
+	(let buf [U8 4])
+	
+	9 4s @buf memset8
+	@buf :0 -> (should eq 9)
+	@buf :1 -> (should eq 9)
+	@buf :2 -> (should eq 9)
+	@buf :3 -> (should eq 9)
+
+	4s @buf memzero
+	@buf :0 -> (should eq 0)
+	@buf :1 -> (should eq 0)
+	@buf :2 -> (should eq 0)
+	@buf :3 -> (should eq 0)
 ])
 
 // ( len src* dst* -- dst* )
@@ -147,10 +280,30 @@
 	10s @foo + -> (should eq 'X)
 ])
 
+(struct ExpansionCopyCommand
+	[type     U8]
+	[len     U16]
+	[srcbank U16]
+	[src @Opaque]
+	[dstbank U16]
+	[dst @Opaque]
+)
+
+// ( len src* dst* -- )
+(word memcpyr ( U16 $0 AnyPtr -- ) [
+	(let cmdbuf ExpansionCopyCommand [0x02])
+
+	@cmdbuf :dst <-
+	@cmdbuf :src <-
+	@cmdbuf :len <-
+
+	@cmdbuf .System/expansion deo
+])
+
 #noreturn #dampe
 (word panic (@U8 -- ) [
 	"Panic: " print-string print-string nl
-	0x40 .System/debug deo
+	dampe/backtrace
 	"Aborting.\n" print-string
 	0x01 .System/state deo
 	(asm "" .Op/Obrk)

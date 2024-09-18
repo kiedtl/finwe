@@ -128,12 +128,21 @@
 (word neg?  (            I8 -- Bool         ) [    0x7f >                    ])
 (word neg?  (           I16 -- Bool         ) [ 0x7fffs >                    ])
 (word min   (        $0 Any -- $0           ) [ 2dup >= (when [ swap ]) drop ])
+(word max   (        $0 Any -- $0           ) [ 2dup <= (when [ swap ]) drop ])
 
 (test min [
-	  0    1 min (should eq   0)
-	  0 0xFF min (should eq   0)
-	 23   18 min (should eq  18)
-	-1i  38i min (should eq -1i)
+	  0    1 min (should eq    0)
+	  0 0xFF min (should eq    0)
+	 23   18 min (should eq   18)
+	-1i  38i min (should eq  -1i)
+	-1i -38i min (should eq -38i)
+])
+
+(test max [
+	  0    1 max (should eq    1)
+	  0 0xFF max (should eq 0xFF)
+	 23   18 max (should eq   23)
+	-1i -38i max (should eq  -1i)
 ])
 
 (test sext [
@@ -200,6 +209,7 @@
 	(wild ($2 $1 $0 -- $1 $0 $2) [ (asm "s" .Op/Oswp)  ])
 ])
 
+// STH2 ROT ROT STHrs SWP2
 (word rot-sbs (Any16 Any8 Any16 -- $1 $0 $2) [
 	// sa0 sa1 bt sb0 sb1
 	(wild (--) [ (asm "s" .Op/Osth)  ]) // sa0 sa1 bt | sb0 sb1
@@ -236,6 +246,14 @@
 	(wild ($1 $0 -- $1 $0 $1) [])
 ])
 
+(word over-bs (Any8 Any16 -- $1 $0 $1) [
+	// b s0 s1
+	(wild (--) [ (asm "k" .Op/Orot) ]) // b s0 s1 s0 s1 b
+	(wild (--) [ (asm "" .Op/Onip)  ]) // b s0 s1 s0 b
+	(wild (--) [ (asm "" .Op/Onip) ])  // b s0 s1 b
+	(wild ($1 $0 -- $1 $0 $1) [])
+])
+
 (word swap-sb (Any16 Any8 -- $0 $1) [
 	(wild (--) [ (asm "" .Op/Orot) ])
 	(wild (--) [ (asm "" .Op/Orot) ])
@@ -251,5 +269,6 @@
 (test rot-bss  [ 2 1s 0s rot-bss  (should eq 2)  (should eq 0s) (should eq 1s)  ])
 (test rot-bss> [ 2 1s 0s rot-bss> (should eq 1s) (should eq 2)  (should eq 0s)  ])
 (test over-sb  [ 999s 7 over-sb (should eq 999s) (should eq 7) (should eq 999s) ])
+(test over-bs  [ 7 999s over-bs (should eq 7) (should eq 999s) (should eq 7)    ])
 (test swap-sb  [ 0xffabs 0xba swap-sb (should eq 0xffabs) (should eq 0xba)      ])
 (test swap-bs  [ 0xba 0xffabs swap-bs (should eq 0xba) (should eq 0xffabs)      ])
