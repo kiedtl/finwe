@@ -33,7 +33,8 @@
 	[connect @ConnectArgs]
 	[send             @U8]
 	[recv             @U8]
-	[_reserved2   @Opaque]
+	[close             U8]
+	[_reserved2        U8]
 	[_reserved3   @Opaque]
 	[status            I8] // Status
 )
