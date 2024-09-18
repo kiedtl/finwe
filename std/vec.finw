@@ -5,11 +5,7 @@
 
 #private
 (word unwrap-or-oom! ( (Of std/Maybe0 @Opaque) -- @Opaque ) [
-	dup ;maybe-not? (when [
-		"Out of memory!\n" print-string
-		alloc/print-chunks
-		"Please close a few Chrome tabs. Oh wait" std/panic
-	]) :value
+	dup ;maybe-not? (when [ alloc/panic-oom ]) :value
 ])
 
 (struct Vector (Any)
@@ -118,18 +114,36 @@
 ])
 
 #(method Vector)
+(word overensure-capacity ( U16 @(AnyOf Vector) -- ) [
+	2dup :capacity -> swap < (when [
+		tuck :capacity -> 2s * max
+		swap ;ensure-capacity
+	] [ 2drop ])
+])
+
+#(method Vector)
 (word ensure-capacity ( U16 @(AnyOf Vector) -- ) [
+	;try-ensure-capacity not (when [ alloc/panic-oom ])
+])
+
+#(method Vector)
+(word try-ensure-capacity ( U16 @(AnyOf Vector) -- Bool ) [
+	//swap "Requesting " print-string dup print-dec nl swap
 	2dup :capacity -> over < (when [
 		swap
 		2dup :capacity <-
 		swap (sizeof (Child (FieldType (Child $0) items))) (as U16) *
 		// ( new-len vec* computed-size )
 		over :items -> (as @Opaque) alloc/reget
-		unwrap-or-oom! (as $0)
+		dup ;maybe-not? (when [
+			3drop nil return
+		])
+		:value (as $0)
 		// ( new-len vec* item* )
 		swap :items <-
 		drop
-	] [ 2drop drop ])
+	] [ 3drop ])
+	t
 ])
 
 #(method Vector)

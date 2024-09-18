@@ -204,7 +204,6 @@
 				over swap <-
 				// ( current )
 
-
 			dampe/priv-exit
 		] [ :next -> ])
 	]) drop
@@ -232,6 +231,12 @@
 	]) drop
 
 	nl
+])
+
+(word panic-oom (--) [
+	"Out of memory!\n" print-string
+	print-chunks
+	"Please close a few Chrome tabs. Oh wait" std/panic
 ])
 
 (test alloc/defrag [
