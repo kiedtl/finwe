@@ -46,6 +46,7 @@ pub const Error = error{
     NakedBreak,
     NakedContinue,
     NoreturnCannotReturn,
+    UnsizedArityItem,
 };
 
 pub const AnalysisFmt = struct {
@@ -1183,6 +1184,21 @@ fn checkFuncAritySanity(node: *ASTNode, p: *Program) !void {
     {
         return p.aerr(error.NoreturnCannotReturn, node.srcloc, .{});
     }
+
+    const lists = [_][]const TypeInfo{
+        decl.arity.?.args.constSlice(),
+        decl.arity.?.rargs.constSlice(),
+        decl.arity.?.stack.constSlice(),
+        decl.arity.?.rstack.constSlice(),
+    };
+
+    for (lists) |l| {
+        for (l) |item| {
+            if (item.size(p) == null) {
+                return p.aerr(error.UnsizedArityItem, node.srcloc, .{item});
+            }
+        }
+    }
 }
 
 // Ensure stack state matches what's expected at the end
@@ -1441,5 +1457,14 @@ test "error on noreturn trying to return values" {
         "(word main (--) [ foo ]) #noreturn (word foo (-- Bool) [ t ])",
     }) |s| {
         try _testExpectErr(core ++ s, error.NoreturnCannotReturn);
+    }
+}
+
+test "error on arity items with no defined size" {
+    inline for (&[_][]const u8{
+        "(word main (--) [ f ]) (word f (-- Opaque) [ ])",
+        "(word main (--) [ f ]) (word f (-- Any)    [ ])",
+    }) |s| {
+        try _testExpectErr(core ++ s, error.UnsizedArityItem);
     }
 }
