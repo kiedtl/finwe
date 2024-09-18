@@ -1571,7 +1571,7 @@ pub const Scope = struct {
 
     pub const AList = std.ArrayList(Scope);
 
-    pub fn deinit(self: *Scope, program: *Program) void {
+    pub fn deinit(self: *Scope, _: *Program) void {
         var i = self.locals.iterator();
         while (i.next()) |local|
             local.default.deinit();
@@ -1581,7 +1581,8 @@ pub const Scope = struct {
         self.types.deinit();
         self.locals.deinit();
 
-        program.alloc.destroy(self);
+        //program.alloc.destroy(self);
+        gpa.allocator().destroy(self);
     }
 
     pub fn shallowclone(self: *Scope) *Scope {
@@ -2249,7 +2250,7 @@ test "Op.fromTag" {
     inline for (@typeInfo(Op.Tag).Enum.fields) |variant| {
         const e = @field(Op.Tag, variant.name);
         if (Op.fromTag(e)) |v| {
-            try std.testing.expectEqual(e, v);
+            try std.testing.expectEqual(e, @as(Op.Tag, v));
         } else |_| {}
     }
 }

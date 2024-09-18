@@ -1318,6 +1318,8 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
         //
         // Not sure, but probably a miscompilation? idk
         //
+        // 2024-09-18 (1:25 AM): Crash still occurs with Zig v0.13.0
+        //
         for (0..program.defs.items.len) |i| {
             const d = program.defs.items[i];
             if (d.node.Decl.is_test) {
@@ -1360,7 +1362,7 @@ fn _testExpectErr(p: []const u8, e: Error) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const talloc = gpa.allocator();
 
-    var program = common.Program.init(talloc);
+    var program = common.Program.init(talloc, "/") catch unreachable;
 
     var lexer = @import("lexer.zig").Lexer.init(&program, p, "<stdin>", talloc);
     const lexed = try lexer.lexList(.Root);
