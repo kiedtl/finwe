@@ -515,6 +515,11 @@ fn analyseAsm(i: *common.Ins, _: Srcloc, caller_an: *const BlockAnalysis, ctx: C
 
 const AnalyserInfo = struct {
     early_return: bool = false,
+    no_return: bool = false,
+
+    pub fn early_or_no_return(self: @This()) bool {
+        return self.early_return or self.no_return;
+    }
 };
 
 const Ctx = struct {
@@ -633,8 +638,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         for (ungenericified.args.constSlice()[0..end2]) |arg|
                             ab.stack.append(arg) catch unreachable;
 
-                        _ = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
+                        const r = try analyseBlock(program, &newdef.node.Decl, newdef.node.Decl.body, &ab, .{ .r_blk = ctx.r_blk });
                         newdef.node.Decl.is_analysed = true;
+                        newdef.node.Decl.is_noreturn = r.no_return;
 
                         try checkEndState(&ab, &ungenericified, .FuncEnd, newdef.srcloc, false, program);
                     }
@@ -657,8 +663,9 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     //     cdecl.is_analysed = true;
                     // }
 
-                    _ = try analyseBlock(program, cdecl, cdecl.body, a, .{});
+                    const r = try analyseBlock(program, cdecl, cdecl.body, a, .{});
                     cdecl.is_analysed = true;
+                    cdecl.is_noreturn = r.no_return;
 
                     if (a.isGeneric(program)) {
                         std.log.err("{s} is generic and has no declared arity", .{cdecl.name});
@@ -670,12 +677,10 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
 
                 if (cdecl.is_noreturn) {
-                    info.early_return = true;
+                    info.no_return = true;
+                    c.goto = true;
                     break;
                 }
-
-                if (cdecl.is_noreturn)
-                    c.goto = true;
             },
             .Loop => |*l| {
                 var nctx = ctx;
@@ -755,12 +760,12 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 try whena.mergeInto(a, program, node.srcloc);
 
                 var ya = a.*;
-                const ya_r = (try analyseBlock(program, parent, w.yup, &ya, nctx)).early_return;
+                const ya_r = (try analyseBlock(program, parent, w.yup, &ya, nctx)).early_or_no_return();
 
                 var na_r = false;
                 var na = a.*;
                 if (w.nah) |n|
-                    if ((try analyseBlock(program, parent, n, &na, nctx)).early_return) {
+                    if ((try analyseBlock(program, parent, n, &na, nctx)).early_or_no_return()) {
                         na_r = true;
                     };
 
@@ -1057,7 +1062,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!tos.doesInclude(sos, program) or
                             tos.bits(program) != sos.bits(program))
                         {
-                            return program.aerr(error.TypeNotMatching, node.srcloc, .{});
+                            return program.aerr(error.TypeNotMatching, node.srcloc, .{ tos, sos });
                         }
                         switch (brk.type) {
                             .TosShouldEqSos => |*v| v.* = tos,
@@ -1071,7 +1076,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                         if (!tos.doesInclude(v.typ, program) or
                             tos.bits(program) != v.typ.bits(program))
                         {
-                            return program.aerr(error.TypeNotMatching, node.srcloc, .{});
+                            return program.aerr(error.TypeNotMatching, node.srcloc, .{ tos, v.typ });
                         }
                     },
                 }
@@ -1267,7 +1272,7 @@ pub fn postProcess(self: *Program) ErrorSet!void {
     try _S.registerLocals(self.global_scope, self);
 
     for (self.defs.items) |def|
-        if (def.node.Decl.is_test) {
+        if (def.node.Decl.is_test and !def.node.Decl.is_noreturn) {
             def.node.Decl.body.append(.{
                 .node = .{ .Breakpoint = .{
                     .type = .RCheckpoint,
@@ -1321,7 +1326,8 @@ pub fn analyse(program: *Program, tests: bool) ErrorSet!void {
 
                 assert(!utest.is_analysed);
                 utest.is_analysed = true;
-                _ = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
+                const r = try analyseBlock(program, utest, utest.body, &utest.analysis, .{});
+                utest.is_noreturn = r.no_return;
                 try checkEndState(&utest.analysis, &BlockAnalysis{}, .EntryEnd, d.srcloc, false, program);
             }
         }

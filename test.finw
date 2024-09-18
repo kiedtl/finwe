@@ -5,6 +5,33 @@
 (use alloc)
 (use vec)
 
+// When calling a noreturn function, a raw jump should be used rather than
+// a normal call (pushing onto the return stack)
+#noreturn
+(test lang_goto_for_noreturn_calls [
+	.System/rst dei 2 /
+	#noreturn (word _ (U8 -- ) [
+		.System/rst dei 2 /
+		swap - (should eq 0)
+		halt
+	])
+	_
+])
+
+(test lang_continue_basic [
+	10 (until [ 0= ]  [ 1- dup 2 mod 0= (when [ continue ]) dup print-dec ]) drop
+	(should stdout-eq "97531")
+	10 (while [ 0<> ] [ 1- dup 2 mod 0= (when [ continue ]) dup print-dec ]) drop
+	(should stdout-eq "97531")
+])
+
+(test lang_break_basic [
+	10 (until [ 0= ]  [ 1- dup 5 = (when [ break ]) dup print-dec ]) drop
+	(should stdout-eq "9876")
+	10 (while [ 0<> ] [ 1- dup 5 = (when [ break ]) dup print-dec ]) drop
+	(should stdout-eq "9876")
+])
+
 (test lang_Omit [
 	(struct Fo [foo U8] [bar U16] [baz [U8]])
 	(sizeof (Omit Fo baz)) (should eq 3)

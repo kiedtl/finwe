@@ -406,7 +406,7 @@ fn genNode(program: *Program, buf: *Ins.List, node: *ASTNode, ctx: Ctx) CodegenE
             });
             try emitLabel(buf, .InlineDeclEnd, node);
         } else {
-            try emit(buf, node, WK_STACK, false, false, .Ojsi);
+            try emit(buf, node, WK_STACK, false, false, if (f.goto) .Ojmi else .Ojsi);
             try emitUA(buf, .DeclBegin, .Always, f.node.?);
         },
         .When => |when| {

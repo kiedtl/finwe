@@ -293,7 +293,7 @@ pub const VM = struct {
     }
 
     fn _finalCheck(self: *VM, cur_test: *const ASTNode, stderr: anytype, program: *Program) !void {
-        if (!self.is_test_done)
+        if (!self.is_test_done and !cur_test.node.Decl.is_noreturn)
             try _failTest(stderr, "Test never returned!", .{}, cur_test.romloc, cur_test.srcloc);
 
         for (program.breakpoints.items) |node| {
@@ -301,10 +301,12 @@ pub const VM = struct {
             assert(node.romloc != 0xFFFF);
             if (brk.parent_test.? == &cur_test.node.Decl)
                 if (brk.must_execute and !brk.is_executed)
-                    if (brk.type == .RCheckpoint)
-                        try _failTest(stderr, "Test never returned (test harness bug, should've caught earlier)!", .{}, node.romloc, node.srcloc)
-                    else
+                    if (brk.type == .RCheckpoint) {
+                        assert(!cur_test.node.Decl.is_noreturn);
+                        try _failTest(stderr, "Test never returned (test harness bug, should've caught earlier)!", .{}, node.romloc, node.srcloc);
+                    } else {
                         try _failTest(stderr, "Assertion never checked (early return?)", .{}, node.romloc, node.srcloc);
+                    };
         }
 
         self.is_test_done = false;
