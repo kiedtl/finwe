@@ -1,16 +1,16 @@
 (use* core)
 
 (device System 0x00
-	[_unused   U16]
-	[expansion U16] // @ExpansionCmd
-	[wst        U8]
-	[rst        U8]
-	[metadata  U16] // @Metadata
-	[r         U16]
-	[g         U16]
-	[b         U16]
-	[debug      U8]
-	[state      U8]
+	[vector @(Fn (--))]
+	[expansion     U16] // @ExpansionCmd
+	[wst            U8]
+	[rst            U8]
+	[metadata      U16] // @Metadata
+	[r             U16]
+	[g             U16]
+	[b             U16]
+	[debug          U8]
+	[state          U8]
 )
 
 (enum ConsoleType U8 
