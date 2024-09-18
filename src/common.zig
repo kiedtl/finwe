@@ -69,9 +69,9 @@ pub const TypeFmt = struct {
                 try writer.print("{}", .{TypeFmt.from(self.prog.ztype(n.typ), self.prog)});
             },
             .Array => |a| if (a.count) |c| {
-                try writer.print("[{}]{s}<{}>", .{ c, s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
+                try writer.print("[{} {}]", .{ TypeFmt.from(self.prog.ztype(a.typ), self.prog), c });
             } else {
-                try writer.print("{s}<{}>", .{ s, TypeFmt.from(self.prog.ztype(a.typ), self.prog) });
+                try writer.print("[{}]", .{TypeFmt.from(self.prog.ztype(a.typ), self.prog)});
             },
             .Fn => |n| try writer.print("Fn{s}", .{analyser.AnalysisFmt.from(n.arity, self.prog)}),
             else => try writer.print("{s}", .{s}),
@@ -574,6 +574,17 @@ pub const TypeInfo = union(enum) {
         const r: TypeInfo = switch (a) {
             .TypeRef => |r| b: {
                 const args = if (r.r) &arity.?.rargs else &arity.?.args;
+                if (args.len == 0 or r.n > args.len - 1) {
+                    std.log.err("${} is not valid (args.len: {})", .{
+                        r.n, args.len,
+                    });
+                    if (arity) |ar| {
+                        std.log.err("parent arity: {}", .{
+                            analyser.AnalysisFmt.from(&ar, program),
+                        });
+                    }
+                    @panic("nah");
+                }
                 break :b args.constSlice()[args.len - r.n - 1];
             },
             .AnyOf => |anyof| .{ .AnyOf = program.btype(try program.ztype(anyof).resolveTypeRef(scope, arity, program)) },
