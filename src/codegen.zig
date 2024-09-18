@@ -761,8 +761,9 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
             const u: u21 = if (lbl.label_type == .DeclBegin) '@' else '&';
             stdout.print("{u}{}", .{ u, lbl.label_type }) catch unreachable;
             switch (lbl.label_type) {
-                .DeclBegin => stdout.print("{s}", .{
+                .DeclBegin => stdout.print("{s}_{}", .{
                     lbl.label_src.Node.ptr.node.Decl.name,
+                    lbl.label_src.Node.ptr.node.Decl.variant,
                 }) catch unreachable,
                 .InlineDeclBegin, .InlineDeclEnd => stdout.print("_{s}", .{
                     lbl.label_src.Node.ptr.node.Call.node.?.node.Decl.name,
@@ -774,15 +775,15 @@ fn _printAsmForDeclNode(_: *Program, stdout: anytype, buf: *const Ins.List, func
         } else if (buf.items[i].op == .Ojsi and buf.items[i + 1].op == .Xtua and
             buf.items[i + 1].op.Xtua.label_type == .DeclBegin)
         {
-            const ua = buf.items[i + 1].op.Xtua;
-            stdout.print("  {s}\n", .{ua.label_src.Node.ptr.node.Decl.name}) catch unreachable;
+            const uadecl = buf.items[i + 1].op.Xtua.label_src.Node.ptr.node.Decl;
+            stdout.print("  {s}_{}\n", .{ uadecl.name, uadecl.variant }) catch unreachable;
             i += 3;
         } else {
             stdout.print("  {}\n", .{buf.items[i]}) catch unreachable;
             i += 1;
         }
     }
-    stdout.print("Total: {} bytes\n", .{end - begin}) catch unreachable;
+    stdout.print("Total: {} bytes\n\n", .{end - begin}) catch unreachable;
 }
 
 pub fn emitBytecode(writer: anytype, program: []const Ins) !void {
