@@ -519,6 +519,11 @@ pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     }
 }
 
+pub export fn emu_trace(u: [*c]c.Uxn) callconv(.C) void {
+    const self: *VM = @ptrCast(@as(*allowzero VM, @fieldParentPtr("uxn", u)));
+    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+}
+
 pub export fn uxn_eval(u: [*c]c.Uxn, p_pc: c_ushort) callconv(.C) c_int {
     const self: *VM = @ptrCast(@as(*allowzero VM, @fieldParentPtr("uxn", u)));
 
