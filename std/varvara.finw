@@ -46,6 +46,31 @@
 	[sprite          U8]
 )
 
+(enum ControllerButton U8
+	[ctrl   0x01]
+	[alt    0x02]
+	[shift  0x04]
+	[home   0x08]
+	[up     0x10]
+	[down   0x20]
+	[left   0x40]
+	[right  0x80]
+)
+
+(device Controller 0x80
+	[vector @(Fn (--))]
+	[button         U8] // Bitflag of ControllerButton
+	[key            U8]
+	[_unused1  @Opaque]
+	[p2             U8]
+	[p3             U8]
+	[p4             U8]
+	[_unused2  @Opaque]
+	[_unused3  @Opaque]
+	[_unused4  @Opaque]
+	[_unused5  @Opaque]
+)
+
 (device Mouse 0x90
 	[vector @(Fn (--))]
 	[x             U16]
