@@ -830,6 +830,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                 const olda = a.*;
                 var firsta: ?BlockAnalysis = null;
+                var chosen: ?BlockAnalysis = null;
 
                 for (cond.branches.items) |*branch| {
                     a.* = olda;
@@ -851,9 +852,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
 
                     if (r.continues) {
                         try checkEndState(a, ctx.loop.?.expected_arity, .LoopBody, ctx.loop.?.node.srcloc, false, program);
+                    } else if (r.early_return) {
+                        // TODO: don't we need to check against expected function return?
                     } else if (firsta) |firsta_| {
                         try checkEndState(a, &firsta_, .CondBody, branch.body_srcloc, false, program);
+                        chosen = a.*;
                     } else {
+                        chosen = a.*;
                         firsta = a.*;
                     }
                 }
@@ -863,10 +868,15 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     const r = try analyseBlock(program, parent, else_br, a, ctx);
                     if (r.continues) {
                         try checkEndState(a, ctx.loop.?.expected_arity, .LoopBody, ctx.loop.?.node.srcloc, false, program);
+                    } else if (r.early_return) {
+                        // TODO: don't we need to check against expected function return?
                     } else {
                         try checkEndState(a, &firsta.?, .CondBody, cond.else_srcloc.?, false, program);
+                        chosen = a.*;
                     }
                 }
+
+                a.* = chosen orelse olda;
 
                 // TODO: do branch arity checking
             },
