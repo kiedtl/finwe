@@ -632,23 +632,20 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     }
 }
 
-pub fn resolveUAs(program: *Program, buf: *Ins.List) CodegenError!void {
+pub fn resolveUAs(program: *Program, oldbuf: *Ins.List, buf: *Ins.List) CodegenError!void {
     // Emit a null byte just in case there are labels without an ins after it
     // (It'll be removed later on when emitting anyway)
-    try emit(buf, null, 0, false, false, .{ .Oraw = 0 });
+    try emit(oldbuf, null, 0, false, false, .{ .Oraw = 0 });
 
     {
-        var i: usize = 0;
-        while (i < buf.items.len) {
-            if (buf.items[i].op == .Xlbl) {
-                const next_norm = for (buf.items[i + 1 ..], 0..) |ins, j| {
-                    if (ins.op != .Xlbl) break i + 1 + j;
-                } else break;
-                buf.items[next_norm].labels.append(.{ .for_ua = buf.items[i].op.Xlbl }) catch
-                    unreachable;
-                _ = buf.orderedRemove(i);
+        var labelbuf = @TypeOf(buf.items[0].labels).init(null);
+        for (oldbuf.items) |ins| {
+            if (ins.op == .Xlbl) {
+                labelbuf.append(.{ .for_ua = ins.op.Xlbl }) catch unreachable;
             } else {
-                i += 1;
+                buf.append(ins) catch unreachable;
+                buf.items[buf.items.len - 1].labels = labelbuf;
+                labelbuf.clear();
             }
         }
     }

@@ -125,12 +125,13 @@ pub fn main() anyerror!void {
                 std.log.info("Word {s}: {}", .{ d.name, d.analysis });
             };
 
-        var assembled = common.Ins.List.init(gpa.allocator());
-        try codegen.generate(&program, &assembled);
-        try optimizer.optimize(&program, &assembled, false);
+        var intermediate = common.Ins.List.init(gpa.allocator());
+        try codegen.generate(&program, &intermediate);
+        try optimizer.optimize(&program, &intermediate, false);
         for (args.args.@"dump-asm") |funcname|
-            try codegen.printAsmFor(&program, &assembled, funcname);
-        try codegen.resolveUAs(&program, &assembled);
+            try codegen.printAsmFor(&program, &intermediate, funcname);
+        var assembled = common.Ins.List.init(gpa.allocator());
+        try codegen.resolveUAs(&program, &intermediate, &assembled);
         try optimizer.optimize(&program, &assembled, true);
 
         if (args.args.@"debug-asm" != 0)
