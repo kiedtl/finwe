@@ -1491,3 +1491,13 @@ test "error on arity items with no defined size" {
         try _testExpectErr(core ++ s, error.UnsizedArityItem);
     }
 }
+
+test "error on early-return when that doesn't satify arity requirements" {
+    inline for (&[_][]const u8{
+        "(word main (--) [ 0 t (when [ return ] [ drop ]) ])",
+        "(word main (--) [ 0 t (when [ drop ] [ return ]) ])",
+        "(word main (--) [ 0 t (when [ return ] [ return ]) ])",
+    }) |s| {
+        try _testExpectErr(core ++ s, error.StackMismatch);
+    }
+}
