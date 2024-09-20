@@ -141,7 +141,7 @@ pub const VM = struct {
         return null;
     }
 
-    pub fn printBacktrace(self: *VM, rst: []const u8, rst_ptr: usize) void {
+    pub fn printBacktrace(self: *VM, pc: c_ushort, rst: []const u8, rst_ptr: usize) void {
         const stderr = std.io.getStdErr().writer();
 
         var items = std.ArrayList(Item).init(gpa.allocator());
@@ -158,19 +158,28 @@ pub const VM = struct {
 
         const paranoid = rst_ptr % 2 != 0;
 
+        const _p = struct {
+            pub fn f(vm: *VM, addr: u16, serr: anytype, i: *const std.ArrayList(Item)) void {
+                serr.print("  \x1b[36mat \x1b[m{x:0>4}", .{addr}) catch unreachable;
+                if (vm._getFuncNameForAddr(i.items, addr)) |node| {
+                    const s = if (node.node.Decl.is_test) "<test>" else node.node.Decl.name;
+                    serr.print(" \x1b[37;1m{s: <15}\x1b[m", .{s}) catch unreachable;
+                    serr.print(" ({s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m)\n", .{
+                        node.srcloc.file, node.srcloc.line, node.srcloc.column,
+                    }) catch unreachable;
+                } else {
+                    serr.print(" \x1b[37;1m???\x1b[m\n", .{}) catch unreachable;
+                }
+            }
+        }.f;
+
+        if (pc > 0)
+            _p(self, pc, &stderr, &items);
+
         var ptr = rst_ptr;
         while (ptr > 0) : (ptr -= if (paranoid) 1 else 2) {
             const addr = @as(u16, @intCast(rst[ptr -| 2])) << 8 | rst[ptr -| 1];
-            stderr.print("  \x1b[36mat \x1b[m{x:0>4}", .{addr}) catch unreachable;
-            if (self._getFuncNameForAddr(items.items, addr)) |node| {
-                const s = if (node.node.Decl.is_test) "<test>" else node.node.Decl.name;
-                stderr.print(" \x1b[37;1m{s: <15}\x1b[m", .{s}) catch unreachable;
-                stderr.print(" ({s}:\x1b[33m{}\x1b[m:\x1b[34m{}\x1b[m)\n", .{
-                    node.srcloc.file, node.srcloc.line, node.srcloc.column,
-                }) catch unreachable;
-            } else {
-                stderr.print(" \x1b[37;1m???\x1b[m\n", .{}) catch unreachable;
-            }
+            _p(self, addr, &stderr, &items);
         }
 
         if (paranoid)
@@ -381,7 +390,7 @@ pub const VM = struct {
     fn executeExpansionCmd(self: *VM, cmdaddr: u16) void {
         switch (self.uxn.ram[cmdaddr]) {
             0x40 => {
-                self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                self.printBacktrace(0, &self.uxn.rst.dat, self.uxn.rst.ptr);
             },
             0x41 => {
                 const begin = @as(u16, self.uxn.ram[cmdaddr + 1]) << 8 |
@@ -397,9 +406,9 @@ pub const VM = struct {
                     stderr.print("Range {x:0>4} already protected (in {x:0>4}..{x:0>4})\n", .{
                         begin, existing.a, existing.b,
                     }) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    self.printBacktrace(0, &self.uxn.rst.dat, self.uxn.rst.ptr);
                     stderr.print("Initial protection:\n", .{}) catch unreachable;
-                    self.printBacktrace(&existing.rst, existing.rst_ptr);
+                    self.printBacktrace(0, &existing.rst, existing.rst_ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
                     std.process.exit(1);
                 } else {
@@ -421,7 +430,7 @@ pub const VM = struct {
                     _printHappyPercent(stderr);
                     stderr.print("Protection exception\n", .{}) catch unreachable;
                     stderr.print("Bad range to unprotect {x:0>4}\n", .{paddr}) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    self.printBacktrace(0, &self.uxn.rst.dat, self.uxn.rst.ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
                     std.process.exit(1);
                 }
@@ -440,7 +449,7 @@ pub const VM = struct {
                     _printHappyPercent(stderr);
                     stderr.print("Protection exception\n", .{}) catch unreachable;
                     stderr.print("Address {x:0>4} not protected\n", .{paddr}) catch unreachable;
-                    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                    self.printBacktrace(0, &self.uxn.rst.dat, self.uxn.rst.ptr);
                     stderr.print("Aborting.\n", .{}) catch unreachable;
                     std.process.exit(1);
                 }
@@ -478,9 +487,9 @@ pub const VM = struct {
                         stderr.print("Write to {x:0>4} (in {x:0>4}..{x:0>4})\n", .{
                             addr, protected_range.a, protected_range.b,
                         }) catch unreachable;
-                        self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+                        self.printBacktrace(pc, &self.uxn.rst.dat, self.uxn.rst.ptr);
                         stderr.print("Initial protection:\n", .{}) catch unreachable;
-                        self.printBacktrace(&protected_range.rst, protected_range.rst_ptr);
+                        self.printBacktrace(0, &protected_range.rst, protected_range.rst_ptr);
                         stderr.print("Aborting.\n", .{}) catch unreachable;
                         std.process.exit(1);
                     }
@@ -519,9 +528,9 @@ pub export fn emu_deo(u: [*c]c.Uxn, addr: c_char) callconv(.C) void {
     }
 }
 
-pub export fn emu_trace(u: [*c]c.Uxn) callconv(.C) void {
+pub export fn emu_trace(u: [*c]c.Uxn, pc: c_ushort) callconv(.C) void {
     const self: *VM = @ptrCast(@as(*allowzero VM, @fieldParentPtr("uxn", u)));
-    self.printBacktrace(&self.uxn.rst.dat, self.uxn.rst.ptr);
+    self.printBacktrace(pc, &self.uxn.rst.dat, self.uxn.rst.ptr);
 }
 
 pub export fn uxn_eval(u: [*c]c.Uxn, p_pc: c_ushort) callconv(.C) c_int {
