@@ -47,6 +47,7 @@ pub const Error = error{
     NakedContinue,
     NoreturnCannotReturn,
     UnsizedArityItem,
+    SizeofUnsized,
 };
 
 pub const AnalysisFmt = struct {
@@ -1161,10 +1162,13 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     assert(!ctx.r_blk);
 
                     sizeof.resolved = try sizeof.original.resolveTypeRef(parent.scope, parent.arity, program);
-                    const s = sizeof.resolved.size(program);
-                    if (s == null or s.? <= 255) {
+
+                    const s = sizeof.resolved.size(program) orelse
+                        return program.aerr(error.SizeofUnsized, node.srcloc, .{sizeof.resolved});
+
+                    if (s <= 255) {
                         a.stack.append(.U8) catch unreachable;
-                    } else if (s.? > 255) {
+                    } else if (s > 255) {
                         a.stack.append(.U16) catch unreachable;
                     } else unreachable;
                 },
