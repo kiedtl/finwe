@@ -748,14 +748,14 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                 }
             },
             .Break => |*b| {
-                b.loop = if (ctx.loop) |loop_info|
+                b.loop.mut().* = if (ctx.loop) |loop_info|
                     loop_info.node
                 else
                     return program.aerr(error.NakedBreak, node.srcloc, .{});
                 break;
             },
             .Continue => |*b| {
-                b.loop = if (ctx.loop) |loop_info|
+                b.loop.mut().* = if (ctx.loop) |loop_info|
                     loop_info.node
                 else
                     return program.aerr(error.NakedBreak, node.srcloc, .{});

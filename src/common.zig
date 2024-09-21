@@ -10,6 +10,7 @@ const codegen = @import("codegen.zig");
 const analyser = @import("analyser.zig");
 const common = @This();
 
+const Eventually = @import("eventually.zig").Eventually;
 const LinkedList = @import("list.zig").LinkedList;
 const StackBuffer = @import("buffer.zig").StackBuffer;
 
@@ -1082,11 +1083,11 @@ pub const ASTNode = struct {
     };
 
     pub const Break = struct {
-        loop: ?*ASTNode = null,
+        loop: Eventually(*ASTNode) = .{},
     };
 
     pub const Continue = struct {
-        loop: ?*ASTNode = null,
+        loop: Eventually(*ASTNode) = .{},
     };
 
     pub const CondPrep = enum {
@@ -1225,8 +1226,8 @@ pub const ASTNode = struct {
     pub fn deepclone(self: @This(), parent: ?*Decl, program: *Program) @This() {
         var new = self.node;
         switch (new) {
-            .Break => |b| assert(b.loop == null),
-            .Continue => |c| assert(c.loop == null),
+            .Break => |b| b.loop.assertNotYet(),
+            .Continue => |c| c.loop.assertNotYet(),
             .TypeDef => unreachable,
             .When => {
                 new.When.yup = _deepcloneASTList(new.When.yup, parent, program);
