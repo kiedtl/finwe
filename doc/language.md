@@ -12,6 +12,9 @@ respective docs for an overview if necessary.*
 0s         // A short literal, with an s suffix
 0xFFFFs    // More short literals
 
+-18i       // Signed byte (I8) literal.
+-482is     // Signed short (I16) literal.
+
 "string"   // A string, the pointer of which is pushed onto the stack.
            // The string itself will be embedded in the data section.
 
