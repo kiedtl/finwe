@@ -1,3 +1,5 @@
+(use* core)
+
 // TODO: mark as non-exhaustive (need new language feature)
 //
 // (for documentation purposes?)
@@ -20,6 +22,27 @@
 	[err-unknown       -9i]
 )
 
+#(method Status)
+(word to-string (Status -- @U8) [
+	(cond
+		[ .Status/ok-retry          = ] [ "success (retry)"           (as @U8) ]
+		[ .Status/ok                = ] [ "success"                   (as @U8) ]
+		[ .Status/ok-no-data        = ] [ "success (no data)"         (as @U8) ]
+		[ .Status/err-tls-config    = ] [ "tls config failed"         (as @U8) ]
+		[ .Status/err-tls-init      = ] [ "tls init failed"           (as @U8) ]
+		[ .Status/err-tls-configure = ] [ "tls configure failed"      (as @U8) ]
+		[ .Status/err-resolve       = ] [ "couldn't resolve host"     (as @U8) ]
+		[ .Status/err-connect       = ] [ "couldn't connect"          (as @U8) ]
+		[ .Status/err-tls-upgrade   = ] [ "tls socket upgrade failed" (as @U8) ]
+		[ .Status/err-tls-handshake = ] [ "tls handshake failed"      (as @U8) ]
+		[ .Status/err-system        = ] [ "system error"              (as @U8) ]
+		[ .Status/err-not-inited    = ] [ "connection doesn't exist"  (as @U8) ]
+		[ .Status/err-unknown       = ] [ "unknown error"             (as @U8) ]
+		[ "invalid status" (as @U8) ]
+	)
+	swap-bs drop
+])
+
 (struct ConnectArgs
 	[tls? Bool] // todo
 	[port  U16]
@@ -28,7 +51,7 @@
 
 (device Net 0xd0
 	[_reserved1   @Opaque]
-	[current           U8] // todo
+	[current           U8]
 	[length           U16]
 	[connect @ConnectArgs]
 	[send             @U8]
