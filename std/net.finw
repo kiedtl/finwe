@@ -20,6 +20,7 @@
 	[err-system        -7i]
 	[err-not-inited    -8i]
 	[err-unknown       -9i]
+	[err-no-tls        -9i]
 )
 
 #(method Status)
@@ -38,6 +39,7 @@
 		[ .Status/err-system        = ] [ "system error"              (as @U8) ]
 		[ .Status/err-not-inited    = ] [ "connection doesn't exist"  (as @U8) ]
 		[ .Status/err-unknown       = ] [ "unknown error"             (as @U8) ]
+		[ .Status/err-no-tls        = ] [ "tls is unsupported by emu" (as @U8) ]
 		[ "invalid status" (as @U8) ]
 	)
 	swap-bs drop
