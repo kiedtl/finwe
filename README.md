@@ -6,15 +6,22 @@ Formerly named "Bureaucrat".
 
 ## What?
 
-This language is an experimental project that I began to determine how modern,
-high-level language features (such as structs, enums and memory allocators)
-could be implemented in a constrained environment.
+This language is an experimental project that I began to determine how
+cutting-edge, high-level language features (e.g. signed integers, structs,
+and memory allocators) could be implemented in a constrained environment.
 
 This project is possibly the first stack-based language to implement
 compiler-enforced stack safety, i.e. using static analysis to catch underflows,
 overflows, type errors, and so on.
 
-Other features include a test harness, memory protection, and generics.
+Other features include a test harness, memory protection, and generic types +
+functions.
+
+**Examples**:
+
+* [base64 encoder](projects/astar.finw)
+* [A* implementation](projects/astar.finw)
+* [Gemini client](https://github.com/kiedtl/tuor/blob/trunk/src/main.finw)
 
 ## How?
 
