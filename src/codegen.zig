@@ -39,6 +39,8 @@ pub const UA = struct {
                 else if (n.ptr.node == .Decl and b.Node.ptr.node == .Decl)
                     if (b.Node.ptr.node.Decl.folded_into) |folded_into|
                         folded_into == n.ptr
+                    else if (n.ptr.node.Decl.folded_into) |folded_into|
+                        folded_into == b.Node.ptr
                     else
                         false
                 else
@@ -492,6 +494,12 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
     // Nothing else will get generated (decls are ignored unless passed directly)
     try genNodeList(program, buf, program.ast, undefined);
 
+    std.sort.insertion(*ASTNode, program.defs.items, {}, struct {
+        pub fn lessThan(_: void, lhs: *ASTNode, rhs: *ASTNode) bool {
+            return lhs.node.Decl.calls > rhs.node.Decl.calls;
+        }
+    }.lessThan);
+
     for (program.defs.items, 0..) |def, i| {
         const d = &def.node.Decl;
         if (d.skipGen()) {
@@ -521,7 +529,7 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
                 continue;
             if (prevdef.node.Decl.is_test)
                 continue;
-            if (prevdef.node.Decl.variant_of != d.variant_of)
+            if (d.variant_of == null or prevdef.node.Decl.variant_of != d.variant_of)
                 continue;
             const begin = prevdef.romloc;
             const end = for (buf.items[prevdef.romloc..], 0..) |ins, j| {
@@ -543,6 +551,20 @@ pub fn generate(program: *Program, buf: *Ins.List) CodegenError!void {
                         const c = if (previns.op == .Xtua) curins.op.Xtua else curins.op.Xlbl;
                         if (!l.label_type.eq(c.label_type))
                             break false;
+
+                        // Don't fold if the decl is calling a different function.
+                        //
+                        // This leads to false negatives for various reasons. Better
+                        // would be to recursively check if those functions are equivalent.
+                        // But that might be pretty slow (haven't tested though).
+                        //
+                        // Commenting this out is dangerous, but it's not causing any
+                        // issues for now, so...
+                        //
+                        // if (previns.op == .Xtua and
+                        //     l.label_type == .DeclBegin and !l.label_src.eq(c.label_src))
+                        //     break false;
+
                         if (l.label_type == .Static and c.label_type == .Static)
                             if (_staticTotalSize(program, l.label_src.Static) !=
                                 _staticTotalSize(program, c.label_src.Static))

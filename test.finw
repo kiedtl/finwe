@@ -177,29 +177,9 @@
 	(should stdout-eq "0\n1\n2\n3\n4\n???\n")
 ])
 
-(let sprite [U16] [
-	0x6cfes 0xfe7cs 0x3810s 0x0000s
-	0x6cfes 0xfe7cs 0x3810s 0x0000s
-])
-
-(word main1 [
-	(word draw-sprite [
-		0x20s .Screen/x deo
-		0x40s .Screen/y deo
-		@sprite .Screen/addr deo
-		0x81 .Screen/sprite deo
-	])
-
-	[ (--) draw-sprite halt ] .Screen/vector deo
-
-	0xf07fs .System/r deo
-	0xf0e0s .System/g deo
-	0xf0c0s .System/b deo
-
-	256s .Screen/width deo
-	256s .Screen/height deo
-])
-
-(word main [
-	0s (split U8 U16)
+(test lang_proper_folding [
+	#no-inline (word foo (-- U8) [ 1 ])
+	#no-inline (word bar (-- U8) [ 2 ])
+	[ (-- U8) foo ] do (should eq 1)
+	[ (-- U8) bar ] do (should eq 2)
 ])
