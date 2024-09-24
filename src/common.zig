@@ -141,8 +141,8 @@ pub const TypeInfo = union(enum) {
     pub const Fn = struct {
         arity: *analyser.BlockAnalysis,
 
-        pub fn eq(a: Fn, b: Fn) bool {
-            return a.arity.eqExact(b.arity);
+        pub fn eq(a: Fn, b: Fn, p: *Program) bool {
+            return a.arity.eqExact(b.arity, p);
         }
     };
 
@@ -150,7 +150,7 @@ pub const TypeInfo = union(enum) {
         n: usize,
         r: bool = false,
 
-        pub fn eq(a: TypeRef, b: TypeRef) bool {
+        pub fn eq(a: TypeRef, b: TypeRef, _: *Program) bool {
             return a.n == b.n and a.r == b.r;
         }
     };
@@ -158,8 +158,11 @@ pub const TypeInfo = union(enum) {
     pub const AnySet = struct {
         set: *StackBuffer(TypeInfo, 8),
 
-        pub fn eq(a: AnySet, b: AnySet) bool {
-            return a.set.eq(b.set.constSlice(), TypeInfo.eq);
+        pub fn eq(a: AnySet, b: AnySet, p: *Program) bool {
+            if (a.set.len != b.set.len) return false;
+            return for (a.set.constSlice(), 0..) |item, i| {
+                if (!item.eq(b.set.constSlice()[i], p)) break false;
+            } else true;
         }
     };
 
@@ -172,7 +175,7 @@ pub const TypeInfo = union(enum) {
         typ: usize,
         count: ?u16, // null for size unknown at comptime
 
-        pub fn eq(a: Array, b: Array) bool {
+        pub fn eq(a: Array, b: Array, _: *Program) bool {
             return a.typ == b.typ and a.count == b.count;
         }
     };
@@ -181,7 +184,7 @@ pub const TypeInfo = union(enum) {
         typ: usize,
         ind: usize, // Always >=1. 1 == *Typ, 2 == **Typ, etc
 
-        pub fn eq(a: Ptr, b: Ptr) bool {
+        pub fn eq(a: Ptr, b: Ptr, _: *Program) bool {
             return a.typ == b.typ and a.ind == b.ind;
         }
     };
@@ -230,7 +233,7 @@ pub const TypeInfo = union(enum) {
             args: *StackBuffer(usize, 16),
         };
 
-        pub fn eq(a: @This(), b: @This()) bool {
+        pub fn eq(a: @This(), b: @This(), p: *Program) bool {
             if (@as(Expr.Tag, a) != @as(Expr.Tag, b))
                 return false;
             return switch (a) {
@@ -239,16 +242,16 @@ pub const TypeInfo = union(enum) {
                 .FieldType => |ft| ft.of == b.FieldType.of and
                     mem.eql(u8, ft.field, b.FieldType.field),
                 .Ptr16 => |ar| ar == b.Ptr16,
-                .Array => |ar| ar.eq(b.Array),
+                .Array => |ar| ar.eq(b.Array, p),
                 .AnySz => |ar| ar == b.AnySz,
                 .USz => |ar| ar == b.USz,
                 .ISz => |ar| ar == b.ISz,
                 .AnyOf => |ar| ar == b.AnyOf,
-                .AnySet => |ar| ar.set.eq(b.AnySet.set.constSlice(), TypeInfo.eq),
+                .AnySet => |ar| ar.eq(b.AnySet, p),
                 .Child => |ar| ar == b.Child,
                 .Omit => |omit| omit.of == b.Omit.of and
                     mem.eql(u8, omit.field, b.Omit.field),
-                .Fn => |func| func.arity.eqExact(b.Fn.arity),
+                .Fn => |func| func.arity.eqExact(b.Fn.arity, p),
             };
         }
 
@@ -482,7 +485,7 @@ pub const TypeInfo = union(enum) {
                         for (usertype.def.Struct.fields.items, 0..) |field, fi| {
                             if (field.offset != new.def.Struct.fields.items[fi].offset)
                                 continue :s;
-                            if (!field.type.eq(new.def.Struct.fields.items[fi].type))
+                            if (!field.type.eq(new.def.Struct.fields.items[fi].type, program))
                                 continue :s;
                         }
                         break i;
@@ -613,8 +616,31 @@ pub const TypeInfo = union(enum) {
         return if (r.isResolvable(program)) try r.resolveTypeRef(scope, arity, program) else r;
     }
 
-    pub fn eq(a: @This(), b: @This()) bool {
+    // TODO: Cleanup this stupid mess
+    pub fn eq(a: @This(), b: @This(), program: *Program) bool {
+        // Special case: @T should include @[T], but not the other way around.
+        switch (a) {
+            .Ptr8, .Ptr16 => |ptr| switch (b) {
+                .Ptr8, .Ptr16 => |otherptr| {
+                    const achild = program.ztype(ptr.typ);
+                    const bchild = program.ztype(otherptr.typ);
+                    if (achild == .Array and
+                        bchild.eq(program.ztype(achild.Array.typ), program))
+                    {
+                        return true;
+                    } else if (bchild == .Array and
+                        achild.eq(program.ztype(bchild.Array.typ), program))
+                    {
+                        return true;
+                    }
+                },
+                else => {},
+            },
+            else => {},
+        }
+
         if (@as(Tag, a) != @as(Tag, b)) return false;
+
         inline for (meta.fields(@This())) |field|
             if (mem.eql(u8, field.name, @tagName(a)))
                 if (field.type == usize or field.type == void)
@@ -624,7 +650,7 @@ pub const TypeInfo = union(enum) {
                 else if (field.type == []const u8)
                     return mem.eql(u8, @field(a, field.name), @field(b, field.name))
                 else
-                    return @field(a, field.name).eq(@field(b, field.name));
+                    return @field(a, field.name).eq(@field(b, field.name), program);
         unreachable;
     }
 
@@ -654,7 +680,7 @@ pub const TypeInfo = union(enum) {
     pub fn ptr16(program: *Program, to: TypeInfo, indirection: usize) TypeInfo {
         assert(indirection >= 1);
         const ind: ?usize = for (program.builtin_types.items, 0..) |typ, i| {
-            if (to.eq(typ)) break i;
+            if (to.eq(typ, program)) break i;
         } else null;
         if (ind) |_ind| {
             return .{ .Ptr16 = .{ .typ = _ind, .ind = indirection } };
@@ -706,6 +732,20 @@ pub const TypeInfo = union(enum) {
         }
         return switch (self) {
             .Type => true,
+
+            .Ptr8, .Ptr16 => |ptr| switch (other) {
+                .Ptr8, .Ptr16 => |otherptr| {
+                    const achild = program.ztype(ptr.typ);
+                    const bchild = program.ztype(otherptr.typ);
+                    if (achild == .Array and
+                        bchild.eq(program.ztype(achild.Array.typ), program))
+                    {
+                        return true;
+                    } else return false;
+                },
+                else => false,
+            },
+
             // TODO: pointer casting rules
             // .Ptr8, .Ptr16 => |ptr| switch (other) {
             //     .Ptr8, .Ptr16 => |otherptr| program.ztype(otherptr.typ).size(program) ==
@@ -714,7 +754,7 @@ pub const TypeInfo = union(enum) {
             //     else => return true, // TODO: make more strict
             // },
             .AnySet => |anyset| for (anyset.set.constSlice()) |i| {
-                if (i.eq(other)) break true;
+                if (i.eq(other, program)) break true;
             } else false,
             .AnyOf => |anyof| mem.eql(
                 u8,
@@ -730,8 +770,10 @@ pub const TypeInfo = union(enum) {
             .AnyPtr => other == .Ptr8 or other == .Ptr16 or other == .StaticPtr,
             .AnyPtr16 => other == .Ptr16 or other == .StaticPtr,
             .EnumLit => |e| other == .EnumLit and e == other.EnumLit,
+
             .Char8 => other == .U8,
             .U8 => other == .Char8,
+
             .Fn => |func| other == .Fn and if (func.arity.conformGenericTo(&[_]TypeInfo{}, null, other.Fn.arity, null, program, true, false)) |_| true else |_| false,
 
             else => false, // self == other case already handled earlier
@@ -1985,7 +2027,7 @@ pub const Program = struct {
     // Record type in builtin_types if not there otherwise find existing record
     pub fn btype(self: *Program, typ: TypeInfo) usize {
         return for (self.builtin_types.items, 0..) |t, i| {
-            if (t.eq(typ)) break i;
+            if (t.eq(typ, self)) break i;
         } else b: {
             self.builtin_types.append(typ) catch unreachable;
             break :b self.builtin_types.items.len - 1;

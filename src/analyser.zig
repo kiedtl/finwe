@@ -174,7 +174,7 @@ pub const BlockAnalysis = struct {
 
     fn _resolveFully(paramspec: TypeInfo, argtyp: TypeInfo, scope: ?*Scope, arity: BlockAnalysis, caller: ?*ASTNode, p: *Program, dry_run: bool) Error!TypeInfo {
         var r = paramspec;
-        while (!r.eq(argtyp) and (r.isResolvable(p) or r.isGeneric(p))) {
+        while (!r.eq(argtyp, p) and (r.isResolvable(p) or r.isGeneric(p))) {
             if (r.isGeneric(p)) {
                 if (!r.doesInclude(argtyp, p)) {
                     if (!r.isResolvable(p)) {
@@ -299,19 +299,19 @@ pub const BlockAnalysis = struct {
         return r;
     }
 
-    fn _chkLst(_a: VTList16, _b: VTList16) bool {
+    fn _chkLst(_a: VTList16, _b: VTList16, p: *Program) bool {
         if (_a.len != _b.len) return false;
         return for (_a.constSlice(), 0..) |item, i| {
-            if (!item.eq(_b.constSlice()[i])) break false;
+            if (!item.eq(_b.constSlice()[i], p)) break false;
         } else true;
     }
 
-    pub fn eqExactStacks(a: *const @This(), b: *const @This()) bool {
-        return _chkLst(a.stack, b.stack) and _chkLst(a.rstack, b.rstack);
+    pub fn eqExactStacks(a: *const @This(), b: *const @This(), p: *Program) bool {
+        return _chkLst(a.stack, b.stack, p) and _chkLst(a.rstack, b.rstack, p);
     }
 
-    pub fn eqExact(a: *const @This(), b: *const @This()) bool {
-        return _chkLst(a.args, b.args) and _chkLst(a.rargs, b.rargs) and eqExactStacks(a, b);
+    pub fn eqExact(a: *const @This(), b: *const @This(), p: *Program) bool {
+        return _chkLst(a.args, b.args, p) and _chkLst(a.rargs, b.rargs, p) and eqExactStacks(a, b, p);
     }
 
     pub fn isGeneric(self: @This(), program: *Program) bool {
@@ -618,7 +618,7 @@ fn analyseBlock(program: *Program, parent: *ASTNode.Decl, block: ASTNodeList, a:
                     if (ctx.r_blk) ungenericified.reverse();
                     ungenericified = try ungenericified.conformGenericTo(type_args.constSlice(), cdecl.scope.parent, a, node, program, false, false);
                     const var_ind: ?usize = for (cdecl.variations.items, 0..) |an, i| {
-                        if (ungenericified.eqExact(&an.node.Decl.arity.?))
+                        if (ungenericified.eqExact(&an.node.Decl.arity.?, program))
                             break i;
                     } else null;
 
@@ -1245,7 +1245,7 @@ fn checkEndState(
     dry_run: bool,
     program: *Program,
 ) !void {
-    if (a.args.len != 0 or a.rargs.len != 0 or !expect.eqExactStacks(a)) {
+    if (a.args.len != 0 or a.rargs.len != 0 or !expect.eqExactStacks(a, program)) {
         if (dry_run) {
             return switch (chktype) {
                 .CondCond, .FuncEnd => error.StackMismatch,

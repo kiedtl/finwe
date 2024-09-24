@@ -1094,7 +1094,7 @@ pub const Parser = struct {
 
                         for (enumdef.fields.items) |field| {
                             if (field.value) |val| {
-                                if (!val.typ.eq(enumdef.type))
+                                if (!val.typ.eq(enumdef.type, self))
                                     @panic("Mismatched enum field types");
                             }
 
