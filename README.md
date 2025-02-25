@@ -19,7 +19,7 @@ functions.
 
 **Examples**:
 
-* [base64 encoder](projects/astar.finw)
+* [base64 encoder](projects/base64.finw)
 * [A* implementation](projects/astar.finw)
 * [Gemini client](https://github.com/kiedtl/tuor/blob/trunk/src/main.finw)
 
