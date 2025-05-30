@@ -14,6 +14,9 @@ This project is possibly the first stack-based language to implement
 compiler-enforced stack safety, i.e. using static analysis to catch underflows,
 overflows, type errors, and so on.
 
+(*Update 2025-05-29*: Apparently not the first; see
+[Tails](https://github.com/snej/tails) by Jens Alfke)
+
 Other features include a test harness, memory protection, and generic types +
 functions.
 
